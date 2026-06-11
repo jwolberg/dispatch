@@ -35,6 +35,7 @@ boardRouter.get("/", (_req, res) => {
       column: "Spec",
       repo: repoBrief(repo),
       title: firstUser ? snippet(firstUser.content) : "Untitled draft",
+      created_at: chat.created_at,
     });
   }
 

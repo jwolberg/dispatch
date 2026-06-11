@@ -4,6 +4,13 @@ import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { boardApi, type BoardCard } from "../api/board.js";
 
+const COLUMN_LIMIT = 10; // show the 10 most-recent cards per column (PRD: bounded columns)
+
+function cardTime(card: BoardCard): number {
+  const iso = card.kind === "ticket" ? card.updated_at : card.created_at;
+  return iso ? Date.parse(iso) : 0;
+}
+
 export function BoardPage() {
   const navigate = useNavigate();
   const { data, error } = usePolling(() => boardApi.get(), 10_000);
@@ -25,7 +32,11 @@ export function BoardPage() {
       )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         {columns.map((col) => {
-          const colCards = cards.filter((c) => c.column === col);
+          const colCards = cards
+            .filter((c) => c.column === col)
+            .sort((a, b) => cardTime(b) - cardTime(a));
+          const shown = colCards.slice(0, COLUMN_LIMIT);
+          const hidden = colCards.length - shown.length;
           return (
             <div key={col} className="rounded-lg border border-border bg-surface/50 p-2">
               <div className="mb-2 flex items-center justify-between px-1">
@@ -33,7 +44,7 @@ export function BoardPage() {
                 <span className="text-label text-gray-500">{colCards.length}</span>
               </div>
               <div className="flex flex-col gap-2">
-                {colCards.map((card) => (
+                {shown.map((card) => (
                   <button
                     key={`${card.kind}-${card.id}`}
                     onClick={() => open(card)}
@@ -52,6 +63,9 @@ export function BoardPage() {
                     )}
                   </button>
                 ))}
+                {hidden > 0 && (
+                  <div className="px-1 pt-0.5 text-label text-gray-500">+{hidden} more</div>
+                )}
               </div>
             </div>
           );

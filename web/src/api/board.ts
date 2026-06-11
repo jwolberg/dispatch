@@ -8,6 +8,7 @@ export interface DraftCard extends CardBase {
   kind: "draft";
   id: number;
   title: string;
+  created_at: string;
 }
 export interface TicketCard extends CardBase {
   kind: "ticket";

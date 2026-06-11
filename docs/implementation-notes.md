@@ -168,3 +168,17 @@ no sense of "where we are / what to do next."
 
 **Note:** "Next step" is heuristic (board columns are derived, not authoritative);
 the Plan-ready case keys off a Claude/checkbox progress comment with no PR.
+
+## 2026-06-11 — Cap each board column at 10 most-recent cards
+**Why (user request):** show recently-completed items, n=10, per category — clarified
+as per board column (cap EVERY column at its 10 most recent), with a "+N more" hint.
+
+**Changes:**
+- `board.ts`: draft cards now include `created_at` (sort key; tickets already had
+  `updated_at`). `web/src/api/board.ts` DraftCard updated to match.
+- `Board.tsx`: each column sorts its cards by recency desc (updated_at for tickets,
+  created_at for drafts) and renders the top 10; the count badge still shows the
+  true total, and a "+N more" line appears when truncated.
+
+**Note:** display-only cap — the API still returns all cards so the per-column
+total stays accurate. If the board grows large, move the cap server-side later.
