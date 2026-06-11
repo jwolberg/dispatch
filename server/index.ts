@@ -6,6 +6,7 @@ import { discoverRouter } from "./routes/discover.js";
 import { reposRouter } from "./routes/repos.js";
 import { chatRouter } from "./routes/chat.js";
 import { ticketsRouter } from "./routes/tickets.js";
+import { startPoller } from "./poller/scheduler.js";
 
 // Bootstrap the Dispatch backend. Route groups (discover, repos, chat, tickets,
 // board, activity, health) are mounted under /api by later tickets; this
@@ -31,6 +32,8 @@ app.use("/api", api);
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`[dispatch] backend listening on http://${config.host}:${config.port}`);
+  // Background reconciliation of provider state → status_cache (PRD F4.2).
+  startPoller();
 });
 
 const shutdown = (signal: string) => {

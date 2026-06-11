@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 3 — File + board
-- Current ticket: P3-T3
+- Current ticket: P3-T4
 - Blockers: None
 
 ---
@@ -184,7 +184,7 @@
   - Files likely involved: `server/poller/scheduler.ts`, `server/poller/reconcile.ts`, `server/db/status.ts`, `server/db/activity.ts`
   - Depends on: P3-T2
   - Acceptance criteria covered: #5, #8, #9, S6
-  - Status: Todo
+  - Status: Complete
 
 - P3-T4 — Board route
   - Objective: `GET /api/board` returns all tickets with derived column + status payload read from `status_cache`; frontend renders only.
