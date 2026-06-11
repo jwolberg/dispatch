@@ -416,7 +416,9 @@ export class GitHubProvider implements GitProvider {
       );
       if (s?.target_url) return s.target_url;
     } catch (err) {
-      if (!isNotFound(err)) throw err;
+      // Deployments/statuses 403 on fine-grained PATs lacking that permission;
+      // preview discovery is best-effort, so treat 403/404 as "no preview".
+      if (httpStatus(err) !== 403 && !isNotFound(err)) throw err;
     }
     try {
       const deployments = await this.cond(`deployments:${owner}/${repo}@${branch}`, (headers) =>
@@ -436,7 +438,9 @@ export class GitHubProvider implements GitProvider {
         if (st) return st.environment_url || st.target_url || null;
       }
     } catch (err) {
-      if (!isNotFound(err)) throw err;
+      // Deployments/statuses 403 on fine-grained PATs lacking that permission;
+      // preview discovery is best-effort, so treat 403/404 as "no preview".
+      if (httpStatus(err) !== 403 && !isNotFound(err)) throw err;
     }
     return null;
   }

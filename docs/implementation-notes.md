@@ -381,6 +381,22 @@ commit statuses + workflow runs. **Accepted limitation:** non-Actions check runs
 won't appear in `pr.checks`. Acceptable — Dispatch's own ci.yml reports as a
 workflow run. Supersedes the earlier "grant Checks: read" remediation (not possible).
 
+## 2026-06-11 — Tolerate the deployments 403 too (same fine-grained-PAT gap)
+**Why:** after deploying the check-runs tolerance, prod logs showed reconcile still
+failing — now on `GET .../deployments` 403 (`reconcile … failed: … /rest/deployments`).
+`findPreviewUrl` only caught `isNotFound`, so the Deployments-permission 403 (also
+ungrantable on fine-grained PATs) re-threw and crashed reconcile. Same class of bug
+as check-runs, second endpoint.
+
+**Fix (`providers/github.ts`):** both `findPreviewUrl` catch blocks now swallow 403
+as well as 404 (`httpStatus(err) !== 403 && !isNotFound(err)`). Preview discovery is
+best-effort enrichment, so "no permission" → "no preview", not a failure. Left
+`ensureLabel`'s 403 guard intact — that's a write path where a 403 is a real error.
+
+**Confirmed working in prod (revision 00012):** ETag 304s dominate the log and the
+check-runs 403 is already tolerated; this clears the last reconcile failure. Verify
+green.
+
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
 `claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation
