@@ -60,6 +60,8 @@ export const ticketsApi = {
   get: (id: number) => api.get<TicketDetail>(`/tickets/${id}`),
   comment: (id: number, body: { body: string; target: "issue" | "pr" }) =>
     api.post<{ ok: boolean }>(`/tickets/${id}/comment`, body),
+  merge: (id: number, method?: string) =>
+    api.post<{ merged: boolean; sha: string | null }>(`/tickets/${id}/merge`, { method }),
   file: (body: {
     repo_id: number;
     chat_id: number | null;

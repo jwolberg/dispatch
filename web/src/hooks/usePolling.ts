@@ -8,26 +8,29 @@ export function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number) {
   const fnRef = useRef(fetcher);
   fnRef.current = fetcher;
 
-  useEffect(() => {
-    let active = true;
-    const tick = async () => {
-      try {
-        const d = await fnRef.current();
-        if (active) {
-          setData(d);
-          setError(null);
-        }
-      } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : String(e));
+  const activeRef = useRef(true);
+  const refetch = async () => {
+    try {
+      const d = await fnRef.current();
+      if (activeRef.current) {
+        setData(d);
+        setError(null);
       }
-    };
-    tick();
-    const id = setInterval(tick, intervalMs);
+    } catch (e) {
+      if (activeRef.current) setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => {
+    activeRef.current = true;
+    void refetch();
+    const id = setInterval(() => void refetch(), intervalMs);
     return () => {
-      active = false;
+      activeRef.current = false;
       clearInterval(id);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intervalMs]);
 
-  return { data, error };
+  return { data, error, refetch };
 }

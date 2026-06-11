@@ -420,7 +420,16 @@ export class GitHubProvider implements GitProvider {
         createdAt: r.created_at,
       }));
   }
-  async mergePR(_repo: RepoRef, _prNumber: number, _method: MergeMethod): Promise<MergeResult> {
-    throw new Error("mergePR not yet implemented (P4-T3)");
+  async mergePR(repo: RepoRef, prNumber: number, method: MergeMethod): Promise<MergeResult> {
+    const { owner, repo: name } = splitPath(repo.path);
+    // Errors (conflicts, branch protection) propagate so the route can surface
+    // the provider message verbatim with a PR link (F6.4).
+    const { data } = await this.octokit.pulls.merge({
+      owner,
+      repo: name,
+      pull_number: prNumber,
+      merge_method: method,
+    });
+    return { merged: Boolean(data.merged), message: data.message ?? null, sha: data.sha ?? null };
   }
 }

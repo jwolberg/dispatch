@@ -4,6 +4,7 @@ import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { ticketsApi, type Check } from "../api/tickets.js";
 import { SteerBox } from "../components/SteerBox.js";
+import { ShipButton } from "../components/ShipButton.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
   success: "text-status-ok",
@@ -48,7 +49,7 @@ function ProgressBody({ body }: { body: string }) {
 export function CardDetailPage() {
   const { id } = useParams();
   const ticketId = Number(id);
-  const { data, error } = usePolling(() => ticketsApi.get(ticketId), 10_000);
+  const { data, error, refetch } = usePolling(() => ticketsApi.get(ticketId), 10_000);
 
   if (error) {
     return (
@@ -151,6 +152,14 @@ export function CardDetailPage() {
                     <li className="text-label text-gray-500">No checks reported.</li>
                   )}
                 </ul>
+                <ShipButton
+                  ticketId={ticket.id}
+                  pr={status.pr}
+                  repoPath={repo.path}
+                  mergeMethod={repo.merge_method}
+                  ready={status.column === "Ready to test"}
+                  onMerged={() => void refetch()}
+                />
               </>
             ) : (
               <p className="text-body text-gray-500">No linked PR yet.</p>

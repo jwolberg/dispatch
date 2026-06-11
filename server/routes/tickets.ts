@@ -6,7 +6,7 @@ import { insertActivity } from "../db/activity.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile, type StatusPayload } from "../poller/reconcile.js";
 import { getProvider } from "../providers/index.js";
-import type { CommentTarget, ProviderId, RepoRef } from "../providers/index.js";
+import type { CommentTarget, MergeMethod, ProviderId, RepoRef } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
 
@@ -166,5 +166,79 @@ ticketsRouter.post("/:id/comment", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
+  }
+});
+
+// POST /api/tickets/:id/merge — Ship (F6). Enabled only when the PR is open,
+// mergeable, and all checks are green; merges via the adapter, then reconciles.
+ticketsRouter.post("/:id/merge", async (req, res) => {
+  const ticket = getTicket(Number(req.params.id));
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  const repo = getRepo(ticket.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+
+  const row = getStatus(ticket.id);
+  let payload: StatusPayload | null = null;
+  if (row) {
+    try {
+      payload = JSON.parse(row.payload_json) as StatusPayload;
+    } catch {
+      payload = null;
+    }
+  }
+  const pr = payload?.pr ?? null;
+
+  // Server-side re-validation of the ship gate (F6.1).
+  if (!pr || pr.state !== "open") {
+    res.status(409).json({ error: "No open PR to merge" });
+    return;
+  }
+  if (pr.mergeable === false) {
+    res.status(409).json({ error: "PR is not mergeable (conflicts or branch protection)" });
+    return;
+  }
+  if (pr.checks.some((c) => c.state === "failure" || c.state === "pending")) {
+    res.status(409).json({ error: "Not all checks are green" });
+    return;
+  }
+
+  const method = (
+    ["squash", "merge", "rebase"].includes(req.body?.method) ? req.body.method : repo.merge_method
+  ) as MergeMethod;
+  const ref: RepoRef = {
+    provider: repo.provider as ProviderId,
+    host: repo.host,
+    path: repo.path,
+    defaultBranch: repo.default_branch,
+  };
+
+  try {
+    const result = await getProvider(repo.provider as ProviderId, repo.host).mergePR(
+      ref,
+      pr.number,
+      method
+    );
+    if (!result.merged) {
+      res.status(409).json({ error: result.message ?? "Merge failed", pr_url: pr.url });
+      return;
+    }
+    insertActivity({
+      ticket_id: ticket.id,
+      type: "merged",
+      summary: `Merged PR #${pr.number}`,
+      url: pr.url,
+      occurred_at: new Date().toISOString(),
+    });
+    await safeReconcile(ticket); // flip to Shipped without waiting for the next poll
+    res.json({ merged: true, sha: result.sha });
+  } catch (err) {
+    // Surface the provider error verbatim with a PR link (F6.4).
+    res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err), pr_url: pr.url });
   }
 });

@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 4 — Test + ship
-- Current ticket: P4-T3
+- Current ticket: P4-T4
 - Blockers: None
 
 ---
@@ -244,7 +244,7 @@
   - Files likely involved: `server/routes/tickets.ts`, `server/providers/github.ts`, `web/components/ShipConfirmModal.tsx`
   - Depends on: P3-T5, P3-T2
   - Acceptance criteria covered: #7, S5
-  - Status: Todo
+  - Status: Complete
 
 - P4-T4 — Post-merge → Shipped + prod deploy surfacing
   - Objective: After merge, poller surfaces the production deploy run on the card until complete, then derives column **Shipped** (issue auto-closed via keyword).
