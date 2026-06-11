@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T7
+- Current ticket: P1-T8
 - Blockers: None
 
 ---
@@ -93,7 +93,7 @@
   - Files likely involved: `server/routes/repos.ts`, `server/db/repos.ts`
   - Depends on: P1-T4, P1-T2
   - Acceptance criteria covered: #2, #11
-  - Status: Todo
+  - Status: Complete
 
 - P1-T8 — Frontend scaffold + design tokens
   - Objective: Vite + Tailwind v3 dark theme; design tokens enforcing readability (body ≥13px, label ≥11.5px, ≥4.5:1 contrast, icon+text status colors); app shell with routing (Repos, Chat, Board, CardDetail, Activity) and typed `web/api/` fetch wrappers.
