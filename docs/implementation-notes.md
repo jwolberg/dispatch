@@ -16,3 +16,11 @@ Running log of decisions, deviations, and tradeoffs for human review.
 - **Provider seam:** all `GitProvider` methods are async (every call is network). `autoCloseKeyword()` lives in the seam so the core never branches on provider for ship semantics.
 - **GitHub adapter (P1-T4):** implemented `discoverRepos` (`paginate GET /user/repos`, sort=pushed) and `getRepoContext` (repo meta + CLAUDE.md + README first 80 lines + depth-2 file tree via Git Trees recursive, filtered to ≤2 path segments, capped 400 + automation detection via `.github/workflows` filename/content match on claude-code-action/@claude). Remaining `GitProvider` methods are explicit stubs that throw with their owning ticket id (P3/P4) — keeps the class type-complete without expanding P1-T4 scope.
 - **Deferred validation:** live GitHub API calls require a real `GITHUB_TOKEN` (not in env; `gh` not authenticated). Validated instead by typecheck, the seam grep (clean), and a factory structural check (missing-token throw + construction). Live discovery/context to be exercised in P1-T6/P1-T9 once a token is provided.
+
+## 2026-06-11 — P1-T8/T9 + P2-T1 (frontend scaffold, Repos UI, Anthropic client)
+- **Web imports use `.js` extensions** pointing at `.tsx`/`.ts` sources — Vite/esbuild resolves them (verified by `vite build`), matching the server's NodeNext-style imports. Consistent across the codebase.
+- **Confirmation modal built in P1-T9** (reused for ship later) to satisfy S5 for untrack, rather than `window.confirm`.
+- **Automation setup warning** links to the anthropics/claude-code-action README for now; will repoint to the app README once P6-T4 writes it.
+- **Anthropic model default = `claude-sonnet-4-20250514`** per PRD §4 (the spec explicitly chose this), overridable via `ANTHROPIC_MODEL`. The general "use opus-4-8" guidance is overridden here by the spec's stated default. Thinking is left unset (off) to stay model-agnostic across whatever model is configured.
+- **S4 retry** implemented in the Anthropic client (`createMessage`): one retry with backoff on RateLimit/5xx; streaming path leaves retry to the route (P2-T2) so typed input is preserved.
+- **Deferred validation:** live Anthropic calls need `ANTHROPIC_API_KEY` (not set); validated via typecheck + structural checks (prompt assembly, no-key guard).

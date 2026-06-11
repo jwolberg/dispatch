@@ -26,8 +26,8 @@
 
 ## Current Status
 - Overall status: In Progress
-- Current phase: Phase 1 — Skeleton
-- Current ticket: P2-T1
+- Current phase: Phase 2 — Spec chat
+- Current ticket: P2-T2
 - Blockers: None
 
 ---
@@ -124,7 +124,7 @@
   - Files likely involved: `server/anthropic/client.ts`, `server/anthropic/prompts.ts`
   - Depends on: P1-T7 (context cache)
   - Acceptance criteria covered: #3 (foundation), S4
-  - Status: Todo
+  - Status: Complete
 
 - P2-T2 — Chat SSE proxy route
   - Objective: `POST /api/chat` streams an Anthropic turn to the client via SSE; persists the turn into the draft `chats` transcript.
