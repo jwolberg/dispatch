@@ -26,8 +26,8 @@
 
 ## Current Status
 - Overall status: In Progress
-- Current phase: Phase 2 — Spec chat
-- Current ticket: P3-T1
+- Current phase: Phase 3 — File + board
+- Current ticket: P3-T2
 - Blockers: None
 
 ---
@@ -170,7 +170,7 @@
   - Files likely involved: `server/routes/tickets.ts`, `server/providers/github.ts`, `server/db/tickets.ts`
   - Depends on: P2-T5, P1-T4
   - Acceptance criteria covered: #4
-  - Status: Todo
+  - Status: Complete
 
 - P3-T2 — Adapter read methods for status
   - Objective: Implement `getIssue()`, `findLinkedPR()` (body `#<n>` or branch-name match), `getPRStatus()` (state, mergeable, checks), `getWorkflowRuns()`. Pure normalization into DTOs.

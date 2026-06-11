@@ -1,5 +1,6 @@
 import { Octokit } from "@octokit/rest";
-import { isNotFound } from "../lib/errors.js";
+import { httpStatus, isNotFound } from "../lib/errors.js";
+import { autoCloseKeyword } from "./types.js";
 import type {
   CommentTarget,
   GitProvider,
@@ -16,6 +17,8 @@ import type {
   Run,
   SpecInput,
 } from "./types.js";
+
+const DISPATCH_LABEL = "dispatch";
 
 const README_MAX_LINES = 80;
 const FILE_TREE_MAX_DEPTH = 2; // root + one level (PRD F1.3 "depth-2")
@@ -171,11 +174,46 @@ export class GitHubProvider implements GitProvider {
   // ── Methods below are implemented in their own tickets (P3-T1/T2, P4-T1/T3).
   //    Stubbed here so the class satisfies the GitProvider interface.
 
-  async createIssue(_repo: RepoRef, _spec: SpecInput): Promise<IssueRef> {
-    throw new Error("createIssue not yet implemented (P3-T1)");
+  private async ensureLabel(owner: string, repo: string, name: string): Promise<void> {
+    try {
+      await this.octokit.issues.getLabel({ owner, repo, name });
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+      try {
+        await this.octokit.issues.createLabel({ owner, repo, name, color: "5319e7" });
+      } catch (e) {
+        if (httpStatus(e) !== 422) throw e; // 422 = already exists (race)
+      }
+    }
   }
-  async postComment(_target: CommentTarget, _body: string): Promise<void> {
-    throw new Error("postComment not yet implemented (P3-T1)");
+
+  async createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef> {
+    const { owner, repo: name } = splitPath(repo.path);
+    await this.ensureLabel(owner, name, DISPATCH_LABEL);
+
+    // The auto-close keyword is provider-specific and injected here so the core
+    // never branches on provider for ship semantics (F3.1, ARCH §5).
+    const keyword = autoCloseKeyword("github");
+    const body =
+      `${spec.body_markdown}\n\n---\n` +
+      `@claude please implement this. Open a PR referencing this issue ` +
+      `(use \`${keyword} #<this issue number>\` so it auto-closes on merge).`;
+    const labels = Array.from(new Set([...(spec.labels ?? []), DISPATCH_LABEL]));
+
+    const { data } = await this.octokit.issues.create({
+      owner,
+      repo: name,
+      title: spec.title,
+      body,
+      labels,
+    });
+    return { number: data.number, url: data.html_url };
+  }
+
+  async postComment(target: CommentTarget, body: string): Promise<void> {
+    // On GitHub, issue and PR conversation comments share the issues API.
+    const { owner, repo } = splitPath(target.repo.path);
+    await this.octokit.issues.createComment({ owner, repo, issue_number: target.number, body });
   }
   async getIssue(_repo: RepoRef, _issueNumber: number): Promise<Issue> {
     throw new Error("getIssue not yet implemented (P3-T2)");

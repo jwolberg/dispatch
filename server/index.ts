@@ -5,6 +5,7 @@ import { healthRouter } from "./routes/health.js";
 import { discoverRouter } from "./routes/discover.js";
 import { reposRouter } from "./routes/repos.js";
 import { chatRouter } from "./routes/chat.js";
+import { ticketsRouter } from "./routes/tickets.js";
 
 // Bootstrap the Dispatch backend. Route groups (discover, repos, chat, tickets,
 // board, activity, health) are mounted under /api by later tickets; this
@@ -25,6 +26,7 @@ api.use("/health", healthRouter);
 api.use("/discover", discoverRouter);
 api.use("/repos", reposRouter);
 api.use("/chat", chatRouter);
+api.use("/tickets", ticketsRouter);
 app.use("/api", api);
 
 const server = app.listen(config.port, config.host, () => {
