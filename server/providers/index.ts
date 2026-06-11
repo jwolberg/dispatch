@@ -10,6 +10,12 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// Adapters are memoized by (provider, host) so a single instance — and its
+// in-process conditional-request (ETag) cache — survives across poll cycles.
+// Without this, every getProvider() built a fresh Octokit and the ETag cache
+// reset each 20s tick, so unchanged polls kept spending rate-limit quota.
+const providerCache = new Map<string, GitProvider>();
+
 /**
  * Factory: select a provider implementation from a repo's stored (provider,
  * host). This is the ONLY place adapters are constructed; callers depend on the
@@ -19,13 +25,27 @@ function requireEnv(name: string): string {
  * Tokens are read from the environment server-side and never leave the backend.
  */
 export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
+  const key = `${provider}:${host ?? ""}`;
+  const cached = providerCache.get(key);
+  if (cached) return cached;
+
+  let instance: GitProvider;
   switch (provider) {
     case "github":
-      return new GitHubProvider(requireEnv("GITHUB_TOKEN"), host);
+      instance = new GitHubProvider(requireEnv("GITHUB_TOKEN"), host);
+      break;
     case "gitlab":
       // Self-hosted GitLab is handled by passing GITLAB_HOST as the base URL.
-      return new GitLabProvider(requireEnv("GITLAB_TOKEN"), host ?? process.env.GITLAB_HOST ?? null);
+      instance = new GitLabProvider(requireEnv("GITLAB_TOKEN"), host ?? process.env.GITLAB_HOST ?? null);
+      break;
     default:
       throw new Error(`Unknown provider: ${provider as string}`);
   }
+  providerCache.set(key, instance);
+  return instance;
+}
+
+/** Drop memoized adapters (e.g. after a token/env change). Test + ops hook. */
+export function resetProviderCache(): void {
+  providerCache.clear();
 }

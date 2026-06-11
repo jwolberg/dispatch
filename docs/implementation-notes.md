@@ -306,6 +306,40 @@ workflows; the Claude GitHub App makes merges app-authored → deploy fires.
 
 **Not yet built:** the board state split (Shipped → In staging → Released).
 
+## 2026-06-11 — Rate-limit fix: conditional requests (ETags) on GitHub polling
+**Why:** the poller re-fetched full issue/PR/checks/runs every 20s active tick
+(~9–14 REST calls per active-PR ticket), so 2–3 active tickets saturated GitHub's
+5,000/hr core budget and tripped secondary limits via the concurrent `Promise.all`
+bursts. The `etag_map_json` DB column + `getEtagMap` existed but were never wired
+(reconcile passed `{}` — the deferred P6-T1).
+
+**Fix:**
+- `providers/index.ts` — `getProvider` now **memoizes** adapters by `(provider,
+  host)`. Previously a fresh Octokit was built every call, so any ETag cache reset
+  each tick. Added `resetProviderCache()` for token/env changes.
+- `providers/github.ts` — added an in-process `cond()` helper + `condCache`
+  (`Map<key,{etag,data}>`). It sends `If-None-Match` and returns the cached body on
+  **304**, which GitHub does *not* charge against quota. Wrapped the hot reads:
+  `issues.get`, `pulls.list`, `pulls.get`, `checks.listForRef`,
+  `getCombinedStatusForRef` (shared key across collectChecks + findPreviewUrl),
+  `listDeployments`, `listDeploymentStatuses`, `listWorkflowRunsForRepo`
+  (keyed per-repo since it's a repo-wide list filtered client-side). Handles 304
+  whether Octokit returns status 304 or throws.
+
+**Decision — in-memory, not DB-threaded:** the P6-T1 seam implied persisting ETags
+in `etag_map_json` and threading per-resource ETags + notModified through the
+GitProvider interface. Chose an in-process cache instead: it keeps the ARCH §5
+provider interface (grep-guarded seam) untouched, is the smallest change to the
+critical adapter, and freshness is identical (we still request every cycle — 304s
+just cost no quota). **Tradeoff:** the cache is lost on process restart → one cold
+re-fetch burst (matters on Cloud Run scale-to-zero). The `etag_map_json` columns
+are left in place as the documented upgrade path if cold-start bursts prove
+problematic. Comment pagination in `getIssue` is left unconditional (paginate()
+doesn't surface per-page ETags) — noted as a follow-up.
+
+**Validation:** `npm run verify` (typecheck + seam guard) green. Live 304 behavior
+not exercised here (no token in this env); the helper handles both 304 surfaces.
+
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
 `claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation

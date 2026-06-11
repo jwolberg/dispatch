@@ -82,10 +82,42 @@ function splitPath(path: string): { owner: string; repo: string } {
 export class GitHubProvider implements GitProvider {
   private readonly octokit: Octokit;
 
+  // In-process conditional-request cache (S3). Keyed per endpoint+args; sends
+  // If-None-Match and returns the cached body on a 304 — which GitHub does NOT
+  // charge against the rate-limit budget. Survives across poll cycles because
+  // getProvider() memoizes this provider instance.
+  private readonly condCache = new Map<string, { etag: string; data: unknown }>();
+
   constructor(token: string, host?: string | null) {
     // Self-hosted GitHub Enterprise uses /api/v3; github.com uses the default.
     const baseUrl = host ? `${host.replace(/\/$/, "")}/api/v3` : undefined;
     this.octokit = new Octokit({ auth: token, baseUrl });
+  }
+
+  /**
+   * Wrap a single GET so an unchanged resource costs no rate-limit quota. Sends
+   * If-None-Match from the cached ETag; on 304 returns the cached body, on 200
+   * stores the fresh ETag + body. Octokit surfaces 304 either as a response with
+   * status 304 or (on some paths) a thrown error — both are handled. Errors
+   * other than 304 (404, etc.) propagate so existing handlers behave unchanged.
+   */
+  private async cond<T>(
+    key: string,
+    call: (
+      headers: Record<string, string>
+    ) => Promise<{ status: number; headers: { etag?: string }; data: T }>
+  ): Promise<T> {
+    const cached = this.condCache.get(key);
+    const headers: Record<string, string> = cached ? { "if-none-match": cached.etag } : {};
+    try {
+      const res = await call(headers);
+      if (res.status === 304 && cached) return cached.data as T;
+      if (res.headers.etag) this.condCache.set(key, { etag: res.headers.etag, data: res.data });
+      return res.data;
+    } catch (err) {
+      if (httpStatus(err) === 304 && cached) return cached.data as T;
+      throw err;
+    }
   }
 
   async getRateLimit(): Promise<RateLimit> {
@@ -262,7 +294,11 @@ export class GitHubProvider implements GitProvider {
   }
   async getIssue(repo: RepoRef, issueNumber: number): Promise<Issue> {
     const { owner, repo: name } = splitPath(repo.path);
-    const { data } = await this.octokit.issues.get({ owner, repo: name, issue_number: issueNumber });
+    const data = await this.cond(`issue:${owner}/${name}#${issueNumber}`, (headers) =>
+      this.octokit.issues.get({ owner, repo: name, issue_number: issueNumber, headers })
+    );
+    // NOTE: comment pagination is left unconditional for now (paginate() doesn't
+    // surface per-page ETags). Follow-up: conditional first page for ≤100 comments.
     const comments = await this.octokit.paginate(this.octokit.issues.listComments, {
       owner,
       repo: name,
@@ -303,19 +339,22 @@ export class GitHubProvider implements GitProvider {
 
   async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
     const { owner, repo: name } = splitPath(repo.path);
-    const prs = await this.octokit.pulls.list({
-      owner,
-      repo: name,
-      state: "all",
-      sort: "updated",
-      direction: "desc",
-      per_page: 50,
-    });
+    const prs = await this.cond(`pulls.list:${owner}/${name}`, (headers) =>
+      this.octokit.pulls.list({
+        owner,
+        repo: name,
+        state: "all",
+        sort: "updated",
+        direction: "desc",
+        per_page: 50,
+        headers,
+      })
+    );
     // F4.4: linked if the PR body references #<n> or its branch name contains
     // the issue number (bounded so #1 doesn't match #10 or branch "v10").
     const bodyRef = new RegExp(`#${issueNumber}(?!\\d)`);
     const branchRef = new RegExp(`(?<!\\d)${issueNumber}(?!\\d)`);
-    const match = prs.data.find(
+    const match = prs.find(
       (pr) => bodyRef.test(pr.body ?? "") || branchRef.test(pr.head.ref)
     );
     if (!match) return null;
@@ -329,7 +368,9 @@ export class GitHubProvider implements GitProvider {
 
   async getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus> {
     const { owner, repo: name } = splitPath(repo.path);
-    const { data: pr } = await this.octokit.pulls.get({ owner, repo: name, pull_number: prNumber });
+    const pr = await this.cond(`pull:${owner}/${name}#${prNumber}`, (headers) =>
+      this.octokit.pulls.get({ owner, repo: name, pull_number: prNumber, headers })
+    );
     const [checks, previewUrl] = await Promise.all([
       this.collectChecks(owner, name, pr.head.sha),
       this.findPreviewUrl(owner, name, pr.head.sha, pr.head.ref),
@@ -366,7 +407,10 @@ export class GitHubProvider implements GitProvider {
     branch: string
   ): Promise<string | null> {
     try {
-      const { data } = await this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha });
+      // Same cache key as collectChecks' combined-status fetch — one ETag covers both.
+      const data = await this.cond(`combined:${owner}/${repo}@${sha}`, (headers) =>
+        this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha, headers })
+      );
       const s = data.statuses.find(
         (s) => /vercel|netlify|preview|deploy|render|surge|pages/i.test(s.context) && s.target_url
       );
@@ -375,19 +419,19 @@ export class GitHubProvider implements GitProvider {
       if (!isNotFound(err)) throw err;
     }
     try {
-      const { data: deployments } = await this.octokit.repos.listDeployments({
-        owner,
-        repo,
-        ref: branch,
-        per_page: 5,
-      });
+      const deployments = await this.cond(`deployments:${owner}/${repo}@${branch}`, (headers) =>
+        this.octokit.repos.listDeployments({ owner, repo, ref: branch, per_page: 5, headers })
+      );
       for (const d of deployments) {
-        const { data: statuses } = await this.octokit.repos.listDeploymentStatuses({
-          owner,
-          repo,
-          deployment_id: d.id,
-          per_page: 5,
-        });
+        const statuses = await this.cond(`depstatus:${owner}/${repo}#${d.id}`, (headers) =>
+          this.octokit.repos.listDeploymentStatuses({
+            owner,
+            repo,
+            deployment_id: d.id,
+            per_page: 5,
+            headers,
+          })
+        );
         const st = statuses.find((s) => s.environment_url || s.target_url);
         if (st) return st.environment_url || st.target_url || null;
       }
@@ -399,18 +443,22 @@ export class GitHubProvider implements GitProvider {
 
   private async collectChecks(owner: string, repo: string, sha: string): Promise<Check[]> {
     const [runs, combined] = await Promise.all([
-      this.octokit.checks.listForRef({ owner, repo, ref: sha, per_page: 100 }),
-      this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha }).catch((e) => {
+      this.cond(`checkruns:${owner}/${repo}@${sha}`, (headers) =>
+        this.octokit.checks.listForRef({ owner, repo, ref: sha, per_page: 100, headers })
+      ),
+      this.cond(`combined:${owner}/${repo}@${sha}`, (headers) =>
+        this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha, headers })
+      ).catch((e) => {
         if (isNotFound(e)) return null;
         throw e;
       }),
     ]);
-    const fromRuns: Check[] = runs.data.check_runs.map((r) => ({
+    const fromRuns: Check[] = runs.check_runs.map((r) => ({
       name: r.name,
       state: mapCheckRun(r.status, r.conclusion),
       url: r.html_url ?? null,
     }));
-    const fromStatuses: Check[] = (combined?.data.statuses ?? []).map((s) => ({
+    const fromStatuses: Check[] = (combined?.statuses ?? []).map((s) => ({
       name: s.context,
       state: mapCommitStatus(s.state),
       url: s.target_url ?? null,
@@ -420,11 +468,11 @@ export class GitHubProvider implements GitProvider {
 
   async getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]> {
     const { owner, repo: name } = splitPath(repo.path);
-    const { data } = await this.octokit.actions.listWorkflowRunsForRepo({
-      owner,
-      repo: name,
-      per_page: 30,
-    });
+    // Repo-wide list (filtered by ref client-side below), so one ETag per repo
+    // serves every ticket's call this cycle.
+    const data = await this.cond(`runs:${owner}/${name}`, (headers) =>
+      this.octokit.actions.listWorkflowRunsForRepo({ owner, repo: name, per_page: 30, headers })
+    );
     return data.workflow_runs
       .filter((r) => r.head_branch === ref || r.head_sha === ref)
       .map((r) => ({
