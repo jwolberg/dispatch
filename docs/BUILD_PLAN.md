@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 3 — File + board
-- Current ticket: P3-T6
+- Current ticket: P3-T7
 - Blockers: None
 
 ---
@@ -205,7 +205,7 @@
   - Files likely involved: `web/pages/Board.tsx`, `web/components/{BoardColumn,TicketCard,StatusChip}.tsx`, `web/hooks/usePolling.ts`
   - Depends on: P3-T4, P1-T8
   - Acceptance criteria covered: #4, #5, #8, #10
-  - Status: Todo
+  - Status: Complete
 
 - P3-T7 — Card detail UI
   - Objective: Card detail view rendering issue body, progress comment with live checkboxes (markdown), linked PR with per-check status, run link, transcript link.
