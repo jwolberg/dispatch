@@ -119,6 +119,13 @@ export interface MergeResult {
   sha: string | null;
 }
 
+/** Rate-limit snapshot for the health route + footer (PRD F4.2 / S3). */
+export interface RateLimit {
+  limit: number | null;
+  remaining: number | null;
+  reset: string | null; // ISO timestamp
+}
+
 /** Where a steer comment goes (F4.5): the issue or its PR/MR. */
 export interface CommentTarget {
   repo: RepoRef;
@@ -132,6 +139,8 @@ export interface CommentTarget {
  * async (every call hits the network).
  */
 export interface GitProvider {
+  /** Validates the token and returns its rate-limit budget (throws if invalid). */
+  getRateLimit(): Promise<RateLimit>;
   discoverRepos(): Promise<RepoSummary[]>;
   getRepoContext(repo: RepoRef, claudeMdPath?: string | null): Promise<RepoContext>;
   createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef>;

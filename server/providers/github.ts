@@ -9,6 +9,7 @@ import type {
   MergeResult,
   PRRef,
   PRStatus,
+  RateLimit,
   RepoContext,
   RepoRef,
   RepoSummary,
@@ -37,6 +38,16 @@ export class GitHubProvider implements GitProvider {
     // Self-hosted GitHub Enterprise uses /api/v3; github.com uses the default.
     const baseUrl = host ? `${host.replace(/\/$/, "")}/api/v3` : undefined;
     this.octokit = new Octokit({ auth: token, baseUrl });
+  }
+
+  async getRateLimit(): Promise<RateLimit> {
+    const { data } = await this.octokit.rateLimit.get();
+    const core = data.resources.core;
+    return {
+      limit: core.limit ?? null,
+      remaining: core.remaining ?? null,
+      reset: core.reset ? new Date(core.reset * 1000).toISOString() : null,
+    };
   }
 
   async discoverRepos(): Promise<RepoSummary[]> {

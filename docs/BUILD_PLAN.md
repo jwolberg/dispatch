@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T5
+- Current ticket: P1-T6
 - Blockers: None
 
 ---
@@ -79,7 +79,7 @@
   - Files likely involved: `server/routes/health.ts`, `server/lib/redaction.ts`
   - Depends on: P1-T2, P1-T4
   - Acceptance criteria covered: #1 (health check), S2
-  - Status: Todo
+  - Status: Complete
 
 - P1-T6 — Discover route
   - Objective: `GET /api/discover?provider=github` → adapter `discoverRepos()` normalized to `RepoSummary[]`.

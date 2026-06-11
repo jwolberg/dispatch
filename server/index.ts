@@ -1,6 +1,7 @@
 import express from "express";
 import { loadConfig } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
+import { healthRouter } from "./routes/health.js";
 
 // Bootstrap the Dispatch backend. Route groups (discover, repos, chat, tickets,
 // board, activity, health) are mounted under /api by later tickets; this
@@ -17,13 +18,7 @@ const app = express();
 app.use(express.json());
 
 const api = express.Router();
-
-// Placeholder until the real health route (P1-T5) lands, so the dev loop is
-// verifiable end-to-end from boot.
-api.get("/ping", (_req, res) => {
-  res.json({ ok: true, service: "dispatch" });
-});
-
+api.use("/health", healthRouter);
 app.use("/api", api);
 
 const server = app.listen(config.port, config.host, () => {
