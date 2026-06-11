@@ -204,3 +204,20 @@ opens a PR). Moved the standing "Fixes #N" convention to
 
 **To apply on an existing repo:** re-run the installer (it updates claude.yml in
 place by sha), then re-trigger (@claude comment / Implement button).
+
+## 2026-06-11 — Design: environments-gated staging (diagram only)
+**Decision (confirmed with user):** insert a verify-before-prod stage using GitHub
+Environments on a single `main` branch (not a staging branch / GitFlow).
+
+**Pipeline (see docs/pipeline-architecture-diagram.html):**
+- PR gets CI tests via the repo's own `on: pull_request` workflow (NOT
+  claude-code-action) — this is what feeds the board's Building/Ready/Blocked.
+- PR also gets a per-PR Preview env (existing).
+- Merge → auto-deploy to a persistent **Staging** environment + smoke/e2e tests.
+- **Production** deploy gated behind a manual approval on the GitHub "production"
+  Environment.
+- Board mapping (future): split Shipped → "In staging" → "Released".
+
+**First step shipped:** updated the architecture diagram only (this commit).
+**Next (not yet built):** ci.yml + deploy-staging.yml + deploy-production.yml
+templates + installer wiring, and the new board state.
