@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 4 — Test + ship
-- Current ticket: P4-T5
+- Current ticket: P5-T1
 - Blockers: None
 
 ---
@@ -258,7 +258,7 @@
   - Files likely involved: `server/routes/activity.ts`, `web/pages/Activity.tsx`
   - Depends on: P3-T3
   - Acceptance criteria covered: (F7) — supports #5/#7/#8 traceability
-  - Status: Todo
+  - Status: Complete
 
 ### Phase 5 — GitLab adapter (PRD M5)
 **Goal**
