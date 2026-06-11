@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-// PRD §4: model configurable, default claude-sonnet-4-20250514. Overridable via
-// ANTHROPIC_MODEL without code changes.
-export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
+// PRD §4: model configurable, default claude-sonnet-4-6 (current Sonnet — cheaper
+// than Opus tier at $3/$15 per MTok; replaces the now-deprecated
+// claude-sonnet-4-20250514). Overridable via ANTHROPIC_MODEL without code changes.
+export const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 const MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS ?? 4096);
 
 let client: Anthropic | null = null;

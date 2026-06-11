@@ -27,7 +27,7 @@ working health check (footer shows DB + rate-limit status).
 | Key | Required | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | for spec chat | Anthropic Messages API (spec refinement + ticket JSON) |
-| `ANTHROPIC_MODEL` | optional | Override the model (default `claude-sonnet-4-20250514`) |
+| `ANTHROPIC_MODEL` | optional | Override the model (default `claude-sonnet-4-6`) |
 | `GITHUB_TOKEN` | for GitHub repos | Fine-grained PAT (scopes below) |
 | `GITLAB_TOKEN` | for GitLab repos | PAT with `api` scope |
 | `GITLAB_HOST` | self-hosted GitLab | Base URL (defaults to `https://gitlab.com`) |

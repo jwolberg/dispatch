@@ -296,3 +296,12 @@ reaches PR/CI. Also: a PR opened by GITHUB_TOKEN wouldn't trigger CI anyway
   does. Updated adding-a-repo.md + installer comments accordingly.
 
 **To apply on situation:** re-run installer with a PAT that also has PRs+Issues RW.
+
+## 2026-06-11 — Default model → claude-sonnet-4-6
+**Why (user request):** cheaper default. The old default `claude-sonnet-4-20250514`
+is deprecated (retires 2026-06-15). Switched to the current Sonnet
+`claude-sonnet-4-6` ($3/$15 per MTok, 1M context). Verified against the claude-api
+reference. Drop-in: spec-chat + ticket-gen call sites pass only model/max_tokens/
+system/messages (no temperature/thinking/budget_tokens/prefill), so no breaking
+changes. Still overridable via ANTHROPIC_MODEL; prod has no override, so it picks
+up the new default on next deploy.
