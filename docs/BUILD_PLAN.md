@@ -26,8 +26,8 @@
 
 ## Current Status
 - Overall status: In Progress
-- Current phase: Phase 3 — File + board
-- Current ticket: P4-T1
+- Current phase: Phase 4 — Test + ship
+- Current ticket: P4-T2
 - Blockers: None
 
 ---
@@ -230,7 +230,7 @@
   - Files likely involved: `web/components/PreviewButton.tsx`, `server/providers/github.ts` (deployment/status parsing), `web/pages/CardDetail.tsx`
   - Depends on: P3-T7, P3-T2
   - Acceptance criteria covered: #6
-  - Status: Todo
+  - Status: Complete
 
 - P4-T2 — Steer comment
   - Objective: `POST /api/tickets/:id/comment` posts to issue or PR via adapter `postComment()`; UI text box on the card.

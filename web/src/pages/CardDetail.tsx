@@ -115,6 +115,24 @@ export function CardDetailPage() {
                   {status.pr.changedFiles != null && ` · ${status.pr.changedFiles} files`}
                   {status.pr.additions != null && ` · +${status.pr.additions}/-${status.pr.deletions}`}
                 </div>
+                {(() => {
+                  const live = status.pr.previewUrl;
+                  const pattern = repo.preview_url_pattern
+                    ? repo.preview_url_pattern.replace(/\{n\}/g, String(status.pr.number))
+                    : null;
+                  const url = live ?? pattern;
+                  if (!url) return null;
+                  return (
+                    <a
+                      className="mt-2 inline-block rounded bg-blue-600 px-3 py-1.5 text-label font-medium text-white hover:bg-blue-500"
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Preview ↗{live ? "" : " (pattern)"}
+                    </a>
+                  );
+                })()}
                 <ul className="mt-2 flex flex-col gap-1">
                   {status.pr.checks.map((c, i) => (
                     <li key={i} className="flex items-center gap-2 text-label">

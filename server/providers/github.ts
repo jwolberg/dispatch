@@ -315,7 +315,10 @@ export class GitHubProvider implements GitProvider {
   async getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus> {
     const { owner, repo: name } = splitPath(repo.path);
     const { data: pr } = await this.octokit.pulls.get({ owner, repo: name, pull_number: prNumber });
-    const checks = await this.collectChecks(owner, name, pr.head.sha);
+    const [checks, previewUrl] = await Promise.all([
+      this.collectChecks(owner, name, pr.head.sha),
+      this.findPreviewUrl(owner, name, pr.head.sha, pr.head.ref),
+    ]);
     const state = pr.merged ? "merged" : pr.state === "closed" ? "closed" : "open";
     return {
       number: pr.number,
@@ -331,8 +334,52 @@ export class GitHubProvider implements GitProvider {
       additions: pr.additions ?? null,
       deletions: pr.deletions ?? null,
       changedFiles: pr.changed_files ?? null,
-      previewUrl: null, // populated in P4-T1 from deployments/statuses/comments
+      previewUrl,
     };
+  }
+
+  /**
+   * Prefer a live preview URL over the configured pattern (F5.2): a deploy-ish
+   * commit status target, else a deployment status environment URL. (Free-text
+   * bot-comment scraping is intentionally skipped to bound API calls — Vercel/
+   * Netlify post deployment statuses, which this reads.)
+   */
+  private async findPreviewUrl(
+    owner: string,
+    repo: string,
+    sha: string,
+    branch: string
+  ): Promise<string | null> {
+    try {
+      const { data } = await this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha });
+      const s = data.statuses.find(
+        (s) => /vercel|netlify|preview|deploy|render|surge|pages/i.test(s.context) && s.target_url
+      );
+      if (s?.target_url) return s.target_url;
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+    try {
+      const { data: deployments } = await this.octokit.repos.listDeployments({
+        owner,
+        repo,
+        ref: branch,
+        per_page: 5,
+      });
+      for (const d of deployments) {
+        const { data: statuses } = await this.octokit.repos.listDeploymentStatuses({
+          owner,
+          repo,
+          deployment_id: d.id,
+          per_page: 5,
+        });
+        const st = statuses.find((s) => s.environment_url || s.target_url);
+        if (st) return st.environment_url || st.target_url || null;
+      }
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+    return null;
   }
 
   private async collectChecks(owner: string, repo: string, sha: string): Promise<Check[]> {
