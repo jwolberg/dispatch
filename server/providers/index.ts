@@ -1,6 +1,13 @@
 import type { GitProvider, ProviderId } from "./types.js";
+import { GitHubProvider } from "./github.js";
 
 export * from "./types.js";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
 
 /**
  * Factory: select a provider implementation from a repo's stored (provider,
@@ -13,8 +20,7 @@ export * from "./types.js";
 export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
   switch (provider) {
     case "github":
-      // Wired in P1-T4 (GitHub adapter).
-      throw new Error("GitHub provider not yet implemented");
+      return new GitHubProvider(requireEnv("GITHUB_TOKEN"), host);
     case "gitlab":
       // Wired in P5-T1 (GitLab adapter).
       throw new Error("GitLab provider not yet implemented");

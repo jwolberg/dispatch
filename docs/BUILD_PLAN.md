@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T4
+- Current ticket: P1-T5
 - Blockers: None
 
 ---
@@ -72,7 +72,7 @@
   - Files likely involved: `server/providers/github.ts`, `server/lib/errors.ts`
   - Depends on: P1-T3
   - Acceptance criteria covered: #2, #11 (GitHub), #12
-  - Status: Todo
+  - Status: Complete
 
 - P1-T5 — Health route
   - Objective: `GET /api/health` reporting token validity (per configured provider tokens), rate-limit remaining, and DB status; secrets redacted.
