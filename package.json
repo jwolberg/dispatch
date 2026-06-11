@@ -11,6 +11,8 @@
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "start": "tsx server/index.ts",
     "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "check:seam": "bash scripts/check-seam.sh",
     "verify": "npm run typecheck && npm run check:seam"

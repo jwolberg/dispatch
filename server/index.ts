@@ -1,4 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
 import { healthRouter } from "./routes/health.js";
@@ -34,6 +37,17 @@ api.use("/tickets", ticketsRouter);
 api.use("/board", boardRouter);
 api.use("/activity", activityRouter);
 app.use("/api", api);
+
+// Production: serve the built SPA + client-side routing fallback when a web
+// build is present (created by `npm run build`). Dev is unaffected — Vite
+// serves the SPA there, and web/dist doesn't exist.
+const webDist = resolve(dirname(fileURLToPath(import.meta.url)), "..", "web", "dist");
+if (existsSync(webDist)) {
+  app.use(express.static(webDist));
+  // Any non-/api path returns index.html (SPA routes resolve client-side).
+  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(resolve(webDist, "index.html")));
+  console.log(`[dispatch] serving SPA from ${webDist}`);
+}
 
 // Last-resort error handler: redact secrets from any uncaught error before it
 // reaches the client or the logs (S2).
