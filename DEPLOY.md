@@ -1,5 +1,12 @@
 # Deploying Dispatch to Cloud Run (authenticated)
 
+> **Live deployment (2026-06-11):** service `dispatch` in `dispatch-1-499113`,
+> region `us-central1` — `https://dispatch-4mq3uiar6q-uc.a.run.app`
+> (`--no-allow-unauthenticated`; unauthenticated requests return 403). Access it
+> with `gcloud run services proxy dispatch --region us-central1`, or
+> `curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>`.
+
+
 > **Read this first.** Dispatch has **no built-in authentication** and holds
 > credentials that can **merge PRs to production**, file issues, and spend your
 > Anthropic budget. Deploy it **authenticated only** — never with
