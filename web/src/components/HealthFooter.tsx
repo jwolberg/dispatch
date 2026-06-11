@@ -26,6 +26,18 @@ export function HealthFooter({ health }: { health: Health | null }) {
           <span className="text-gray-500">not configured</span>
         )}
       </span>
+      <span>
+        AI:{" "}
+        {health ? (
+          health.anthropic.configured ? (
+            <span className="text-status-ok">● ok</span>
+          ) : (
+            <span className="text-status-wait">● not configured</span>
+          )
+        ) : (
+          "…"
+        )}
+      </span>
     </footer>
   );
 }
