@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { loadConfig } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
 import { healthRouter } from "./routes/health.js";
@@ -8,6 +8,7 @@ import { chatRouter } from "./routes/chat.js";
 import { ticketsRouter } from "./routes/tickets.js";
 import { startPoller } from "./poller/scheduler.js";
 import { boardRouter } from "./routes/board.js";
+import { safeMessage } from "./lib/redaction.js";
 import { activityRouter } from "./routes/activity.js";
 
 // Bootstrap the Dispatch backend. Route groups (discover, repos, chat, tickets,
@@ -33,6 +34,15 @@ api.use("/tickets", ticketsRouter);
 api.use("/board", boardRouter);
 api.use("/activity", activityRouter);
 app.use("/api", api);
+
+// Last-resort error handler: redact secrets from any uncaught error before it
+// reaches the client or the logs (S2).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const message = safeMessage(err);
+  console.error("[dispatch] unhandled error:", message);
+  if (!res.headersSent) res.status(500).json({ error: message });
+});
 
 const server = app.listen(config.port, config.host, () => {
   console.log(`[dispatch] backend listening on http://${config.host}:${config.port}`);

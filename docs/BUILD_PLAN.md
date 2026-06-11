@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 6 — Hardening
-- Current ticket: P6-T2
+- Current ticket: P6-T3
 - Blockers: None
 
 ---
@@ -305,7 +305,7 @@
   - Files likely involved: `server/lib/redaction.ts`, `server/index.ts`, `web/components/*Modal.tsx`
   - Depends on: P1-T1, P4-T3
   - Acceptance criteria covered: S1, S2, S5
-  - Status: Todo
+  - Status: Complete
 
 - P6-T3 — Resilience finalization
   - Objective: Anthropic retry-once + input preservation (S4); poller defensive reconciliation against deleted issues, force-pushed branches, manually merged/closed PRs (S6).
