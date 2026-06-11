@@ -2,6 +2,7 @@ import express from "express";
 import { loadConfig } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
 import { healthRouter } from "./routes/health.js";
+import { discoverRouter } from "./routes/discover.js";
 
 // Bootstrap the Dispatch backend. Route groups (discover, repos, chat, tickets,
 // board, activity, health) are mounted under /api by later tickets; this
@@ -19,6 +20,7 @@ app.use(express.json());
 
 const api = express.Router();
 api.use("/health", healthRouter);
+api.use("/discover", discoverRouter);
 app.use("/api", api);
 
 const server = app.listen(config.port, config.host, () => {

@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T6
+- Current ticket: P1-T7
 - Blockers: None
 
 ---
@@ -86,7 +86,7 @@
   - Files likely involved: `server/routes/discover.ts`
   - Depends on: P1-T4
   - Acceptance criteria covered: #11 (GitHub)
-  - Status: Todo
+  - Status: Complete
 
 - P1-T7 — Repos registry routes + context cache
   - Objective: `GET/POST/DELETE /api/repos` (track/untrack with per-repo config: default branch, preview-URL pattern, merge method, CLAUDE.md path), manual-entry fallback validating token access, and `POST /api/repos/:id/refresh-context` writing the ≤6h-TTL context cache.
