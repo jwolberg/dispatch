@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 3 — File + board
-- Current ticket: P3-T7
+- Current ticket: P4-T1
 - Blockers: None
 
 ---
@@ -212,7 +212,7 @@
   - Files likely involved: `web/pages/CardDetail.tsx`, `web/components/CheckList.tsx`
   - Depends on: P3-T5, P3-T6
   - Acceptance criteria covered: #5, #8, #10
-  - Status: Todo
+  - Status: Complete
 
 ### Phase 4 — Test + ship (PRD M4)
 **Goal**

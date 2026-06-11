@@ -87,7 +87,12 @@ ticketsRouter.get("/:id", async (req, res) => {
   }
 
   res.json({
-    ticket: { id: ticket.id, issue_number: ticket.issue_number, created_at: ticket.created_at },
+    ticket: {
+      id: ticket.id,
+      issue_number: ticket.issue_number,
+      chat_id: ticket.chat_id,
+      created_at: ticket.created_at,
+    },
     repo: {
       id: repo.id,
       path: repo.path,
