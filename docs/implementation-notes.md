@@ -241,3 +241,16 @@ templates + installer wiring, and the new board state.
 Possible follow-up: filter to key events (Ready to test / Blocked / merged) if
 the full feed is too chatty; and a one-message-per-ticket burst can occur on the
 first poll after a DB wipe.
+
+## 2026-06-11 — Architecture page in the console
+**Why (user request):** view the pipeline diagram inside Dispatch.
+- `web/public/pipeline.html` — copy of `docs/pipeline-architecture-diagram.html`
+  (Vite copies web/public/* into the build; Express serves it at `/pipeline.html`).
+  Keep the two in sync when the diagram changes.
+- `web/src/pages/Architecture.tsx` — Page with an iframe to `/pipeline.html`
+  (preserves the hand-tuned absolute layout instead of porting to JSX).
+- Nav + route added in `App.tsx` (`/architecture`, label "Architecture").
+
+## 2026-06-11 — Slack test ping verified
+Sent a manual POST to the configured webhook; Slack returned `ok` (message posted
+to the channel). Confirms SLACK_WEBHOOK_URL wiring end-to-end in production.

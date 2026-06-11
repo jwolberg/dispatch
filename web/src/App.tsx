@@ -9,12 +9,14 @@ import { BoardPage } from "./pages/Board.js";
 import { ChatPage } from "./pages/Chat.js";
 import { CardDetailPage } from "./pages/CardDetail.js";
 import { ActivityPage } from "./pages/Activity.js";
+import { ArchitecturePage } from "./pages/Architecture.js";
 
 const NAV = [
   { to: "/board", label: "Tracking Board" },
   { to: "/chat", label: "Spec Chat" },
   { to: "/activity", label: "Activity" },
   { to: "/repos", label: "Repo Config" },
+  { to: "/architecture", label: "Architecture" },
 ];
 
 export function App() {
@@ -52,6 +54,7 @@ export function App() {
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/tickets/:id" element={<CardDetailPage />} />
           <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/architecture" element={<ArchitecturePage />} />
         </Routes>
       </main>
 

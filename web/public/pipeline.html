@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dispatch — Pipeline Architecture (staging-gated)</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --box: #141821;
+    --box-border: #283040;
+    --text: #d8dde3;
+    --muted: #828d9c;
+    --orange: #e8973c;
+    --blue: #4a9eef;
+    --red: #ef6b52;
+    --green: #2ec88f;
+    --purple: #b07cf0;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    color: var(--text); font-family: var(--mono);
+    padding: 24px; overflow-x: auto;
+  }
+  .canvas {
+    position: relative; width: 1280px; height: 820px; margin: 0 auto;
+  }
+
+  /* ---- group containers ---- */
+  .group { position: absolute; border-radius: 14px; border: 1.6px solid; }
+  .group > .gtitle {
+    position: absolute; top: -10px; left: 20px; padding: 0 8px;
+    background: var(--bg); font-size: 11px; letter-spacing: 2.5px; font-weight: 600;
+  }
+  .g-orange { border-color: rgba(232,151,60,.55); }
+  .g-orange > .gtitle { color: var(--orange); }
+  .g-blue   { border-color: rgba(74,158,239,.5); }
+  .g-blue   > .gtitle { color: var(--blue); }
+  .g-green  { border-color: rgba(46,200,143,.5); }
+  .g-green  > .gtitle { color: var(--green); }
+
+  /* ---- boxes ---- */
+  .box {
+    position: absolute; background: var(--box); border: 1px solid var(--box-border);
+    border-radius: 9px; padding: 13px 16px; z-index: 2;
+  }
+  .box.agent { border-color: rgba(239,107,82,.6); }
+  .box.ci    { border-color: rgba(74,158,239,.6); }
+  .box.gate  { border-color: rgba(176,124,240,.7); background: #181425; }
+  .box .bt { font-weight: 700; font-size: 14.5px; color: #f2f5f8; margin-bottom: 7px; letter-spacing: .3px; }
+  .box .bl { font-size: 11.5px; color: var(--muted); line-height: 1.55; }
+  .box .accent { color: var(--blue); }
+  .box .new { color: var(--green); font-weight: 700; }
+
+  /* ---- svg arrow layer ---- */
+  svg.flows { position: absolute; inset: 0; width: 1280px; height: 820px; z-index: 1; pointer-events: none; overflow: visible; }
+
+  /* ---- flow labels ---- */
+  .lbl {
+    position: absolute; z-index: 3; font-size: 11.5px; color: var(--muted);
+    white-space: nowrap; background: var(--bg); padding: 1px 5px;
+  }
+  .lbl b { color: var(--text); font-weight: 700; }
+  .lbl.o b { color: var(--orange); }
+  .lbl.b b { color: var(--blue); }
+  .lbl.r b { color: var(--red); }
+  .lbl.g b { color: var(--green); }
+  .lbl.p b { color: var(--purple); }
+
+  /* ---- legend + footnotes ---- */
+  .legend { position: absolute; left: 70px; top: 762px; display: flex; flex-wrap: wrap; gap: 22px; align-items: center; font-size: 11.5px; color: var(--muted); z-index: 3; }
+  .legend .sq { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 7px; vertical-align: -1px; }
+  .legend .dash { display:inline-block; width:26px; border-top:1.6px dashed var(--muted); vertical-align: 4px; margin-right:7px; }
+  .notes { position: absolute; left: 70px; top: 788px; font-size: 11px; color: var(--muted); line-height: 1.6; z-index: 3; }
+  .notes b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- ===================== SVG FLOW LAYER ===================== -->
+  <svg class="flows" viewBox="0 0 1280 820">
+    <defs>
+      <marker id="aO" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#e8973c"/></marker>
+      <marker id="aB" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#4a9eef"/></marker>
+      <marker id="aR" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#ef6b52"/></marker>
+      <marker id="aG" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#2ec88f"/></marker>
+      <marker id="aP" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#b07cf0"/></marker>
+    </defs>
+
+    <!-- A1 Web UI <-> Backend (orange double) -->
+    <path d="M245,156 L245,198" stroke="#e8973c" stroke-width="2" fill="none" marker-start="url(#aO)" marker-end="url(#aO)"/>
+    <!-- A2 Backend <-> Claude API (orange double) -->
+    <path d="M245,286 L245,380" stroke="#e8973c" stroke-width="2" fill="none" marker-start="url(#aO)" marker-end="url(#aO)"/>
+
+    <!-- A3 Backend -> Issue : create issue (orange elbow) -->
+    <path d="M390,240 L447,240 L447,101 L491,101" stroke="#e8973c" stroke-width="2" fill="none" marker-end="url(#aO)"/>
+    <!-- A9 GitHub -> Backend : webhooks / live status (dashed blue) -->
+    <path d="M494,274 L392,274" stroke="#4a9eef" stroke-width="1.8" fill="none" stroke-dasharray="6 5" marker-end="url(#aB)"/>
+
+    <!-- A4 Issue -> Actions : trigger (blue) -->
+    <path d="M710,101 L784,101" stroke="#4a9eef" stroke-width="2" fill="none" marker-end="url(#aB)"/>
+    <!-- A5 Actions -> Ephemeral runner : checkout (blue) -->
+    <path d="M904,142 L904,208" stroke="#4a9eef" stroke-width="2" fill="none" marker-end="url(#aB)"/>
+    <!-- A6 Claude Code -> Pull request : open PR (red) -->
+    <path d="M620,344 L612,398" stroke="#ef6b52" stroke-width="2" fill="none" marker-end="url(#aR)"/>
+
+    <!-- A_ci Pull request -> CI tests : on: pull_request (blue) -->
+    <path d="M710,438 L758,438" stroke="#4a9eef" stroke-width="2" fill="none" marker-end="url(#aB)"/>
+
+    <!-- A_ship Backend -> Pull request : ship / merge (dashed orange elbow) -->
+    <path d="M390,292 L432,292 L432,438 L491,438" stroke="#e8973c" stroke-width="1.8" fill="none" stroke-dasharray="6 5" marker-end="url(#aO)"/>
+
+    <!-- A7 Pull request -> Preview env : preview build (green) -->
+    <path d="M560,478 L560,592" stroke="#2ec88f" stroke-width="2" fill="none" marker-end="url(#aG)"/>
+    <!-- A_merge Pull request -> Staging : merge deploy (green elbow) -->
+    <path d="M664,478 L664,546 L838,546 L838,592" stroke="#2ec88f" stroke-width="2" fill="none" marker-end="url(#aG)"/>
+    <!-- A_promote Staging -> Production : through approval gate (purple) -->
+    <path d="M950,648 L1010,648" stroke="#b07cf0" stroke-width="2" fill="none" marker-end="url(#aP)"/>
+  </svg>
+
+  <!-- ===================== GROUPS ===================== -->
+  <div class="group g-orange" style="left:70px; top:30px; width:352px; height:300px;"><span class="gtitle">YOUR CONTROL PLANE</span></div>
+  <div class="group g-blue"   style="left:464px; top:30px; width:582px; height:460px;"><span class="gtitle">GITHUB</span></div>
+  <div class="group g-green"  style="left:464px; top:560px; width:776px; height:180px;"><span class="gtitle">DEPLOY TARGETS</span></div>
+
+  <!-- ===================== BOXES ===================== -->
+  <!-- control plane -->
+  <div class="box" style="left:100px; top:58px; width:290px; height:98px;">
+    <div class="bt">Web UI</div>
+    <div class="bl">spec chat · ticket board<br>live monitor · preview · ship</div>
+  </div>
+  <div class="box" style="left:100px; top:198px; width:290px; height:88px;">
+    <div class="bt">Backend (Express)</div>
+    <div class="bl">Octokit client · API proxy<br>webhook receiver</div>
+  </div>
+  <div class="box" style="left:100px; top:380px; width:290px; height:92px;">
+    <div class="bt">Claude API</div>
+    <div class="bl">/v1/messages — stateless<br>context injected per call:<br>CLAUDE.md + file tree</div>
+  </div>
+
+  <!-- github -->
+  <div class="box" style="left:494px; top:60px; width:216px; height:82px;">
+    <div class="bt">Issue #123</div>
+    <div class="bl">spec body + @claude<br>progress checkboxes</div>
+  </div>
+  <div class="box" style="left:788px; top:60px; width:232px; height:82px;">
+    <div class="bt">Actions workflow</div>
+    <div class="bl">@claude trigger filter<br>permissions · timeout</div>
+  </div>
+
+  <!-- ephemeral runner (sub-group) -->
+  <div class="group g-blue" style="left:494px; top:212px; width:526px; height:150px; border-style:solid; border-color:rgba(74,158,239,.3);">
+    <span class="gtitle" style="color:var(--text); letter-spacing:.5px; font-size:12px; top:10px; left:18px; padding:0; background:transparent;">Ephemeral runner</span>
+  </div>
+  <div class="box agent" style="left:514px; top:250px; width:212px; height:94px;">
+    <div class="bt">Claude Code</div>
+    <div class="bl">reads · edits · runs tests<br>commits to branch</div>
+  </div>
+  <div class="box" style="left:760px; top:250px; width:240px; height:94px;">
+    <div class="bt">Repo checkout</div>
+    <div class="bl">full clone on disk<br>incl. CLAUDE.md + .claude/skills</div>
+  </div>
+
+  <div class="box" style="left:494px; top:398px; width:216px; height:80px;">
+    <div class="bt">Pull request</div>
+    <div class="bl">diff · review · checks</div>
+  </div>
+  <!-- NEW: CI tests gate -->
+  <div class="box ci" style="left:758px; top:398px; width:276px; height:84px;">
+    <div class="bt">CI tests <span class="new">· gate</span></div>
+    <div class="bl"><span class="accent">on: pull_request</span> — repo's own workflow<br>lint · unit · integration · build</div>
+  </div>
+
+  <!-- deploy targets -->
+  <div class="box" style="left:494px; top:596px; width:206px; height:100px;">
+    <div class="bt">Preview env</div>
+    <div class="bl">per-PR ephemeral URL<br>Vercel / Netlify / Run</div>
+  </div>
+  <!-- NEW: persistent staging -->
+  <div class="box" style="left:726px; top:596px; width:224px; height:100px;">
+    <div class="bt">Staging env <span class="new">· new</span></div>
+    <div class="bl">auto-deploy on merge<br>smoke / e2e tests</div>
+  </div>
+  <!-- NEW: approval gate -->
+  <div class="box gate" style="left:962px; top:622px; width:44px; height:48px; padding:0; display:flex; align-items:center; justify-content:center; z-index:3;">
+    <div class="bt" style="margin:0; font-size:18px;">🔒</div>
+  </div>
+  <div class="box" style="left:1014px; top:596px; width:206px; height:100px;">
+    <div class="bt">Production</div>
+    <div class="bl">deploys after approval<br>on the prod Environment</div>
+  </div>
+
+  <!-- ===================== FLOW LABELS ===================== -->
+  <div class="lbl o" style="left:150px; top:160px;"><b>1 ·</b> spec chat</div>
+  <div class="lbl b" style="left:258px; top:300px;">webhooks · live status ↩</div>
+  <div class="lbl o" style="left:360px; top:150px;"><b>2 ·</b> create issue</div>
+  <div class="lbl b" style="left:716px; top:78px;"><b>3 ·</b> trigger</div>
+  <div class="lbl b" style="left:914px; top:166px;"><b>4 ·</b> checkout</div>
+  <div class="lbl r" style="left:628px; top:360px;"><b>5 ·</b> open PR</div>
+  <div class="lbl b" style="left:716px; top:494px;"><b>6 ·</b> CI checks</div>
+  <div class="lbl o" style="left:300px; top:352px;"><b>·</b> ship — merge PR</div>
+  <div class="lbl g" style="left:516px; top:576px;"><b>7 ·</b> preview build</div>
+  <div class="lbl g" style="left:690px; top:532px;"><b>8 ·</b> merge → deploy staging</div>
+  <div class="lbl p" style="left:905px; top:576px;"><b>9 ·</b> 🔒 approve</div>
+
+  <!-- ===================== LEGEND ===================== -->
+  <div class="legend">
+    <span><span class="sq" style="background:var(--orange)"></span>you / your site</span>
+    <span><span class="sq" style="background:var(--blue)"></span>GitHub / CI</span>
+    <span><span class="sq" style="background:var(--red)"></span>Claude Code agent</span>
+    <span><span class="sq" style="background:var(--green)"></span>deploy</span>
+    <span><span class="sq" style="background:var(--purple)"></span>manual gate</span>
+    <span><span class="dash"></span>dashed = async / on-demand</span>
+  </div>
+  <div class="notes">
+    <b>CI tests (6)</b> run from the repo's own <span style="color:var(--blue)">on: pull_request</span> workflow — not claude-code-action — and feed Dispatch's board (Building → Ready&nbsp;to&nbsp;test → Blocked).<br>
+    <b>Merge (8)</b> auto-deploys to <span style="color:var(--green)">Staging</span> + runs smoke tests; <b>Production (9)</b> is gated behind a manual approval on the GitHub <b>“production” Environment</b>. Board: Shipped → <b>In&nbsp;staging</b> → <b>Released</b>.
+  </div>
+
+</div>
+</body>
+</html>
