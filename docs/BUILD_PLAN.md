@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T3
+- Current ticket: P1-T4
 - Blockers: None
 
 ---
@@ -65,7 +65,7 @@
   - Files likely involved: `server/providers/types.ts`, `server/providers/index.ts`
   - Depends on: P1-T1
   - Acceptance criteria covered: #12 (seam definition)
-  - Status: Todo
+  - Status: Complete
 
 - P1-T4 — GitHub adapter: discovery + context
   - Objective: Octokit-backed `discoverRepos()` (`GET /user/repos`, paginated, `pushed_at`) and `getRepoContext()` (description, depth-2 file tree via Git Trees API, CLAUDE.md, README first ~80 lines), plus automation detection (presence of a `claude` workflow file). Octokit imported only here.
