@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 2 — Spec chat
-- Current ticket: P2-T2
+- Current ticket: P2-T3
 - Blockers: None
 
 ---
@@ -131,7 +131,7 @@
   - Files likely involved: `server/routes/chat.ts`, `server/db/chats.ts`
   - Depends on: P2-T1, P1-T2
   - Acceptance criteria covered: (enables #3)
-  - Status: Todo
+  - Status: Complete
 
 - P2-T3 — Generate-ticket JSON flow
   - Objective: `POST /api/chat/:id/generate-ticket` requests strict JSON; backend strips code fences, validates, and **retries once with an error-correction prompt** on parse failure.
