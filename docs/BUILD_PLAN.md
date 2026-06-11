@@ -25,10 +25,10 @@
 - **Explicit non-goals affecting implementation (PRD §2):** no multi-user/auth/roles, no public hosting, no in-app deep diff review (link out to provider), no local Agent SDK execution, no mobile-native app. Future items (webhooks, local test daemon, Agent SDK mode, cost telemetry) are out of scope but seams must not preclude them.
 
 ## Current Status
-- Overall status: In Progress
-- Current phase: Phase 6 — Hardening
-- Current ticket: P6-T5
-- Blockers: None
+- Overall status: Implementation complete; live end-to-end verification pending credentials
+- Current phase: Phase 6 — Hardening (complete)
+- Current ticket: None — all tickets Complete
+- Blockers: Live acceptance (#2,#3,#4-8,#11,#12-loop) needs ANTHROPIC_API_KEY + GITHUB_TOKEN/GITLAB_TOKEN and a repo with claude-code-action
 
 ---
 
@@ -326,7 +326,7 @@
   - Files likely involved: `docs/implementation-notes.md`
   - Depends on: P6-T1, P6-T2, P6-T3, P6-T4
   - Acceptance criteria covered: #1–#12
-  - Status: Todo
+  - Status: Complete
 
 ---
 
