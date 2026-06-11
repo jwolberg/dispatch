@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 6 — Hardening
-- Current ticket: P6-T4
+- Current ticket: P6-T5
 - Blockers: None
 
 ---
@@ -319,7 +319,7 @@
   - Files likely involved: `README.md`
   - Depends on: P5-T1
   - Acceptance criteria covered: #1 (fresh-clone path)
-  - Status: Todo
+  - Status: Complete
 
 - P6-T5 — Acceptance pass
   - Objective: Walk all 12 acceptance criteria; run the 10× generate-ticket parse test (#3), the db-wipe rebuild test (#9), the readability contrast spot-check (#10), and the GitLab full-loop + grep guard (#12). Record results in implementation notes.
