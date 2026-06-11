@@ -43,16 +43,34 @@ export function getGauge(): Gauge {
   return { ...gauge };
 }
 
-/** Pull Retry-After (seconds) from a provider error, if present. */
+/**
+ * If `err` is a genuine rate-limit response, return the backoff (seconds);
+ * otherwise null. A 429 is always a throttle. A 403 is only a throttle when it
+ * carries rate-limit signals (a `retry-after` header, exhausted
+ * `x-ratelimit-remaining`, or a "rate limit" message) — GitHub also returns 403
+ * for *permission* errors ("Resource not accessible by personal access token"),
+ * which must NOT pause polling (otherwise a missing PAT scope masquerades as
+ * rate limiting and stalls the poller).
+ */
 export function retryAfter(err: unknown): number | null {
-  if (httpStatus(err) === 429 || httpStatus(err) === 403) {
-    const headers = (err as { response?: { headers?: Record<string, string> } })?.response?.headers;
-    const ra = headers?.["retry-after"];
-    if (ra) {
-      const n = Number(ra);
-      if (Number.isFinite(n)) return n;
-    }
-    return 60; // default backoff for secondary limits without a header
+  const status = httpStatus(err);
+  if (status !== 429 && status !== 403) return null;
+
+  const headers = (err as { response?: { headers?: Record<string, string> } })?.response?.headers ?? {};
+  const retryAfterHeader = headers["retry-after"];
+  const remaining = headers["x-ratelimit-remaining"];
+  const message = (err as { message?: string })?.message ?? "";
+
+  const isRateLimited =
+    status === 429 ||
+    retryAfterHeader != null ||
+    remaining === "0" ||
+    /rate limit/i.test(message);
+  if (!isRateLimited) return null; // e.g. a permission 403 — a normal failure, not a throttle
+
+  if (retryAfterHeader) {
+    const n = Number(retryAfterHeader);
+    if (Number.isFinite(n)) return n;
   }
-  return null;
+  return 60; // throttled but no explicit Retry-After (secondary limit)
 }

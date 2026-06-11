@@ -340,6 +340,24 @@ doesn't surface per-page ETags) — noted as a follow-up.
 **Validation:** `npm run verify` (typecheck + seam guard) green. Live 304 behavior
 not exercised here (no token in this env); the helper handles both 304 surfaces.
 
+## 2026-06-11 — Fix: don't treat permission-403 as rate limiting
+**Why:** prod logs showed the poller hitting `403 "Resource not accessible by
+personal access token"` on check-runs/commit-status for a repo whose PAT lacks
+Checks/Statuses read scope. `retryAfter()` treated *any* 403 as a throttle →
+`markRateLimited(60)` → polling paused. So a missing PAT scope masqueraded as a
+rate limit (the user's "keep getting rate limited" symptom).
+
+**Fix (`server/lib/ratelimit.ts`):** `retryAfter()` now backs off on 429 always,
+but on 403 only when it carries real rate-limit signals — a `retry-after` header,
+`x-ratelimit-remaining: 0`, or a "rate limit" message. A permission-403 returns
+null → it's a normal reconcile failure (logged, swallowed by safeReconcile), not a
+poller-wide pause.
+
+**Still required (operator):** grant the fine-grained PAT **Checks: read** +
+**Commit statuses: read** on the affected repo and update the `github-token`
+secret — this fix stops the false pause, but the reads still 403 until the scope
+is granted. Pairs with the ETag fix above.
+
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
 `claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation
