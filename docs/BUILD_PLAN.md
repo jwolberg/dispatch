@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 2 — Spec chat
-- Current ticket: P2-T5
+- Current ticket: P3-T1
 - Blockers: None
 
 ---
@@ -152,7 +152,7 @@
   - Files likely involved: `web/components/TicketPreviewModal.tsx`
   - Depends on: P2-T3, P2-T4
   - Acceptance criteria covered: #3, #4 (hand-off)
-  - Status: Todo
+  - Status: Complete
 
 ### Phase 3 — File + board (PRD M3)
 **Goal**
