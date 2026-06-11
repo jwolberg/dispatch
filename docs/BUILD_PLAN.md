@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 2 — Spec chat
-- Current ticket: P2-T4
+- Current ticket: P2-T5
 - Blockers: None
 
 ---
@@ -145,7 +145,7 @@
   - Files likely involved: `web/pages/Chat.tsx`, `web/hooks/useChatStream.ts`, `web/api/chat.ts`
   - Depends on: P2-T2, P1-T8
   - Acceptance criteria covered: (enables #3), S4
-  - Status: Todo
+  - Status: Complete
 
 - P2-T5 — Generate-ticket preview/edit modal
   - Objective: Modal showing generated title/body/labels, fully editable before filing; "File ticket" hands off to Phase 3.
