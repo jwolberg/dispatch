@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 5 — GitLab adapter
-- Current ticket: P5-T2
+- Current ticket: P6-T1
 - Blockers: None
 
 ---
@@ -281,7 +281,7 @@
   - Files likely involved: `package.json` (lint/grep script), `docs/implementation-notes.md`
   - Depends on: P5-T1
   - Acceptance criteria covered: #12
-  - Status: Todo
+  - Status: Complete
 
 ### Phase 6 — Hardening (PRD M6)
 **Goal**

@@ -31,3 +31,9 @@ Running log of decisions, deviations, and tradeoffs for human review.
 - **Preview URL (F5.2):** detected from deploy-ish commit statuses + deployment status environment URLs; free-text bot-comment scraping skipped to bound API calls. Pattern fallback (`{n}`) always available.
 - **ETags (F4.2/S3):** status_cache stores an etag map (currently empty); conditional-request plumbing is P6-T1.
 - **Deferred validation:** the full live loop (file → build → PR → ship) needs a real GITHUB_TOKEN and a repo with claude-code-action configured. Validated so far via typecheck, seam guard, unit tests (deriveColumn, PR-linkage, ticket parser), and seeded integration tests (board, card detail, merge gate).
+
+## 2026-06-11 — Phase 5 (GitLab adapter)
+- **GitLab adapter** built on @gitbeaker/rest; method signatures validated against gitbeaker's bundled types (a real safety net — wrong method names/args fail typecheck). Notable gitbeaker quirks handled: `Issues.show(issueId, {projectId})` (issueId-first) vs `Issues.create(projectId, title, opts)` (projectId-first); `Projects.all` with `last_activity_at` needs keyset pagination, so we fetch by membership and sort client-side; `MergeRequests.accept` is the merge endpoint.
+- **GitLab limitations vs GitHub adapter:** MR diffstat (additions/deletions/changedFiles) left null to avoid extra calls; preview URL detection not implemented for GitLab (pattern fallback still works); primary language omitted from discovery.
+- **Seam guard** is now a runnable check (`npm run check:seam`, also in `npm run verify`) — asserts acceptance #12 (no @octokit/@gitbeaker outside server/providers/).
+- **Deferred (needs your access):** the live GitLab full-loop verification (acceptance #12 end-to-end) requires a GITLAB_TOKEN and a GitLab project with the Claude CI/CD job configured. Code + typecheck + seam guard are green; the live loop is unverified.
