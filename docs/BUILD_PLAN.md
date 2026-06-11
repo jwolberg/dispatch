@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T2
+- Current ticket: P1-T3
 - Blockers: None
 
 ---
@@ -58,7 +58,7 @@
   - Files likely involved: `server/db/schema.sql`, `server/db/migrate.ts`, `server/db/{repos,chats,tickets,status,activity}.ts`
   - Depends on: P1-T1
   - Acceptance criteria covered: #9 (data model foundation)
-  - Status: Todo
+  - Status: Complete
 
 - P1-T3 — GitProvider interface + DTOs + factory
   - Objective: Define `GitProvider` interface and normalized DTOs (`RepoSummary`, `RepoContext`, `IssueRef`, `PRRef`, `PRStatus`, `Run`, `MergeResult`) in `providers/types.ts`; factory `(provider, host) → GitProvider` in `providers/index.ts`. Establishes the seam before any SDK import exists.
