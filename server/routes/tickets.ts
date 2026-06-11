@@ -6,7 +6,7 @@ import { insertActivity } from "../db/activity.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile, type StatusPayload } from "../poller/reconcile.js";
 import { getProvider } from "../providers/index.js";
-import type { ProviderId, RepoRef } from "../providers/index.js";
+import type { CommentTarget, ProviderId, RepoRef } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
 
@@ -106,4 +106,65 @@ ticketsRouter.get("/:id", async (req, res) => {
     status,
     updated_at: row?.updated_at ?? null,
   });
+});
+
+// POST /api/tickets/:id/comment — Steer: comment on the issue or PR (F4.5). A
+// comment containing @claude re-triggers the provider's build job.
+ticketsRouter.post("/:id/comment", async (req, res) => {
+  const ticket = getTicket(Number(req.params.id));
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  const repo = getRepo(ticket.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+  const body = req.body ?? {};
+  if (typeof body.body !== "string" || !body.body.trim()) {
+    res.status(400).json({ error: "`body` is required" });
+    return;
+  }
+
+  const kind: "issue" | "pr" = body.target === "pr" ? "pr" : "issue";
+  let number = ticket.issue_number;
+  if (kind === "pr") {
+    const row = getStatus(ticket.id);
+    let pr: { number: number } | null = null;
+    if (row) {
+      try {
+        pr = (JSON.parse(row.payload_json) as StatusPayload).pr;
+      } catch {
+        pr = null;
+      }
+    }
+    if (!pr) {
+      res.status(400).json({ error: "No linked PR to comment on" });
+      return;
+    }
+    number = pr.number;
+  }
+
+  const ref: RepoRef = {
+    provider: repo.provider as ProviderId,
+    host: repo.host,
+    path: repo.path,
+    defaultBranch: repo.default_branch,
+  };
+  const target: CommentTarget = { repo: ref, kind, number };
+
+  try {
+    await getProvider(repo.provider as ProviderId, repo.host).postComment(target, body.body);
+    insertActivity({
+      ticket_id: ticket.id,
+      type: "steer",
+      summary: `Steered ${kind} #${number}`,
+      url: null,
+      occurred_at: new Date().toISOString(),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
+  }
 });

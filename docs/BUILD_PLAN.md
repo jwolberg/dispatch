@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 4 — Test + ship
-- Current ticket: P4-T2
+- Current ticket: P4-T3
 - Blockers: None
 
 ---
@@ -237,7 +237,7 @@
   - Files likely involved: `server/routes/tickets.ts`, `web/components/SteerBox.tsx`
   - Depends on: P3-T5
   - Acceptance criteria covered: #8
-  - Status: Todo
+  - Status: Complete
 
 - P4-T3 — Ship/merge flow
   - Objective: Adapter `mergePR(method)`; `POST /api/tickets/:id/merge` enabled only when PR open + required checks green + mergeable; confirmation modal (repo, PR title, diff stats, target branch); surface provider merge errors verbatim with PR link (F6.4); destructive-action confirmation (S5).

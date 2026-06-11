@@ -3,6 +3,7 @@ import { Page } from "../components/Page.js";
 import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { ticketsApi, type Check } from "../api/tickets.js";
+import { SteerBox } from "../components/SteerBox.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
   success: "text-status-ok",
@@ -177,6 +178,10 @@ export function CardDetailPage() {
               <p className="text-body text-gray-500">No runs yet.</p>
             )}
           </section>
+
+          <div className="lg:col-span-2">
+            <SteerBox ticketId={ticket.id} hasPR={Boolean(status.pr)} />
+          </div>
         </div>
       )}
     </Page>
