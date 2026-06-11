@@ -1,5 +1,6 @@
 import type { GitProvider, ProviderId } from "./types.js";
 import { GitHubProvider } from "./github.js";
+import { GitLabProvider } from "./gitlab.js";
 
 export * from "./types.js";
 
@@ -22,8 +23,8 @@ export function getProvider(provider: ProviderId, host?: string | null): GitProv
     case "github":
       return new GitHubProvider(requireEnv("GITHUB_TOKEN"), host);
     case "gitlab":
-      // Wired in P5-T1 (GitLab adapter).
-      throw new Error("GitLab provider not yet implemented");
+      // Self-hosted GitLab is handled by passing GITLAB_HOST as the base URL.
+      return new GitLabProvider(requireEnv("GITLAB_TOKEN"), host ?? process.env.GITLAB_HOST ?? null);
     default:
       throw new Error(`Unknown provider: ${provider as string}`);
   }

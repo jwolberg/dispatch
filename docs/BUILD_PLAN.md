@@ -26,8 +26,8 @@
 
 ## Current Status
 - Overall status: In Progress
-- Current phase: Phase 4 — Test + ship
-- Current ticket: P5-T1
+- Current phase: Phase 5 — GitLab adapter
+- Current ticket: P5-T2
 - Blockers: None
 
 ---
@@ -274,7 +274,7 @@
   - Files likely involved: `server/providers/gitlab.ts`, `server/providers/index.ts`
   - Depends on: P4-T4 (GitHub loop complete as the reference behavior)
   - Acceptance criteria covered: #11 (GitLab), #12
-  - Status: Todo
+  - Status: Complete
 
 - P5-T2 — Mixed-provider verification + seam guard
   - Objective: Verify a GitLab project ships end-to-end through the unchanged UI; add the grep check (CI or npm script) asserting no SDK imports leak outside `providers/`.
