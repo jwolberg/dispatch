@@ -2,6 +2,8 @@ import { Octokit } from "@octokit/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
 import type {
+  Check,
+  CheckState,
   CommentTarget,
   GitProvider,
   Issue,
@@ -23,6 +25,49 @@ const DISPATCH_LABEL = "dispatch";
 const README_MAX_LINES = 80;
 const FILE_TREE_MAX_DEPTH = 2; // root + one level (PRD F1.3 "depth-2")
 const FILE_TREE_MAX_ENTRIES = 400;
+
+function mapCheckRun(status: string | null, conclusion: string | null): CheckState {
+  if (status !== "completed") return "pending";
+  switch (conclusion) {
+    case "success":
+      return "success";
+    case "failure":
+    case "timed_out":
+    case "cancelled":
+    case "action_required":
+    case "startup_failure":
+      return "failure";
+    default:
+      return "neutral"; // neutral, skipped, stale, etc.
+  }
+}
+
+function mapCommitStatus(state: string): CheckState {
+  switch (state) {
+    case "success":
+      return "success";
+    case "failure":
+    case "error":
+      return "failure";
+    default:
+      return "pending";
+  }
+}
+
+function mapRun(status: string | null, conclusion: string | null): Run["state"] {
+  if (status !== "completed") return status === "queued" ? "queued" : "in_progress";
+  switch (conclusion) {
+    case "success":
+      return "success";
+    case "failure":
+    case "timed_out":
+    case "cancelled":
+    case "startup_failure":
+      return "failure";
+    default:
+      return "neutral";
+  }
+}
 
 function splitPath(path: string): { owner: string; repo: string } {
   const [owner, repo] = path.split("/");
@@ -215,17 +260,118 @@ export class GitHubProvider implements GitProvider {
     const { owner, repo } = splitPath(target.repo.path);
     await this.octokit.issues.createComment({ owner, repo, issue_number: target.number, body });
   }
-  async getIssue(_repo: RepoRef, _issueNumber: number): Promise<Issue> {
-    throw new Error("getIssue not yet implemented (P3-T2)");
+  async getIssue(repo: RepoRef, issueNumber: number): Promise<Issue> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const { data } = await this.octokit.issues.get({ owner, repo: name, issue_number: issueNumber });
+    const comments = await this.octokit.paginate(this.octokit.issues.listComments, {
+      owner,
+      repo: name,
+      issue_number: issueNumber,
+      per_page: 100,
+    });
+    return {
+      number: data.number,
+      title: data.title,
+      body: data.body ?? "",
+      state: data.state === "closed" ? "closed" : "open",
+      labels: (data.labels ?? []).map((l) => (typeof l === "string" ? l : l.name ?? "")).filter(Boolean),
+      comments: comments.map((c) => ({
+        id: String(c.id),
+        author: c.user?.login ?? null,
+        body: c.body ?? "",
+        createdAt: c.created_at,
+        url: c.html_url,
+      })),
+      url: data.html_url,
+    };
   }
-  async findLinkedPR(_repo: RepoRef, _issueNumber: number): Promise<PRRef | null> {
-    throw new Error("findLinkedPR not yet implemented (P3-T2)");
+
+  async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const prs = await this.octokit.pulls.list({
+      owner,
+      repo: name,
+      state: "all",
+      sort: "updated",
+      direction: "desc",
+      per_page: 50,
+    });
+    // F4.4: linked if the PR body references #<n> or its branch name contains
+    // the issue number (bounded so #1 doesn't match #10 or branch "v10").
+    const bodyRef = new RegExp(`#${issueNumber}(?!\\d)`);
+    const branchRef = new RegExp(`(?<!\\d)${issueNumber}(?!\\d)`);
+    const match = prs.data.find(
+      (pr) => bodyRef.test(pr.body ?? "") || branchRef.test(pr.head.ref)
+    );
+    if (!match) return null;
+    return {
+      number: match.number,
+      url: match.html_url,
+      headBranch: match.head.ref,
+      baseBranch: match.base.ref,
+    };
   }
-  async getPRStatus(_repo: RepoRef, _prNumber: number): Promise<PRStatus> {
-    throw new Error("getPRStatus not yet implemented (P3-T2)");
+
+  async getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const { data: pr } = await this.octokit.pulls.get({ owner, repo: name, pull_number: prNumber });
+    const checks = await this.collectChecks(owner, name, pr.head.sha);
+    const state = pr.merged ? "merged" : pr.state === "closed" ? "closed" : "open";
+    return {
+      number: pr.number,
+      title: pr.title,
+      state,
+      merged: Boolean(pr.merged),
+      mergeable: pr.mergeable,
+      draft: Boolean(pr.draft),
+      headBranch: pr.head.ref,
+      baseBranch: pr.base.ref,
+      url: pr.html_url,
+      checks,
+      additions: pr.additions ?? null,
+      deletions: pr.deletions ?? null,
+      changedFiles: pr.changed_files ?? null,
+      previewUrl: null, // populated in P4-T1 from deployments/statuses/comments
+    };
   }
-  async getWorkflowRuns(_repo: RepoRef, _ref: string): Promise<Run[]> {
-    throw new Error("getWorkflowRuns not yet implemented (P3-T2)");
+
+  private async collectChecks(owner: string, repo: string, sha: string): Promise<Check[]> {
+    const [runs, combined] = await Promise.all([
+      this.octokit.checks.listForRef({ owner, repo, ref: sha, per_page: 100 }),
+      this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha }).catch((e) => {
+        if (isNotFound(e)) return null;
+        throw e;
+      }),
+    ]);
+    const fromRuns: Check[] = runs.data.check_runs.map((r) => ({
+      name: r.name,
+      state: mapCheckRun(r.status, r.conclusion),
+      url: r.html_url ?? null,
+    }));
+    const fromStatuses: Check[] = (combined?.data.statuses ?? []).map((s) => ({
+      name: s.context,
+      state: mapCommitStatus(s.state),
+      url: s.target_url ?? null,
+    }));
+    return [...fromRuns, ...fromStatuses];
+  }
+
+  async getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const { data } = await this.octokit.actions.listWorkflowRunsForRepo({
+      owner,
+      repo: name,
+      per_page: 30,
+    });
+    return data.workflow_runs
+      .filter((r) => r.head_branch === ref || r.head_sha === ref)
+      .map((r) => ({
+        id: String(r.id),
+        name: r.name ?? r.display_title ?? "workflow",
+        state: mapRun(r.status, r.conclusion),
+        url: r.html_url ?? null,
+        createdAt: r.created_at,
+      }));
   }
   async mergePR(_repo: RepoRef, _prNumber: number, _method: MergeMethod): Promise<MergeResult> {
     throw new Error("mergePR not yet implemented (P4-T3)");

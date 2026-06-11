@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 3 — File + board
-- Current ticket: P3-T2
+- Current ticket: P3-T3
 - Blockers: None
 
 ---
@@ -177,7 +177,7 @@
   - Files likely involved: `server/providers/github.ts`
   - Depends on: P3-T1
   - Acceptance criteria covered: #5, #8, #12
-  - Status: Todo
+  - Status: Complete
 
 - P3-T3 — Poller scheduler + reconcile
   - Objective: `scheduler.ts` (20s active / 5min idle) and `reconcile.ts` deriving the single column per ticket (PRD F4.1), recomputing PR linkage each poll, writing `status_cache` (with ETag map) and appending `activity` rows. Reconcile must be invocable independently of the scheduler (webhook-ready seam). Defensive against deleted/force-pushed/manually-closed (S6).
