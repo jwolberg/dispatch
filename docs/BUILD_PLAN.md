@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T9
+- Current ticket: P2-T1
 - Blockers: None
 
 ---
@@ -107,7 +107,7 @@
   - Files likely involved: `web/pages/Repos.tsx`, `web/components/RepoCard.tsx`, `web/api/repos.ts`
   - Depends on: P1-T6, P1-T7, P1-T8
   - Acceptance criteria covered: #2, #11, #10
-  - Status: Todo
+  - Status: Complete
 
 ### Phase 2 — Spec chat (PRD M2)
 **Goal**
