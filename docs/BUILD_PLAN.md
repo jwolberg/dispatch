@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 2 — Spec chat
-- Current ticket: P2-T3
+- Current ticket: P2-T4
 - Blockers: None
 
 ---
@@ -138,7 +138,7 @@
   - Files likely involved: `server/routes/chat.ts`, `server/anthropic/prompts.ts`
   - Depends on: P2-T2
   - Acceptance criteria covered: #3
-  - Status: Todo
+  - Status: Complete
 
 - P2-T4 — Chat page UI (streaming)
   - Objective: Repo-scoped chat page; SSE stream hook; never loses user-typed input on error (S4); shows one-clarifying-question cadence naturally.

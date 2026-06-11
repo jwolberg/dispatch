@@ -1,9 +1,15 @@
 import { Router } from "express";
 import { getRepo, type RepoRow } from "../db/repos.js";
 import { getChat, createChat, appendMessage, getTranscript } from "../db/chats.js";
-import { buildSystemPrompt, type InjectableContext } from "../anthropic/prompts.js";
-import { streamMessage } from "../anthropic/client.js";
+import {
+  buildSystemPrompt,
+  GENERATE_TICKET_INSTRUCTION,
+  GENERATE_TICKET_RETRY,
+  type InjectableContext,
+} from "../anthropic/prompts.js";
+import { streamMessage, createMessage } from "../anthropic/client.js";
 import { safeMessage } from "../lib/redaction.js";
+import type { SpecInput } from "../providers/index.js";
 
 export const chatRouter = Router();
 
@@ -73,6 +79,78 @@ chatRouter.post("/", async (req, res) => {
     send({ type: "error", message: safeMessage(err) });
   } finally {
     res.end();
+  }
+});
+
+function stripFences(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```\s*$/, "")
+    .trim();
+}
+
+/** Parse a strict-JSON ticket, tolerating code fences and surrounding prose. */
+function tryParseTicket(text: string): SpecInput | null {
+  const cleaned = stripFences(text);
+  const first = cleaned.indexOf("{");
+  const last = cleaned.lastIndexOf("}");
+  const braces = first >= 0 && last > first ? cleaned.slice(first, last + 1) : null;
+  for (const candidate of [cleaned, braces]) {
+    if (!candidate) continue;
+    try {
+      const obj = JSON.parse(candidate) as Record<string, unknown>;
+      if (typeof obj.title === "string" && typeof obj.body_markdown === "string") {
+        const labels = Array.isArray(obj.labels)
+          ? obj.labels.filter((l): l is string => typeof l === "string")
+          : [];
+        return { title: obj.title, body_markdown: obj.body_markdown, labels };
+      }
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
+}
+
+// POST /api/chat/:id/generate-ticket — transcript → strict ticket JSON (F2.3).
+// Strips fences, validates; on parse failure retries once with a correction
+// prompt (acceptance #3: 10 generations, 0 unhandled parse failures).
+chatRouter.post("/:id/generate-ticket", async (req, res) => {
+  const chat = getChat(Number(req.params.id));
+  if (!chat) {
+    res.status(404).json({ error: "Chat not found" });
+    return;
+  }
+  const repo = getRepo(chat.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+
+  const system = buildSystemPrompt(toContext(repo));
+  const base = getTranscript(chat.id);
+  const messages = [...base, { role: "user" as const, content: GENERATE_TICKET_INSTRUCTION }];
+
+  try {
+    let text = await createMessage(system, messages);
+    let ticket = tryParseTicket(text);
+    if (!ticket) {
+      const retry = [
+        ...messages,
+        { role: "assistant" as const, content: text },
+        { role: "user" as const, content: GENERATE_TICKET_RETRY },
+      ];
+      text = await createMessage(system, retry);
+      ticket = tryParseTicket(text);
+    }
+    if (!ticket) {
+      res.status(502).json({ error: "Model did not return parseable ticket JSON" });
+      return;
+    }
+    res.json({ ticket });
+  } catch (err) {
+    res.status(502).json({ error: safeMessage(err) });
   }
 });
 
