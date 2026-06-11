@@ -5,6 +5,7 @@ import { insertActivity } from "../db/activity.js";
 import { getProvider } from "../providers/index.js";
 import type { Issue, PRStatus, ProviderId, RepoRef, Run } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
+import { markRateLimited, retryAfter } from "../lib/ratelimit.js";
 
 export type Column = "Spec" | "Queued" | "Building" | "Ready to test" | "Shipped" | "Blocked";
 
@@ -138,6 +139,8 @@ export async function safeReconcile(ticket: TicketRow): Promise<void> {
   try {
     await reconcileTicket(ticket);
   } catch (err) {
+    const backoff = retryAfter(err);
+    if (backoff != null) markRateLimited(backoff); // honor 429/secondary limits (S3)
     console.warn(`[poller] reconcile ticket ${ticket.id} failed: ${safeMessage(err)}`);
   }
 }

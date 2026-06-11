@@ -11,11 +11,20 @@ export interface ProviderHealth {
   error: string | null;
 }
 
+export interface RateLimitGauge {
+  limit: number | null;
+  remaining: number | null;
+  reset: string | null;
+  paused: boolean;
+  reason: string | null;
+}
+
 export interface Health {
   ok: boolean;
   db: { ok: boolean };
   anthropic: { configured: boolean };
   providers: ProviderHealth[];
+  rateLimit: RateLimitGauge;
 }
 
 export interface RepoSummary {

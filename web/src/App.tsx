@@ -1,5 +1,9 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { HealthFooter } from "./components/HealthFooter.js";
+import { RateLimitBanner } from "./components/RateLimitBanner.js";
+import { usePolling } from "./hooks/usePolling.js";
+import { api } from "./api/client.js";
+import type { Health } from "./api/types.js";
 import { ReposPage } from "./pages/Repos.js";
 import { BoardPage } from "./pages/Board.js";
 import { ChatPage } from "./pages/Chat.js";
@@ -14,6 +18,7 @@ const NAV = [
 ];
 
 export function App() {
+  const { data: health } = usePolling(() => api.get<Health>("/health"), 30_000);
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex items-center gap-6 border-b border-border bg-surface px-5 py-3">
@@ -37,6 +42,8 @@ export function App() {
         </nav>
       </header>
 
+      <RateLimitBanner health={health} />
+
       <main className="flex-1 px-5 py-5">
         <Routes>
           <Route path="/" element={<Navigate to="/board" replace />} />
@@ -48,7 +55,7 @@ export function App() {
         </Routes>
       </main>
 
-      <HealthFooter />
+      <HealthFooter health={health} />
     </div>
   );
 }

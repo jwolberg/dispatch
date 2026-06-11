@@ -26,8 +26,8 @@
 
 ## Current Status
 - Overall status: In Progress
-- Current phase: Phase 5 — GitLab adapter
-- Current ticket: P6-T1
+- Current phase: Phase 6 — Hardening
+- Current ticket: P6-T2
 - Blockers: None
 
 ---
@@ -298,7 +298,7 @@
   - Files likely involved: `server/lib/ratelimit.ts`, `server/lib/etagStore.ts`, `server/poller/scheduler.ts`, `web/components/RateLimitBanner.tsx`
   - Depends on: P3-T3
   - Acceptance criteria covered: S3
-  - Status: Todo
+  - Status: Complete
 
 - P6-T2 — Security finalization
   - Objective: Confirm localhost bind guard (S1), end-to-end secret redaction in logs/errors and never-to-client (S2), confirmation modals on all destructive actions (merge, untrack) (S5).

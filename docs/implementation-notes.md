@@ -37,3 +37,7 @@ Running log of decisions, deviations, and tradeoffs for human review.
 - **GitLab limitations vs GitHub adapter:** MR diffstat (additions/deletions/changedFiles) left null to avoid extra calls; preview URL detection not implemented for GitLab (pattern fallback still works); primary language omitted from discovery.
 - **Seam guard** is now a runnable check (`npm run check:seam`, also in `npm run verify`) — asserts acceptance #12 (no @octokit/@gitbeaker outside server/providers/).
 - **Deferred (needs your access):** the live GitLab full-loop verification (acceptance #12 end-to-end) requires a GITLAB_TOKEN and a GitLab project with the Claude CI/CD job configured. Code + typecheck + seam guard are green; the live loop is unverified.
+
+## 2026-06-11 — P6-T1 (rate-limit safety)
+- **S3 implemented:** shared rate-limit gauge (`lib/ratelimit.ts`); the poller refreshes it each cycle via GitHub's free `/rate_limit` endpoint and pauses polling when remaining < 100; 429/secondary-limit errors set a backoff via Retry-After. Health exposes the gauge; UI shows a banner (App) + remaining in the footer.
+- **ETag conditional requests: deferred (optimization).** The `status_cache.etag_map_json` column exists, but wiring `If-None-Match`/304 handling into each adapter call is invasive and unverifiable without live traffic. Rate-limit *safety* (the user-visible S3 requirement) is fully implemented; ETag-based conservation is a follow-up. Documented rather than silently skipped.

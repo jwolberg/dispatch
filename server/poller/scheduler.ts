@@ -1,6 +1,10 @@
 import { listTickets } from "../db/tickets.js";
+import { listRepos } from "../db/repos.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile } from "./reconcile.js";
+import { getProvider } from "../providers/index.js";
+import { isPaused, updateRateLimit } from "../lib/ratelimit.js";
+import { safeMessage } from "../lib/redaction.js";
 
 const ACTIVE_INTERVAL_MS = 20_000; // 20s for repos with active tickets (PRD F4.2)
 const IDLE_INTERVAL_MS = 5 * 60_000; // 5min otherwise
@@ -20,10 +24,24 @@ function isActive(ticketId: number): boolean {
   }
 }
 
+// Refresh the rate-limit gauge before a cycle. GitHub's /rate_limit endpoint
+// is free (doesn't consume core quota), so this is cheap insurance (S3).
+async function refreshRateLimit(): Promise<void> {
+  if (!process.env.GITHUB_TOKEN) return;
+  if (!listRepos().some((r) => r.provider === "github")) return;
+  try {
+    updateRateLimit(await getProvider("github").getRateLimit());
+  } catch (err) {
+    console.warn(`[poller] rate-limit check failed: ${safeMessage(err)}`);
+  }
+}
+
 async function pollActive(): Promise<void> {
   if (busy) return;
   busy = true;
   try {
+    await refreshRateLimit();
+    if (isPaused()) return; // S3: pause polling when the budget is low
     for (const ticket of listTickets()) {
       if (isActive(ticket.id)) await safeReconcile(ticket);
     }
@@ -37,6 +55,8 @@ async function pollAll(): Promise<void> {
   if (busy) return;
   busy = true;
   try {
+    await refreshRateLimit();
+    if (isPaused()) return;
     for (const ticket of listTickets()) await safeReconcile(ticket);
   } finally {
     busy = false;

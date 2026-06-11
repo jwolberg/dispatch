@@ -3,6 +3,7 @@ import { getDb } from "../db/migrate.js";
 import { getProvider } from "../providers/index.js";
 import type { ProviderId } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
+import { getGauge } from "../lib/ratelimit.js";
 
 export const healthRouter = Router();
 
@@ -67,5 +68,6 @@ healthRouter.get("/", async (_req, res) => {
     db: { ok: dbOk },
     anthropic: { configured: anthropicConfigured },
     providers,
+    rateLimit: getGauge(),
   });
 });

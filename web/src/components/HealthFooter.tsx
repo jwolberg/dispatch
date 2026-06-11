@@ -1,30 +1,7 @@
-import { useEffect, useState } from "react";
-import { api } from "../api/client.js";
 import type { Health } from "../api/types.js";
 
 // Footer surfaces DB status + provider rate-limit remaining (PRD F4.2 footer).
-// The low-rate-limit banner itself is added in P6-T1.
-export function HealthFooter() {
-  const [health, setHealth] = useState<Health | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const h = await api.get<Health>("/health");
-        if (active) setHealth(h);
-      } catch {
-        /* footer is best-effort */
-      }
-    };
-    poll();
-    const timer = setInterval(poll, 30_000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, []);
-
+export function HealthFooter({ health }: { health: Health | null }) {
   const gh = health?.providers.find((p) => p.provider === "github");
 
   return (
@@ -39,7 +16,9 @@ export function HealthFooter() {
         GitHub:{" "}
         {gh?.configured ? (
           gh.valid ? (
-            <span className="text-status-ok">● {gh.remaining ?? "?"} / {gh.limit ?? "?"} left</span>
+            <span className={gh.remaining != null && gh.remaining < 100 ? "text-status-wait" : "text-status-ok"}>
+              ● {gh.remaining ?? "?"} / {gh.limit ?? "?"} left
+            </span>
           ) : (
             <span className="text-status-fail">● token invalid</span>
           )
