@@ -13,6 +13,7 @@ import { startPoller } from "./poller/scheduler.js";
 import { boardRouter } from "./routes/board.js";
 import { safeMessage } from "./lib/redaction.js";
 import { activityRouter } from "./routes/activity.js";
+import { basicAuthGate } from "./lib/auth.js";
 
 // Bootstrap the Dispatch backend. Route groups (discover, repos, chat, tickets,
 // board, activity, health) are mounted under /api by later tickets; this
@@ -26,6 +27,9 @@ getDb();
 console.log(`[dispatch] sqlite ready at ${DB_PATH}`);
 
 const app = express();
+// Shared-password gate (no-op unless DISPATCH_PASSWORD is set) — runs before
+// everything so unauthenticated requests never reach routes or static assets.
+app.use(basicAuthGate);
 app.use(express.json());
 
 const api = express.Router();
