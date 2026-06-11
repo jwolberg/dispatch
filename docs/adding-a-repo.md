@@ -80,12 +80,19 @@ Anthropic key is read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY`
 > default `GITHUB_TOKEN` would **not** trigger `on: pull_request` CI (GitHub's
 > anti-recursion rule), so the gate below would never run.
 
-> **The CI gate (`ci.yml`):** runs the repo's `lint` / `test` / `build` npm
-> scripts on every PR (each step is `--if-present`, so it's a no-op when a script
-> is missing). Its checks are what move the board **Building → Ready to test →
-> Blocked**. It's created only when the repo has no `ci.yml`, so it never clobbers
-> existing CI; adapt it for non-Node stacks. It triggers on the auto-opened PRs
-> because those come from `GH_PAT`, not the bot.
+> **The CI gate (`ci.yml`) — stack-aware:** runs on every PR so its checks move
+> the board **Building → Ready to test → Blocked**. The installer detects the
+> repo's stack and commits the matching template:
+> - **Node** (`package.json`): `lint` / `test` / `build` npm scripts, each
+>   `--if-present` (no-op when a script is missing).
+> - **Python** (`requirements.txt` / `pyproject.toml` / `setup.py`):
+>   `pip install` of whatever's declared, then `ruff`/`flake8` and `pytest` only
+>   when a linter/tests are present.
+> - **Unknown stack:** skipped (a Node gate hard-fails on a non-Node repo at the
+>   install step and would block every PR — better to add one manually).
+>
+> Created only when the repo has no `ci.yml`, so it never clobbers existing CI.
+> Triggers on the auto-opened PRs because those come from `GH_PAT`, not the bot.
 
 > **The deploy gate (`deploy.yml`) — optional, off by default.** Pass
 > `INSTALL_DEPLOY_GATE=1` to also install the verify-before-production gate from

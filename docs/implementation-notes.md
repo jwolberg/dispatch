@@ -397,6 +397,32 @@ best-effort enrichment, so "no permission" → "no preview", not a failure. Left
 check-runs 403 is already tolerated; this clears the last reconcile failure. Verify
 green.
 
+## 2026-06-11 — Stack-aware CI gate (Node gate was blocking a Python repo)
+**Why:** the build-step-1 `ci.yml` is a Node/npm workflow. Installed on the Python
+repo `situation` (app.py + requirements.txt, no package.json), its `npm ci ||
+npm install` step hard-fails — and since that step isn't (can't be) `--if-present`
+guarded, **every PR on that repo lands in Blocked** regardless of the diff. Surfaced
+while debugging why issue 7's PR #9 was Blocked + unshippable: the CI run failed at
+"Install dependencies", not on the code.
+
+**Fix:**
+- `scripts/repo-ci/ci.yml` → renamed `ci-node.yml`; added `ci-python.yml`
+  (setup-python + conditional `pip install` of requirements/pyproject, then
+  ruff/flake8 + pytest only when a linter/tests are present — safe no-op otherwise).
+- `install-claude-action.sh` — detects the stack from marker files
+  (package.json → node; requirements.txt/pyproject.toml/setup.py → python) and
+  commits the matching template to `.github/workflows/ci.yml`. **Unknown stack →
+  skip** (better no gate than a gate that can't run). Still create-if-absent.
+- Docs updated (adding-a-repo.md).
+
+**Decision:** skip rather than install a generic/empty gate for unknown stacks —
+an always-failing gate is worse than none (it blocks the board). Extensible: add
+`ci-<stack>.yml` + a `repo_has` branch to support Go/Ruby/etc.
+
+**Does NOT retroactively fix existing repos:** create-if-absent means `situation`
+keeps its broken Node `ci.yml` until it's replaced. Unblocking PR #9 requires
+overwriting that file with `ci-python.yml` (separate action).
+
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
 `claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation

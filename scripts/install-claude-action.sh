@@ -8,8 +8,10 @@
 #   3. Commits .claude/skills/{plan,implement,debug}/SKILL.md so the web console's
 #      Plan/Implement/Debug skill actions run as real skills in CI (claude-code-action
 #      only loads skills committed to the repo — never your laptop's ~/.claude).
-#   4. Commits .github/workflows/ci.yml — a PR test gate (lint/test/build) that feeds
-#      the board's check states. Created only if absent (won't clobber existing CI).
+#   4. Commits .github/workflows/ci.yml — a PR test gate that feeds the board's
+#      check states. Stack-aware: detects node (package.json) vs python
+#      (requirements.txt/pyproject/setup.py) and installs the matching template;
+#      unknown stack → skipped. Created only if absent (won't clobber existing CI).
 #   5. (Opt-in, INSTALL_DEPLOY_GATE=1) Commits .github/workflows/deploy.yml — a
 #      verify-before-prod gate: merge → deploy staging + smoke/e2e tests → gated
 #      production deploy. Created only if absent. Needs the staging/production
@@ -134,15 +136,31 @@ echo "==> Committing CI gate .github/workflows/ci.yml (create if absent)"
 # A PR test gate so the board's check-driven states work. Create-if-absent so it
 # never clobbers a repo's existing CI. The claude.yml above opens PRs with GH_PAT
 # (a real identity), so this gate triggers on Claude's PRs.
+#
+# Stack-aware: a Node gate hard-fails on a Python repo (npm install errors) and
+# blocks every PR, so detect the stack from marker files and pick the matching
+# template. Unknown stack → skip (better no gate than a gate that can't run).
+repo_has() { gh api "/repos/$REPO/contents/$1" --jq .sha >/dev/null 2>&1; }
+if repo_has package.json; then
+  CI_STACK="node"
+elif repo_has requirements.txt || repo_has pyproject.toml || repo_has setup.py; then
+  CI_STACK="python"
+else
+  CI_STACK="unknown"
+fi
+
 CI_DEST=".github/workflows/ci.yml"
-if gh api "/repos/$REPO/contents/$CI_DEST" --jq .sha >/dev/null 2>&1; then
+CI_SRC="$(cd "$(dirname "$0")" && pwd)/repo-ci/ci-$CI_STACK.yml"
+if [ "$CI_STACK" = "unknown" ] || [ ! -f "$CI_SRC" ]; then
+  echo "    - skipped: couldn't detect a supported stack (node/python). Add a"
+  echo "      .github/workflows/ci.yml manually for this repo's stack."
+elif gh api "/repos/$REPO/contents/$CI_DEST" --jq .sha >/dev/null 2>&1; then
   echo "    - $CI_DEST already exists — leaving it unchanged"
 else
-  CI_SRC="$(cd "$(dirname "$0")" && pwd)/repo-ci/ci.yml"
   CI_CONTENT="$(base64 < "$CI_SRC" | tr -d '\n')"
-  echo "    - $CI_DEST"
+  echo "    - $CI_DEST ($CI_STACK)"
   gh api --method PUT "/repos/$REPO/contents/$CI_DEST" \
-    -f "message=Add Dispatch CI gate (lint/test/build on PRs)" \
+    -f "message=Add Dispatch CI gate ($CI_STACK, on PRs)" \
     -f "content=$CI_CONTENT" --jq '.commit.html_url'
 fi
 
