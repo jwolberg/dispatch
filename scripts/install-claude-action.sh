@@ -67,9 +67,16 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            When opening a pull request, include "Fixes #${{ github.event.issue.number }}"
-            in the PR body so the issue auto-closes on merge.
+          # Do NOT set `prompt:` here. A static prompt forces the action into
+          # automation mode, which IGNORES the triggering @claude comment — so the
+          # console's "use the <skill> skill ..." instruction is never seen and the
+          # run does nothing. Omitting `prompt:` enables interactive (mention) mode:
+          # Claude reads the @claude comment, runs it (incl. project skills checked
+          # out at .claude/skills/), posts a tracking comment, and opens a PR.
+          # The standing PR convention goes in append-system-prompt, which augments
+          # rather than overrides the trigger.
+          claude_args: |
+            --append-system-prompt "When you open a pull request, include a closing reference to the issue (e.g. 'Fixes #123') in the PR description so it auto-closes on merge."
 YAML
 
 CONTENT="$(base64 < "$TMP" | tr -d '\n')"

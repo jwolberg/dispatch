@@ -182,3 +182,25 @@ as per board column (cap EVERY column at its 10 most recent), with a "+N more" h
 
 **Note:** display-only cap — the API still returns all cards so the per-column
 total stays accurate. If the board grows large, move the cap server-side later.
+
+## 2026-06-11 — BUG FIX: generated claude.yml ignored the @claude comment
+**Symptom (live test on jwolberg/situation #1):** skill buttons posted @claude
+comments (plan ×3, implement ×1); all 5 claude-code-action runs succeeded but
+produced no PR, no branch, and no Claude comment — "nothing happened."
+
+**Root cause:** install-claude-action.sh generated a workflow with a static
+`prompt:` input. In claude-code-action v1, setting `prompt:` forces *automation
+mode*, which runs that prompt headlessly and IGNORES the triggering @claude
+comment. So Claude only ever got the trivial "include Fixes #N" note — never the
+"use the implement skill / build this" instruction from the comment — and did
+nothing (automation mode also posts no tracking comment, hence no visible reply).
+Confirmed against official docs (code.claude.com/docs/en/github-actions,
+claude-code-action README/examples/claude.yml, migration-guide).
+
+**Fix:** remove `prompt:` from the generated workflow (enables interactive/mention
+mode: reads the @claude comment, loads .claude/skills, posts a tracking comment,
+opens a PR). Moved the standing "Fixes #N" convention to
+`claude_args: --append-system-prompt`, which augments rather than overrides.
+
+**To apply on an existing repo:** re-run the installer (it updates claude.yml in
+place by sha), then re-trigger (@claude comment / Implement button).
