@@ -34,7 +34,13 @@ export function deriveColumn(
   if (runFailed || checkFailed) return "Blocked";
 
   if (pr && pr.state === "open") {
-    return pr.checks.some((c) => c.state === "pending") ? "Building" : "Ready to test";
+    // check-runs are unreadable by fine-grained PATs (Checks permission isn't
+    // grantable), so pr.checks may omit Actions CI — also treat an in-progress
+    // workflow run on the PR head as "still building".
+    const building =
+      pr.checks.some((c) => c.state === "pending") ||
+      runs.some((r) => r.state === "queued" || r.state === "in_progress");
+    return building ? "Building" : "Ready to test";
   }
 
   const runInProgress = runs.some((r) => r.state === "queued" || r.state === "in_progress");

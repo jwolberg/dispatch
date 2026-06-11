@@ -358,6 +358,29 @@ poller-wide pause.
 secret — this fix stops the false pause, but the reads still 403 until the scope
 is granted. Pairs with the ETag fix above.
 
+## 2026-06-11 — Tolerate the check-runs 403 (fine-grained PATs lack Checks)
+**Discovery:** the check-runs 403s aren't a fixable permission gap — GitHub
+**fine-grained PATs have no "Checks" permission** (confirmed in the token UI: the
+repo-permission list jumps Attestations → Code quality, no Checks). So
+`GET /commits/{ref}/check-runs` is permanently 403 for this token class. The token
+*does* have Actions read (workflow runs return fine) and Commit statuses read.
+
+**Fix (code, not config):**
+- `providers/github.ts` `collectChecks` — the check-runs `cond()` call now
+  `.catch`es 403/404 → null (degrade to commit statuses), instead of throwing and
+  failing the whole reconcile. `fromRuns` is null-safe.
+- `poller/reconcile.ts` `deriveColumn` — for an open PR, "Building" now also keys
+  off an in-progress **workflow run** (`runs`), not just `pr.checks`. Without
+  check-runs, Actions CI status arrives via getWorkflowRuns (Actions read), so the
+  board still distinguishes Building vs Ready to test, and a failed run already
+  routed to Blocked via the existing `runFailed` path.
+
+**Net:** reconcile completes for fine-grained-PAT repos; board state is driven by
+commit statuses + workflow runs. **Accepted limitation:** non-Actions check runs
+(e.g. third-party GitHub Apps that report only as check runs, not statuses/runs)
+won't appear in `pr.checks`. Acceptable — Dispatch's own ci.yml reports as a
+workflow run. Supersedes the earlier "grant Checks: read" remediation (not possible).
+
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
 `claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation

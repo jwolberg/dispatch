@@ -445,7 +445,13 @@ export class GitHubProvider implements GitProvider {
     const [runs, combined] = await Promise.all([
       this.cond(`checkruns:${owner}/${repo}@${sha}`, (headers) =>
         this.octokit.checks.listForRef({ owner, repo, ref: sha, per_page: 100, headers })
-      ),
+      ).catch((e) => {
+        // Fine-grained PATs cannot be granted the Checks permission, so this
+        // endpoint 403s on them. Degrade to commit statuses (+ the workflow-run
+        // signal read separately) instead of failing the whole reconcile.
+        if (httpStatus(e) === 403 || isNotFound(e)) return null;
+        throw e;
+      }),
       this.cond(`combined:${owner}/${repo}@${sha}`, (headers) =>
         this.octokit.repos.getCombinedStatusForRef({ owner, repo, ref: sha, headers })
       ).catch((e) => {
@@ -453,7 +459,7 @@ export class GitHubProvider implements GitProvider {
         throw e;
       }),
     ]);
-    const fromRuns: Check[] = runs.check_runs.map((r) => ({
+    const fromRuns: Check[] = (runs?.check_runs ?? []).map((r) => ({
       name: r.name,
       state: mapCheckRun(r.status, r.conclusion),
       url: r.html_url ?? null,
