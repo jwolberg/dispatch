@@ -1,0 +1,68 @@
+# Dispatch deploy gate (OPTIONAL) — verify-before-production.
+#
+# On every merge to the default branch:
+#   1. staging    — deploy to the persistent GitHub "staging" Environment, then run
+#                   smoke / e2e tests against it.
+#   2. production — runs only AFTER staging succeeds AND a manual approval on the
+#                   GitHub "production" Environment (the 🔒 gate, diagram step 9).
+#
+# Opt-in + safe-by-default: every deploy/test step is `--if-present`, so this is a
+# no-op until the repo defines the matching npm scripts. Wire these to your host:
+#   deploy:staging · test:smoke (and/or test:e2e) · deploy:production
+# Adapt the run steps for non-Node stacks.
+#
+# Required one-time GitHub setup (Settings → Environments):
+#   - create the "staging" and "production" Environments
+#   - add Required reviewers to "production" to arm the manual approval gate
+#   (without the reviewers rule, production deploys immediately after staging.)
+#
+# NOTE: assumes the default branch is `main` — adjust `branches:` if not. Like
+# ci.yml, GitHub won't trigger this on merges authored by the default GITHUB_TOKEN
+# /bot; with the Claude GitHub App (PRs/merges are app-authored) it fires.
+name: Deploy
+on:
+  push:
+    branches: [main]
+# Don't cancel an in-flight deploy — let staging/production finish.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Build
+        run: npm run build --if-present
+      - name: Deploy to staging
+        run: npm run deploy:staging --if-present
+      - name: Smoke tests
+        run: npm run test:smoke --if-present
+      - name: E2E tests
+        run: npm run test:e2e --if-present
+
+  production:
+    # Gate: only after staging deploy + smoke/e2e tests pass, and only once the
+    # "production" Environment's required-reviewers approval is granted.
+    needs: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Build
+        run: npm run build --if-present
+      - name: Deploy to production
+        run: npm run deploy:production --if-present

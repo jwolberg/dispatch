@@ -87,6 +87,25 @@ Anthropic key is read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY`
 > existing CI; adapt it for non-Node stacks. It triggers on the auto-opened PRs
 > because those come from `GH_PAT`, not the bot.
 
+> **The deploy gate (`deploy.yml`) — optional, off by default.** Pass
+> `INSTALL_DEPLOY_GATE=1` to also install the verify-before-production gate from
+> the architecture diagram. On every **merge to `main`** it runs two jobs:
+> **`staging`** (deploy to the persistent **staging** environment, then `test:smoke`
+> / `test:e2e`) and **`production`** (`needs: staging`), which deploys only after
+> staging's tests pass **and** a manual approval. Every deploy/test step is
+> `--if-present`, so it's a safe no-op until you define the `deploy:staging`,
+> `test:smoke`/`test:e2e`, and `deploy:production` npm scripts. Created only if
+> absent. **One-time GitHub setup:** under **Settings → Environments**, create
+> `staging` and `production`, and add **Required reviewers** to `production` to arm
+> the 🔒 approval gate (without it, production deploys straight after staging).
+>
+> ```bash
+> INSTALL_DEPLOY_GATE=1 GH_SETUP_TOKEN=github_pat_xxx \
+>   ./scripts/install-claude-action.sh <owner>/<repo>
+> ```
+>
+> Board mapping (future): Shipped → **In staging** → **Released**.
+
 > **Why the skills are committed:** the console's **Plan / Implement / Debug**
 > buttons (on a ticket) drive Claude by posting an `@claude` comment that runs in
 > CI. `claude-code-action` only loads skills committed to the **target repo** —

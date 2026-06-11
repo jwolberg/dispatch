@@ -274,6 +274,38 @@ Claude GitHub App (`/install-github-app`) makes PRs app-authored → CI fires.
 **To enable on situation:** re-run the installer (write PAT), ideally also install
 the GitHub App so the gate actually runs.
 
+## 2026-06-11 — Build step 2: optional staging+production deploy gate (deploy.yml)
+**Why:** implement the verify-before-prod chain from the architecture diagram
+(steps 8–9): merge → deploy staging + smoke/e2e tests → 🔒 approval → production.
+Framed as an **option** because, unlike `ci.yml`, it needs a real deploy target +
+the staging/production GitHub Environments, which not every repo has.
+
+**Implementation:**
+- `scripts/repo-ci/deploy.yml` — `on: push: branches: [main]`, two jobs:
+  - `staging` (`environment: staging`): build → `deploy:staging` → `test:smoke`
+    → `test:e2e`, each `--if-present` (safe no-op until the repo defines them).
+  - `production` (`needs: staging`, `environment: production`): build →
+    `deploy:production`. The `needs:` + Environment **Required reviewers** rule is
+    the 🔒 gate — prod runs only after staging's tests pass *and* a manual approval.
+  - `concurrency` with `cancel-in-progress: false` — never kill an in-flight deploy.
+- `install-claude-action.sh` — new **opt-in** block gated on `INSTALL_DEPLOY_GATE=1`
+  (default off), create-if-absent. Header/usage + `adding-a-repo.md` updated.
+
+**Decision — one file, not two:** the earlier note anticipated separate
+`deploy-staging.yml` + `deploy-production.yml`. Shipped a single `deploy.yml` with
+two jobs instead, because `production` must `needs: staging` to be genuinely gated
+behind staging's smoke tests — two independent `on: push` workflows wouldn't chain
+(prod could be approved even if staging tests failed). Single file = correct gate.
+
+**Required GitHub setup (documented, manual):** create the `staging` and
+`production` Environments; add Required reviewers to `production` to arm the gate.
+Without the reviewers rule, production deploys immediately after staging.
+
+**Caveat (same as ci.yml):** bot/GITHUB_TOKEN-authored merges don't trigger
+workflows; the Claude GitHub App makes merges app-authored → deploy fires.
+
+**Not yet built:** the board state split (Shipped → In staging → Released).
+
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
 `claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation

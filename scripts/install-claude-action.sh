@@ -10,6 +10,10 @@
 #      only loads skills committed to the repo — never your laptop's ~/.claude).
 #   4. Commits .github/workflows/ci.yml — a PR test gate (lint/test/build) that feeds
 #      the board's check states. Created only if absent (won't clobber existing CI).
+#   5. (Opt-in, INSTALL_DEPLOY_GATE=1) Commits .github/workflows/deploy.yml — a
+#      verify-before-prod gate: merge → deploy staging + smoke/e2e tests → gated
+#      production deploy. Created only if absent. Needs the staging/production
+#      GitHub Environments (see the echoed note). Off by default.
 #
 # Requirements:
 #   - gh CLI installed
@@ -22,6 +26,9 @@
 #
 # Usage:
 #   GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh jwolberg/situation
+#   # add the optional staging+production deploy gate:
+#   GH_SETUP_TOKEN=github_pat_xxx INSTALL_DEPLOY_GATE=1 \
+#     ./scripts/install-claude-action.sh jwolberg/situation
 #
 # PRs: claude-code-action never opens PRs itself — by design it pushes a branch
 # and links a "Create PR" page (docs/faq). The workflow below adds a `gh pr create`
@@ -137,6 +144,30 @@ else
   gh api --method PUT "/repos/$REPO/contents/$CI_DEST" \
     -f "message=Add Dispatch CI gate (lint/test/build on PRs)" \
     -f "content=$CI_CONTENT" --jq '.commit.html_url'
+fi
+
+echo "==> Deploy gate .github/workflows/deploy.yml (optional)"
+# Verify-before-prod gate: merge → deploy staging + smoke/e2e tests → gated
+# production deploy. OPT-IN (INSTALL_DEPLOY_GATE=1) because it needs a deploy
+# target + the staging/production GitHub Environments. Create-if-absent so it
+# never clobbers an existing deploy workflow.
+if [ "${INSTALL_DEPLOY_GATE:-0}" = "1" ]; then
+  DEPLOY_DEST=".github/workflows/deploy.yml"
+  if gh api "/repos/$REPO/contents/$DEPLOY_DEST" --jq .sha >/dev/null 2>&1; then
+    echo "    - $DEPLOY_DEST already exists — leaving it unchanged"
+  else
+    DEPLOY_SRC="$(cd "$(dirname "$0")" && pwd)/repo-ci/deploy.yml"
+    DEPLOY_CONTENT="$(base64 < "$DEPLOY_SRC" | tr -d '\n')"
+    echo "    - $DEPLOY_DEST"
+    gh api --method PUT "/repos/$REPO/contents/$DEPLOY_DEST" \
+      -f "message=Add Dispatch deploy gate (staging + gated production)" \
+      -f "content=$DEPLOY_CONTENT" --jq '.commit.html_url'
+    echo "    NOTE: in Settings → Environments, create 'staging' and 'production',"
+    echo "    and add Required reviewers to 'production' to arm the manual approval"
+    echo "    gate. Define deploy:staging / test:smoke / deploy:production npm scripts."
+  fi
+else
+  echo "    - skipped (set INSTALL_DEPLOY_GATE=1 to install the staging/production gate)"
 fi
 
 echo "==> Committing Claude Code skills to .claude/skills/"
