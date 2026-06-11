@@ -63,9 +63,20 @@ GH_SETUP_TOKEN=github_pat_xxx \
   ./scripts/install-claude-action.sh <owner>/<repo>
 ```
 
-Sets the `ANTHROPIC_API_KEY` secret and commits `.github/workflows/claude.yml`.
-The Anthropic key is read from the macOS keychain item
-`dispatch-ANTHROPIC_API_KEY` (or pass `ANTHROPIC_API_KEY=...`).
+Sets the `ANTHROPIC_API_KEY` secret, commits `.github/workflows/claude.yml`, and
+commits `.claude/skills/{plan,implement,debug}/SKILL.md`. The Anthropic key is
+read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY` (or pass
+`ANTHROPIC_API_KEY=...`).
+
+> **Why the skills are committed:** the console's **Plan / Implement / Debug**
+> buttons (on a ticket) drive Claude by posting an `@claude` comment that runs in
+> CI. `claude-code-action` only loads skills committed to the **target repo** —
+> never your laptop's `~/.claude`, and never anything that's `.gitignore`d. The
+> templates live in `scripts/repo-skills/` and are tuned for CI (plan → posts a
+> plan comment; implement → opens a PR with `Fixes #N`; debug → pushes a fix to
+> the PR). Without them the buttons still work — Claude follows the prompt text —
+> but it won't run them as named skills. (`debug` also ships bundled with Claude
+> Code; the committed copy just tunes it to the PR flow.)
 
 > **Caveat (Option B):** without the app, Claude's PR commits run as
 > `github-actions[bot]`, and GitHub does **not** trigger CI on bot commits — so

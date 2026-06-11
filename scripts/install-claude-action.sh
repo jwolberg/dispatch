@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Enable anthropics/claude-code-action on a repo via the GitHub API — no app install.
 #
-# Does the two automatable steps (the GitHub App is optional; see caveat):
+# Does the automatable setup steps (the GitHub App is optional; see caveat):
 #   1. Sets the ANTHROPIC_API_KEY repository secret (gh handles libsodium encryption)
 #   2. Commits .github/workflows/claude.yml (triggers builds on @claude mentions)
+#   3. Commits .claude/skills/{plan,implement,debug}/SKILL.md so the web console's
+#      Plan/Implement/Debug skill actions run as real skills in CI (claude-code-action
+#      only loads skills committed to the repo — never your laptop's ~/.claude).
 #
 # Requirements:
 #   - gh CLI installed
@@ -80,5 +83,27 @@ args=(--method PUT "/repos/$REPO/contents/$WF"
 gh api "${args[@]}" --jq '.commit.html_url'
 rm -f "$TMP"
 
+echo "==> Committing Claude Code skills to .claude/skills/"
+# claude-code-action loads project skills from the checked-out repo only, so the
+# web console's Plan/Implement/Debug actions need these committed here. Upload
+# each template from scripts/repo-skills/ via the contents API (idempotent: update
+# in place when the file already exists).
+SKILLS_DIR="$(cd "$(dirname "$0")/repo-skills" && pwd)"
+for dir in "$SKILLS_DIR"/*/; do
+  name="$(basename "$dir")"
+  src="${dir}SKILL.md"
+  [ -f "$src" ] || continue
+  dest=".claude/skills/$name/SKILL.md"
+  S_CONTENT="$(base64 < "$src" | tr -d '\n')"
+  S_SHA="$(gh api "/repos/$REPO/contents/$dest" --jq .sha 2>/dev/null || true)"
+  s_args=(--method PUT "/repos/$REPO/contents/$dest"
+    -f "message=Add Claude Code skill: $name"
+    -f "content=$S_CONTENT")
+  [ -n "$S_SHA" ] && s_args+=(-f "sha=$S_SHA")   # update in place if it already exists
+  echo "    - $dest"
+  gh api "${s_args[@]}" --jq '.commit.html_url'
+done
+
 echo "==> Done. Next: in Dispatch, click 'Refresh context' on $REPO — the"
-echo "    automation warning should clear. File a ticket with @claude to test."
+echo "    automation warning should clear. File a ticket with @claude to test,"
+echo "    or use the Plan/Implement/Debug skill buttons on a ticket."

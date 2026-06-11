@@ -122,3 +122,31 @@ Building mechanism.
 "Implement" could be added later. Whether `/plan` `/implement` `/debug` run as
 real Claude Code skills depends on them being installed in the repo's
 claude-code-action environment; prompts degrade to plain instructions otherwise.
+
+## 2026-06-11 — CI skill templates + installer pushes them to target repos
+**Why:** the console's Plan/Implement/Debug buttons post @claude comments that run
+in CI, but claude-code-action only loads skills committed to the *target* repo
+(not the laptop's ~/.claude, not gitignored files). The repo's existing
+`.claude/skills/{plan,implement,debug}` are file-handoff skills (require
+/docs/spec.md + /docs/BUILD_PLAN.md, write /docs/*.md, then STOP) — copying them
+verbatim would break CI (they never open a PR).
+
+**Decision (confirmed with user):** author CI-tuned skill templates and auto-
+install them via the repo-setup script (not a verbatim copy, not plugin inputs).
+
+**Implementation:**
+- `scripts/repo-skills/{plan,implement,debug}/SKILL.md` — CI-tuned: plan posts a
+  plan comment (no PR, no /docs/spec.md dependency); implement opens a PR/MR with
+  the provider close keyword (Fixes/Closes #N); debug reproduces, pushes a minimal
+  fix to the existing PR branch, comments the cause.
+- `scripts/install-claude-action.sh` now also uploads each template to the target
+  repo's `.claude/skills/<name>/SKILL.md` via the contents API (idempotent;
+  updates in place by sha). Header/footer docs updated.
+
+**To install on situation:** re-run the script with a write-scoped PAT:
+`GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh jwolberg/situation`
+(the read-only Dispatch token can't write Contents/Workflows/Secrets). Then click
+Refresh context on the repo card.
+
+**Follow-up:** each file is its own commit (per the existing workflow-commit
+pattern); a git-tree batch would be tidier but adds complexity.
