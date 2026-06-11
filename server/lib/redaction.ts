@@ -1,7 +1,12 @@
 // Keep secrets out of responses and logs (S2). Replace any env-secret value
 // that leaks into a string with a placeholder.
 
-const SECRET_ENV_KEYS = ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "GITLAB_TOKEN"];
+const SECRET_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "GITHUB_TOKEN",
+  "GITLAB_TOKEN",
+  "SLACK_WEBHOOK_URL",
+];
 
 export function redactSecrets(input: string): string {
   let out = input;

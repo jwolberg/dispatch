@@ -17,7 +17,14 @@
 - **Service:** `dispatch` on Cloud Run, region `us-central1` (adjust as needed)
 - **Runtime:** single container — Express serves the built SPA + API on `$PORT`,
   binds `0.0.0.0` with `ALLOW_NONLOCAL=1` (a container can't bind localhost)
-- **Secrets:** Secret Manager (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, optional `GITLAB_TOKEN`)
+- **Secrets:** Secret Manager (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`, optional `GITLAB_TOKEN`, optional `SLACK_WEBHOOK_URL`)
+
+> **Slack notifications (optional):** store a Slack Incoming Webhook URL as a
+> secret and pass it as `SLACK_WEBHOOK_URL` to mirror the activity feed into a
+> channel. Add to the deploy command:
+> `--set-secrets SLACK_WEBHOOK_URL=slack-webhook-url:latest` (after
+> `gcloud secrets create slack-webhook-url --data-file=- <<< "$WEBHOOK"`). Treat
+> the URL as a secret — anyone with it can post to your channel.
 
 ## 0. Prerequisites
 

@@ -1,4 +1,5 @@
 import { getDb } from "./migrate.js";
+import { notifySlack } from "../lib/notify.js";
 
 export interface ActivityRow {
   id: number;
@@ -44,6 +45,8 @@ export function insertActivity(event: NewActivity): void {
       url: event.url ?? null,
       occurred_at: event.occurred_at,
     });
+  // Mirror every activity event to Slack when configured (best-effort, non-blocking).
+  notifySlack({ type: event.type, summary: event.summary, url: event.url ?? null });
 }
 
 export function recentActivity(limit = 50): ActivityRow[] {

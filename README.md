@@ -33,9 +33,21 @@ working health check (footer shows DB + rate-limit status).
 | `GITLAB_HOST` | self-hosted GitLab | Base URL (defaults to `https://gitlab.com`) |
 | `PORT` | optional | Backend port (default 3001) |
 | `HOST` / `ALLOW_NONLOCAL` | optional | Bind host; non-local requires `ALLOW_NONLOCAL=1` |
+| `DISPATCH_PASSWORD` | optional | Shared-password gate (HTTP Basic Auth) for internet-reachable deploys |
+| `SLACK_WEBHOOK_URL` | optional | Slack [Incoming Webhook](https://api.slack.com/messaging/webhooks); mirrors the activity feed into a channel |
 
 Keys are loaded server-side only, never sent to the browser, and redacted from
 logs and error messages.
+
+### Slack notifications
+
+Set `SLACK_WEBHOOK_URL` to a Slack Incoming Webhook and Dispatch posts each
+activity event (issue filed, column changes, PR opened, steered, merged, skill
+runs) to that webhook's channel. Create one at
+<https://api.slack.com/messaging/webhooks> (new app → **Incoming Webhooks** →
+add to a channel). It's one-way and best-effort — a Slack outage never blocks
+Dispatch. Any existing `hooks.slack.com/services/…` webhook works; reusing one
+just routes notifications to that same channel.
 
 ## Prerequisites & setup
 

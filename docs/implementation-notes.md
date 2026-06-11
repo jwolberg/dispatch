@@ -221,3 +221,23 @@ Environments on a single `main` branch (not a staging branch / GitFlow).
 **First step shipped:** updated the architecture diagram only (this commit).
 **Next (not yet built):** ci.yml + deploy-staging.yml + deploy-production.yml
 templates + installer wiring, and the new board state.
+
+## 2026-06-11 — Slack notifications via Incoming Webhook
+**Why (user request):** get notified in Slack. Chose a one-way Incoming Webhook
+(no OAuth/bot) configured by env var — same pattern as the GitHub token / password.
+
+**Implementation:**
+- `server/lib/notify.ts`: `notifySlack(event)` POSTs `{text}` to `SLACK_WEBHOOK_URL`
+  (no-op if unset). Fire-and-forget, never throws, emoji per activity type.
+- Hooked into `insertActivity()` — the single choke point — so every activity
+  event (issue filed, column changes, PR opened, steered, merged, skill runs) is
+  mirrored. Activity is already change-only, so it's not per-poll noise.
+- `SLACK_WEBHOOK_URL` added to the redaction key list (it's a secret).
+- Documented in `.env.example`, README (env table + Slack section), DEPLOY.md
+  (Secret Manager + `--set-secrets`).
+
+**Notes:** webhook is channel-bound, not app-bound — any existing
+`hooks.slack.com/services/…` webhook can be reused (routes to that channel).
+Possible follow-up: filter to key events (Ready to test / Blocked / merged) if
+the full feed is too chatty; and a one-message-per-ticket burst can occur on the
+first poll after a DB wipe.
