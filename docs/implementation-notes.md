@@ -95,3 +95,30 @@ work) could never appear on the board.
 cycle — fine at current scale. Does NOT survive a redeploy by itself (repos are
 wiped too); durable fix is still a persistent `/data` volume per DEPLOY.md §4.
 Re-tracking after a wipe now repopulates the board, which it previously did not.
+
+## 2026-06-11 — Skill actions on a ticket (plan / implement / debug) + Queued→Building promote
+**Mechanism background:** board columns are derived, never stored (`deriveColumn`).
+Queued→Building only happens when `claude-code-action` starts a CI run, which is
+triggered by an `@claude` mention (issue open, or a new issue_comment). There is
+no column override — and shouldn't be (columns mirror provider reality). So the
+honest "promote to Building" is to actually start the build by posting `@claude`.
+
+**Decision (confirmed with user):** skills run **in CI via @claude** (not
+server-side). Each skill button posts a tailored `@claude` comment that
+claude-code-action picks up. Implement on a Queued ticket = the promote-to-
+Building mechanism.
+
+**Implementation:**
+- `server/lib/skills.ts`: `SkillId` (plan|implement|debug), `skillPrompt()`
+  (names the skill so the CI agent runs it if installed, degrades to prose;
+  implement embeds the provider auto-close keyword `Fixes`/`Closes`),
+  `defaultTarget()` (debug → PR when one exists, else issue).
+- `POST /api/tickets/:id/skill` ({skill, note?, target?}) — posts the comment via
+  the existing `postComment` seam, logs a `skill:<id>` activity event, reconciles.
+- Web: `ticketsApi.skill()`, `SkillBar` component on the card detail (Implement
+  highlighted; optional note box).
+
+**Follow-up:** buttons live on the ticket detail only; a board-card quick
+"Implement" could be added later. Whether `/plan` `/implement` `/debug` run as
+real Claude Code skills depends on them being installed in the repo's
+claude-code-action environment; prompts degrade to plain instructions otherwise.

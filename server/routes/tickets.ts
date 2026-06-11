@@ -7,10 +7,22 @@ import { getStatus } from "../db/status.js";
 import { safeReconcile, type StatusPayload } from "../poller/reconcile.js";
 import { getProvider } from "../providers/index.js";
 import type { CommentTarget, MergeMethod, ProviderId, RepoRef } from "../providers/index.js";
+import { isSkill, skillPrompt, defaultTarget } from "../lib/skills.js";
 import { safeMessage } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
 
 export const ticketsRouter = Router();
+
+/** Read the cached status payload for a ticket, or null if absent/corrupt. */
+function readPayload(ticketId: number): StatusPayload | null {
+  const row = getStatus(ticketId);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.payload_json) as StatusPayload;
+  } catch {
+    return null;
+  }
+}
 
 // POST /api/tickets — file the issue via the repo's provider adapter (F3).
 ticketsRouter.post("/", async (req, res) => {
@@ -163,6 +175,72 @@ ticketsRouter.post("/:id/comment", async (req, res) => {
       url: null,
       occurred_at: new Date().toISOString(),
     });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
+  }
+});
+
+// POST /api/tickets/:id/skill — run a Claude Code skill (plan/implement/debug)
+// on the ticket by posting a tailored @claude comment. claude-code-action picks
+// it up in CI; Implement on a Queued ticket is what promotes it to Building.
+ticketsRouter.post("/:id/skill", async (req, res) => {
+  const ticket = getTicket(Number(req.params.id));
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  const repo = getRepo(ticket.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+
+  const body = req.body ?? {};
+  if (!isSkill(body.skill)) {
+    res.status(400).json({ error: "`skill` must be one of: plan, implement, debug" });
+    return;
+  }
+  const skill = body.skill;
+  const note = typeof body.note === "string" ? body.note : null;
+
+  // Resolve the comment target: explicit `target` wins, else the skill default
+  // (debug → PR when one exists, otherwise the issue).
+  const payload = readPayload(ticket.id);
+  const hasPR = Boolean(payload?.pr);
+  const requested = body.target === "pr" ? "pr" : body.target === "issue" ? "issue" : null;
+  const kind: "issue" | "pr" = requested ?? defaultTarget(skill, hasPR);
+  let number = ticket.issue_number;
+  if (kind === "pr") {
+    if (!payload?.pr) {
+      res.status(400).json({ error: "No linked PR to target" });
+      return;
+    }
+    number = payload.pr.number;
+  }
+
+  const provider = repo.provider as ProviderId;
+  const ref: RepoRef = {
+    provider,
+    host: repo.host,
+    path: repo.path,
+    defaultBranch: repo.default_branch,
+  };
+  const target: CommentTarget = { repo: ref, kind, number };
+
+  try {
+    await getProvider(provider, repo.host).postComment(
+      target,
+      skillPrompt(skill, provider, ticket.issue_number, note)
+    );
+    insertActivity({
+      ticket_id: ticket.id,
+      type: `skill:${skill}`,
+      summary: `Ran ${skill} on ${kind} #${number}`,
+      url: null,
+      occurred_at: new Date().toISOString(),
+    });
+    await safeReconcile(ticket); // refresh status promptly; the run lands next poll
     res.json({ ok: true });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });

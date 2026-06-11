@@ -4,6 +4,7 @@ import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { ticketsApi, type Check } from "../api/tickets.js";
 import { SteerBox } from "../components/SteerBox.js";
+import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
@@ -189,6 +190,15 @@ export function CardDetailPage() {
               <p className="text-body text-gray-500">No runs yet.</p>
             )}
           </section>
+
+          <div className="lg:col-span-2">
+            <SkillBar
+              ticketId={ticket.id}
+              column={status.column}
+              hasPR={Boolean(status.pr)}
+              onRan={() => void refetch()}
+            />
+          </div>
 
           <div className="lg:col-span-2">
             <SteerBox ticketId={ticket.id} hasPR={Boolean(status.pr)} />
