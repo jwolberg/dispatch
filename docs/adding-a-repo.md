@@ -54,28 +54,38 @@ ship gate work).
 
 ### Option B — API-only script (no app install)
 
-Needs a fine-grained PAT **on that repo** with **Contents: write, Workflows:
-write, Secrets: write** (your read-only Dispatch token won't do — make a new
-one at <https://github.com/settings/personal-access-tokens/new>).
+Needs a fine-grained PAT **on that repo**. Because the workflow now also **opens
+PRs** that must trigger CI, the PAT needs **Contents: write, Pull requests: write,
+Issues: write, Workflows: write, Secrets: write** (make one at
+<https://github.com/settings/personal-access-tokens/new>).
 
 ```bash
 GH_SETUP_TOKEN=github_pat_xxx \
   ./scripts/install-claude-action.sh <owner>/<repo>
+# Optional: a separate, narrower runtime token (Contents/PRs/Issues RW) for the
+# workflow's GH_PAT secret; defaults to GH_SETUP_TOKEN if unset:
+#   GH_PAT=github_pat_yyy GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh <owner>/<repo>
 ```
 
-Sets the `ANTHROPIC_API_KEY` secret, commits `.github/workflows/claude.yml`,
-commits `.claude/skills/{plan,implement,debug}/SKILL.md`, and commits a CI gate
-at `.github/workflows/ci.yml` (created only if absent). The Anthropic key is
-read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY` (or pass
-`ANTHROPIC_API_KEY=...`).
+Sets the `ANTHROPIC_API_KEY` and `GH_PAT` secrets, commits
+`.github/workflows/claude.yml`, commits `.claude/skills/{plan,implement,debug}/SKILL.md`,
+and commits a CI gate at `.github/workflows/ci.yml` (created only if absent). The
+Anthropic key is read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY`
+(or pass `ANTHROPIC_API_KEY=...`).
+
+> **PRs open automatically.** `claude-code-action` never opens PRs itself — by
+> design it pushes a branch and links a "Create PR" page. The workflow adds a
+> `gh pr create` post-step (using `steps.claude.outputs.branch_name`) that opens
+> the PR under **`GH_PAT`**. The PAT identity is the key: a PR opened by the
+> default `GITHUB_TOKEN` would **not** trigger `on: pull_request` CI (GitHub's
+> anti-recursion rule), so the gate below would never run.
 
 > **The CI gate (`ci.yml`):** runs the repo's `lint` / `test` / `build` npm
 > scripts on every PR (each step is `--if-present`, so it's a no-op when a script
 > is missing). Its checks are what move the board **Building → Ready to test →
 > Blocked**. It's created only when the repo has no `ci.yml`, so it never clobbers
-> existing CI; adapt it for non-Node stacks. **Important:** for it to run on
-> Claude's PRs you need the Claude **GitHub App** (Option A) — see the caveat
-> below; bot-authored PRs don't trigger workflows.
+> existing CI; adapt it for non-Node stacks. It triggers on the auto-opened PRs
+> because those come from `GH_PAT`, not the bot.
 
 > **Why the skills are committed:** the console's **Plan / Implement / Debug**
 > buttons (on a ticket) drive Claude by posting an `@claude` comment that runs in
@@ -87,11 +97,12 @@ read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY` (or pass
 > but it won't run them as named skills. (`debug` also ships bundled with Claude
 > Code; the committed copy just tunes it to the PR flow.)
 
-> **Caveat (Option B):** without the app, Claude's PR commits run as
-> `github-actions[bot]`, and GitHub does **not** trigger CI on bot commits — so
-> the PR may sit with no checks, the board won't reach **Ready to test** on check
-> status, and the "all checks green" ship gate is vacuous. Use Option A if you
-> need check-driven board states.
+> **Note (Option B):** check-driven board states work here because the workflow
+> opens PRs under `GH_PAT` (a real identity), so CI triggers on them. If you
+> instead point the workflow's token back at the default `GITHUB_TOKEN`, PRs and
+> their commits become bot-authored and GitHub won't run CI on them — the board
+> would then never reach **Ready to test** on check status. Option A (the GitHub
+> App) is an alternative identity that also avoids that.
 
 After either path, click **Refresh context** on the repo card — the automation
 warning clears.

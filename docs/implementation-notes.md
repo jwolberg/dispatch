@@ -273,3 +273,26 @@ Claude GitHub App (`/install-github-app`) makes PRs app-authored → CI fires.
 
 **To enable on situation:** re-run the installer (write PAT), ideally also install
 the GitHub App so the gate actually runs.
+
+## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
+**Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
+`claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation
+#3 (branch pushed, link given, checklist "✅ Provide PR link"). So the board never
+reaches PR/CI. Also: a PR opened by GITHUB_TOKEN wouldn't trigger CI anyway
+(GitHub anti-recursion).
+
+**Decision (confirmed with user):** fine-grained PAT approach (simplest).
+
+**Implementation (install-claude-action.sh generated claude.yml):**
+- `github_token: ${{ secrets.GH_PAT }}` on the action (non-bot identity).
+- New post-step `Open PR for Claude's branch`: `gh pr create --head
+  ${{ steps.claude.outputs.branch_name }}` with `Fixes #N`, guarded by
+  `branch_name != ''` (skips plan/no-change runs) and a dedupe check.
+- Installer sets the `GH_PAT` repo secret (defaults to GH_SETUP_TOKEN; warns to
+  use a narrower token). PAT needs Contents+PRs+Issues RW.
+- Corrected earlier docs/notes that claimed the official GitHub App was needed
+  for CI to trigger — the official app doesn't auto-open PRs and its events
+  generally don't trigger CI; PAT (or a *custom* app via create-github-app-token)
+  does. Updated adding-a-repo.md + installer comments accordingly.
+
+**To apply on situation:** re-run installer with a PAT that also has PRs+Issues RW.

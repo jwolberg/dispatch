@@ -2,8 +2,9 @@
 # Enable anthropics/claude-code-action on a repo via the GitHub API — no app install.
 #
 # Does the automatable setup steps (the GitHub App is optional; see caveat):
-#   1. Sets the ANTHROPIC_API_KEY repository secret (gh handles libsodium encryption)
-#   2. Commits .github/workflows/claude.yml (triggers builds on @claude mentions)
+#   1. Sets the ANTHROPIC_API_KEY + GH_PAT repository secrets (gh handles encryption)
+#   2. Commits .github/workflows/claude.yml — triggers builds on @claude mentions and
+#      opens a PR (gh pr create post-step) under GH_PAT so the PR triggers CI
 #   3. Commits .claude/skills/{plan,implement,debug}/SKILL.md so the web console's
 #      Plan/Implement/Debug skill actions run as real skills in CI (claude-code-action
 #      only loads skills committed to the repo — never your laptop's ~/.claude).
@@ -22,15 +23,20 @@
 # Usage:
 #   GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh jwolberg/situation
 #
-# Caveat: without the Claude GitHub App, Claude's PR commits run as
-# github-actions[bot], and GitHub does NOT trigger your CI on bot commits — so
-# Dispatch's check-driven Building->Ready-to-test transitions and the
-# "all checks green" ship gate won't populate from those commits. Install the
-# app (github.com/apps/claude or `/install-github-app`) if you need that.
+# PRs: claude-code-action never opens PRs itself — by design it pushes a branch
+# and links a "Create PR" page (docs/faq). The workflow below adds a `gh pr create`
+# post-step that opens the PR, authenticated with a fine-grained PAT (GH_PAT) so the
+# opened PR TRIGGERS your `on: pull_request` CI — a PR opened by the default
+# GITHUB_TOKEN would not (GitHub's anti-recursion rule).
 set -euo pipefail
 
 REPO="${1:?usage: install-claude-action.sh <owner/repo>}"
+# GH_SETUP_TOKEN runs this script (Contents+Workflows+Secrets write). GH_PAT is the
+# token the workflow uses at runtime to push branches, comment, and OPEN PRs — it
+# needs Contents RW + Pull requests RW + Issues RW. One fine-grained PAT with all of
+# Contents/Pull requests/Issues/Workflows/Secrets (RW) can serve as both.
 : "${GH_SETUP_TOKEN:?set GH_SETUP_TOKEN to a PAT with Contents+Workflows+Secrets write}"
+PAT_FOR_ACTION="${GH_PAT:-$GH_SETUP_TOKEN}"
 
 KEY="${ANTHROPIC_API_KEY:-$(security find-generic-password -s dispatch-ANTHROPIC_API_KEY -w 2>/dev/null || true)}"
 : "${KEY:?ANTHROPIC_API_KEY not set and not in keychain (dispatch-ANTHROPIC_API_KEY)}"
@@ -40,6 +46,11 @@ command -v gh >/dev/null || { echo "gh CLI not found"; exit 1; }
 
 echo "==> Setting ANTHROPIC_API_KEY secret on $REPO"
 printf %s "$KEY" | gh secret set ANTHROPIC_API_KEY --repo "$REPO"
+
+echo "==> Setting GH_PAT secret on $REPO (workflow uses it to open PRs that trigger CI)"
+printf %s "$PAT_FOR_ACTION" | gh secret set GH_PAT --repo "$REPO"
+[ "$PAT_FOR_ACTION" = "$GH_SETUP_TOKEN" ] && \
+  echo "    (reusing GH_SETUP_TOKEN as GH_PAT — set a separate GH_PAT with only Contents/PRs/Issues RW to limit blast radius)"
 
 echo "==> Committing .github/workflows/claude.yml"
 WF=".github/workflows/claude.yml"
@@ -67,18 +78,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Do NOT set `prompt:` here. A static prompt forces the action into
-          # automation mode, which IGNORES the triggering @claude comment — so the
-          # console's "use the <skill> skill ..." instruction is never seen and the
-          # run does nothing. Omitting `prompt:` enables interactive (mention) mode:
-          # Claude reads the @claude comment, runs it (incl. project skills checked
-          # out at .claude/skills/), posts a tracking comment, and opens a PR.
-          # The standing PR convention goes in append-system-prompt, which augments
-          # rather than overrides the trigger.
+          # Use the PAT (not the default GITHUB_TOKEN) so the branch push and the PR
+          # opened below come from a real identity — a PR opened by GITHUB_TOKEN would
+          # not trigger on: pull_request CI (GitHub anti-recursion).
+          github_token: ${{ secrets.GH_PAT }}
+          # Do NOT set `prompt:` here. A static prompt forces automation mode, which
+          # IGNORES the @claude comment. Omitting it enables interactive (mention)
+          # mode: Claude reads the comment, runs it (incl. project skills under
+          # .claude/skills/), posts a tracking comment, and pushes a branch.
           claude_args: |
-            --append-system-prompt "When you open a pull request, include a closing reference to the issue (e.g. 'Fixes #123') in the PR description so it auto-closes on merge."
+            --append-system-prompt "Implement the change on a branch and commit it; a pull request will be opened automatically from your branch. Reference the issue with 'Fixes #<n>'."
+      # claude-code-action pushes a branch + links a PR by design but never opens it.
+      # Open it so the on: pull_request CI gate runs. Skipped for plan / no-change runs
+      # (empty branch_name) and when a PR for the branch already exists.
+      - name: Open PR for Claude's branch
+        if: steps.claude.outputs.branch_name != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          branch="${{ steps.claude.outputs.branch_name }}"
+          if [ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --json number --jq '.[].number' 2>/dev/null)" ]; then
+            echo "PR already exists for $branch"; exit 0
+          fi
+          issue="${{ github.event.issue.number }}"
+          gh pr create --repo "$GITHUB_REPOSITORY" \
+            --head "$branch" \
+            --base "${{ github.event.repository.default_branch }}" \
+            --title "Claude: implement #${issue}" \
+            --body "Fixes #${issue} — automated implementation by @claude; review before merging." \
+            || echo "gh pr create skipped (no diff, or PR already open)"
 YAML
 
 CONTENT="$(base64 < "$TMP" | tr -d '\n')"
@@ -94,8 +125,8 @@ rm -f "$TMP"
 
 echo "==> Committing CI gate .github/workflows/ci.yml (create if absent)"
 # A PR test gate so the board's check-driven states work. Create-if-absent so it
-# never clobbers a repo's existing CI. Note: bot-authored PRs (API-key-only setup)
-# don't trigger workflows — install the Claude GitHub App for CI to run on them.
+# never clobbers a repo's existing CI. The claude.yml above opens PRs with GH_PAT
+# (a real identity), so this gate triggers on Claude's PRs.
 CI_DEST=".github/workflows/ci.yml"
 if gh api "/repos/$REPO/contents/$CI_DEST" --jq .sha >/dev/null 2>&1; then
   echo "    - $CI_DEST already exists — leaving it unchanged"
@@ -132,5 +163,5 @@ done
 echo "==> Done. Next: in Dispatch, click 'Refresh context' on $REPO — the"
 echo "    automation warning should clear. File a ticket with @claude to test,"
 echo "    or use the Plan/Implement/Debug skill buttons on a ticket."
-echo "    For the CI gate to run on Claude's PRs, install the Claude GitHub App"
-echo "    (/install-github-app) — bot-authored PRs don't trigger workflows."
+echo "    PRs now open automatically (gh pr create post-step) under GH_PAT, so the"
+echo "    ci.yml gate runs on them. Ensure GH_PAT has Pull requests + Issues write."
