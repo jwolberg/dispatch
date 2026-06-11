@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 3 — File + board
-- Current ticket: P3-T4
+- Current ticket: P3-T5
 - Blockers: None
 
 ---
@@ -191,7 +191,7 @@
   - Files likely involved: `server/routes/board.ts`
   - Depends on: P3-T3
   - Acceptance criteria covered: #4, #9
-  - Status: Todo
+  - Status: Complete
 
 - P3-T5 — Card detail route
   - Objective: `GET /api/tickets/:id` assembling issue body, Claude progress comment, linked PR + per-check status, workflow run link, timestamps.
