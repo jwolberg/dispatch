@@ -63,19 +63,33 @@ chatRouter.post("/", async (req, res) => {
 
   send({ type: "chat", chat_id: chat.id });
 
-  try {
-    let text = "";
+  let text = "";
+  let emitted = false;
+  const runStream = async () => {
     const stream = streamMessage(system, transcript);
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
         text += event.delta.text;
+        emitted = true;
         send({ type: "delta", text: event.delta.text });
       }
+    }
+  };
+
+  try {
+    try {
+      await runStream();
+    } catch (err) {
+      // S4: retry once with backoff, but only if nothing was streamed yet (so we
+      // never duplicate partial output). The user's message is already persisted.
+      if (emitted) throw err;
+      await new Promise((r) => setTimeout(r, 800));
+      text = "";
+      await runStream();
     }
     appendMessage(chat.id, { role: "assistant", content: text });
     send({ type: "done" });
   } catch (err) {
-    // The user's message is already persisted; the client keeps its input box.
     send({ type: "error", message: safeMessage(err) });
   } finally {
     res.end();

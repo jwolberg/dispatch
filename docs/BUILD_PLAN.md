@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 6 — Hardening
-- Current ticket: P6-T3
+- Current ticket: P6-T4
 - Blockers: None
 
 ---
@@ -312,7 +312,7 @@
   - Files likely involved: `server/anthropic/client.ts`, `server/poller/reconcile.ts`
   - Depends on: P2-T1, P3-T3
   - Acceptance criteria covered: S4, S6
-  - Status: Todo
+  - Status: Complete
 
 - P6-T4 — README setup guide
   - Objective: Document GitHub setup (`/install-github-app`, workflow triggers/permissions/timeout, PAT scopes), GitLab beta setup (`.gitlab-ci.yml` Claude job, masked var, PAT `api`, `GITLAB_HOST`), preview-deploy prerequisite, `.env`, and `npm install && npm run dev` (§8).
