@@ -254,3 +254,22 @@ first poll after a DB wipe.
 ## 2026-06-11 — Slack test ping verified
 Sent a manual POST to the configured webhook; Slack returned `ok` (message posted
 to the channel). Confirms SLACK_WEBHOOK_URL wiring end-to-end in production.
+
+## 2026-06-11 — Build step 1: CI test gate (ci.yml)
+**Why:** the PR check gate that feeds the board's Building → Ready to test →
+Blocked states. Without it those states are vacuous (no checks on PRs).
+
+**Implementation:**
+- `scripts/repo-ci/ci.yml` — `on: pull_request`, sets up Node 20, `npm ci`
+  (fallback `npm install`), then `lint`/`test`/`build` each with `--if-present`
+  (no-op when the script is absent → safe for any Node/JS repo). Adds a
+  per-ref `concurrency` group to cancel superseded runs.
+- `install-claude-action.sh` now commits it to `.github/workflows/ci.yml`,
+  **create-if-absent** (won't clobber an existing CI). Header/footer + docs updated.
+
+**Caveat (documented):** GitHub does not trigger workflows on GITHUB_TOKEN/bot
+events, so on the API-key-only setup the gate won't run on Claude's PRs. The
+Claude GitHub App (`/install-github-app`) makes PRs app-authored → CI fires.
+
+**To enable on situation:** re-run the installer (write PAT), ideally also install
+the GitHub App so the gate actually runs.

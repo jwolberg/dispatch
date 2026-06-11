@@ -63,10 +63,19 @@ GH_SETUP_TOKEN=github_pat_xxx \
   ./scripts/install-claude-action.sh <owner>/<repo>
 ```
 
-Sets the `ANTHROPIC_API_KEY` secret, commits `.github/workflows/claude.yml`, and
-commits `.claude/skills/{plan,implement,debug}/SKILL.md`. The Anthropic key is
+Sets the `ANTHROPIC_API_KEY` secret, commits `.github/workflows/claude.yml`,
+commits `.claude/skills/{plan,implement,debug}/SKILL.md`, and commits a CI gate
+at `.github/workflows/ci.yml` (created only if absent). The Anthropic key is
 read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY` (or pass
 `ANTHROPIC_API_KEY=...`).
+
+> **The CI gate (`ci.yml`):** runs the repo's `lint` / `test` / `build` npm
+> scripts on every PR (each step is `--if-present`, so it's a no-op when a script
+> is missing). Its checks are what move the board **Building → Ready to test →
+> Blocked**. It's created only when the repo has no `ci.yml`, so it never clobbers
+> existing CI; adapt it for non-Node stacks. **Important:** for it to run on
+> Claude's PRs you need the Claude **GitHub App** (Option A) — see the caveat
+> below; bot-authored PRs don't trigger workflows.
 
 > **Why the skills are committed:** the console's **Plan / Implement / Debug**
 > buttons (on a ticket) drive Claude by posting an `@claude` comment that runs in

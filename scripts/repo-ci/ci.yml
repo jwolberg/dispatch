@@ -1,0 +1,32 @@
+# Dispatch CI gate — runs the repo's lint/test/build on every pull request so the
+# board's check-driven states reflect real results (Building → Ready to test →
+# Blocked). Each step runs only if the matching npm script exists, so this is
+# safe to drop into any Node/JS repo; adapt the steps for other stacks.
+#
+# NOTE: GitHub does not trigger workflows on events authored by GITHUB_TOKEN
+# (the github-actions[bot]). If claude-code-action opens PRs as the bot
+# (API-key-only setup), this gate will NOT run on those PRs. Install the Claude
+# GitHub App (/install-github-app) so PRs are app-authored and trigger CI.
+name: CI
+on:
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Test
+        run: npm run test --if-present
+      - name: Build
+        run: npm run build --if-present

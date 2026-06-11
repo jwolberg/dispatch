@@ -7,6 +7,8 @@
 #   3. Commits .claude/skills/{plan,implement,debug}/SKILL.md so the web console's
 #      Plan/Implement/Debug skill actions run as real skills in CI (claude-code-action
 #      only loads skills committed to the repo — never your laptop's ~/.claude).
+#   4. Commits .github/workflows/ci.yml — a PR test gate (lint/test/build) that feeds
+#      the board's check states. Created only if absent (won't clobber existing CI).
 #
 # Requirements:
 #   - gh CLI installed
@@ -90,6 +92,22 @@ args=(--method PUT "/repos/$REPO/contents/$WF"
 gh api "${args[@]}" --jq '.commit.html_url'
 rm -f "$TMP"
 
+echo "==> Committing CI gate .github/workflows/ci.yml (create if absent)"
+# A PR test gate so the board's check-driven states work. Create-if-absent so it
+# never clobbers a repo's existing CI. Note: bot-authored PRs (API-key-only setup)
+# don't trigger workflows — install the Claude GitHub App for CI to run on them.
+CI_DEST=".github/workflows/ci.yml"
+if gh api "/repos/$REPO/contents/$CI_DEST" --jq .sha >/dev/null 2>&1; then
+  echo "    - $CI_DEST already exists — leaving it unchanged"
+else
+  CI_SRC="$(cd "$(dirname "$0")" && pwd)/repo-ci/ci.yml"
+  CI_CONTENT="$(base64 < "$CI_SRC" | tr -d '\n')"
+  echo "    - $CI_DEST"
+  gh api --method PUT "/repos/$REPO/contents/$CI_DEST" \
+    -f "message=Add Dispatch CI gate (lint/test/build on PRs)" \
+    -f "content=$CI_CONTENT" --jq '.commit.html_url'
+fi
+
 echo "==> Committing Claude Code skills to .claude/skills/"
 # claude-code-action loads project skills from the checked-out repo only, so the
 # web console's Plan/Implement/Debug actions need these committed here. Upload
@@ -114,3 +132,5 @@ done
 echo "==> Done. Next: in Dispatch, click 'Refresh context' on $REPO — the"
 echo "    automation warning should clear. File a ticket with @claude to test,"
 echo "    or use the Plan/Implement/Debug skill buttons on a ticket."
+echo "    For the CI gate to run on Claude's PRs, install the Claude GitHub App"
+echo "    (/install-github-app) — bot-authored PRs don't trigger workflows."
