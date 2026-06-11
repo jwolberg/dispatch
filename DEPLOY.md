@@ -3,7 +3,7 @@
 > **Live deployment (2026-06-11):** service `dispatch` in `dispatch-1-499113`,
 > region `us-central1` — `https://dispatch-4mq3uiar6q-uc.a.run.app`
 > (`--no-allow-unauthenticated`; unauthenticated requests return 403). Access it
-> with `gcloud run services proxy dispatch --region us-central1`, or
+> with `gcloud beta run services proxy dispatch --region us-central1`, or
 > `curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>`.
 
 
@@ -98,7 +98,7 @@ The service has no public URL you can just open (auth required). Use an
 authenticated local proxy:
 
 ```bash
-gcloud run services proxy dispatch --region us-central1
+gcloud beta run services proxy dispatch --region us-central1
 # → opens http://localhost:8080 tunneled with your gcloud identity
 ```
 
