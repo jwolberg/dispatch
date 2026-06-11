@@ -10,7 +10,7 @@ export type Column = "Spec" | "Queued" | "Building" | "Ready to test" | "Shipped
 
 export interface StatusPayload {
   column: Column;
-  issue: { number: number; title: string; state: "open" | "closed"; url: string };
+  issue: { number: number; title: string; state: "open" | "closed"; url: string; body: string };
   progressComment: { author: string | null; body: string; url: string | null } | null;
   pr: PRStatus | null;
   runs: Run[];
@@ -101,7 +101,13 @@ export async function reconcileTicket(ticket: TicketRow): Promise<StatusPayload 
 
   const payload: StatusPayload = {
     column: deriveColumn(issue.state, pr, runs),
-    issue: { number: issue.number, title: issue.title, state: issue.state, url: issue.url },
+    issue: {
+      number: issue.number,
+      title: issue.title,
+      state: issue.state,
+      url: issue.url,
+      body: issue.body,
+    },
     progressComment: pickProgressComment(issue),
     pr,
     runs,

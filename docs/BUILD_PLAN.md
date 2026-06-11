@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 3 — File + board
-- Current ticket: P3-T5
+- Current ticket: P3-T6
 - Blockers: None
 
 ---
@@ -198,7 +198,7 @@
   - Files likely involved: `server/routes/tickets.ts`
   - Depends on: P3-T3
   - Acceptance criteria covered: #5, #8
-  - Status: Todo
+  - Status: Complete
 
 - P3-T6 — Board UI (kanban)
   - Objective: Columns Spec/Queued/Building/Ready to test/Shipped/Blocked; cards with status chips (icon+text); polling refetch hook; Spec column shows local drafts.

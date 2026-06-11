@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { getRepo } from "../db/repos.js";
-import { createTicket } from "../db/tickets.js";
+import { createTicket, getTicket } from "../db/tickets.js";
 import { setChatStatus } from "../db/chats.js";
 import { insertActivity } from "../db/activity.js";
+import { getStatus } from "../db/status.js";
+import { safeReconcile, type StatusPayload } from "../poller/reconcile.js";
 import { getProvider } from "../providers/index.js";
 import type { ProviderId, RepoRef } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
@@ -53,4 +55,50 @@ ticketsRouter.post("/", async (req, res) => {
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
   }
+});
+
+// GET /api/tickets/:id — card detail: issue, progress comment, PR + checks,
+// runs, timestamps (F4.3). Reads from status_cache; reconciles on demand if the
+// ticket hasn't been polled yet (e.g. just filed) so the card isn't empty.
+ticketsRouter.get("/:id", async (req, res) => {
+  const ticket = getTicket(Number(req.params.id));
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  const repo = getRepo(ticket.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+
+  let row = getStatus(ticket.id);
+  if (!row) {
+    await safeReconcile(ticket);
+    row = getStatus(ticket.id);
+  }
+  let status: StatusPayload | null = null;
+  if (row) {
+    try {
+      status = JSON.parse(row.payload_json) as StatusPayload;
+    } catch {
+      status = null;
+    }
+  }
+
+  res.json({
+    ticket: { id: ticket.id, issue_number: ticket.issue_number, created_at: ticket.created_at },
+    repo: {
+      id: repo.id,
+      path: repo.path,
+      provider: repo.provider,
+      host: repo.host,
+      preview_url_pattern: repo.preview_url_pattern,
+      merge_method: repo.merge_method,
+      default_branch: repo.default_branch,
+      web_url: repo.web_url,
+    },
+    status,
+    updated_at: row?.updated_at ?? null,
+  });
 });
