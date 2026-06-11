@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 1 — Skeleton
-- Current ticket: P1-T8
+- Current ticket: P1-T9
 - Blockers: None
 
 ---
@@ -100,7 +100,7 @@
   - Files likely involved: `web/main.tsx`, `web/App.tsx`, `web/index.css`, `tailwind.config.js`, `web/api/client.ts`, `web/pages/*` (stubs)
   - Depends on: P1-T1
   - Acceptance criteria covered: #10
-  - Status: Todo
+  - Status: Complete
 
 - P1-T9 — Repos page UI
   - Objective: Discovery list with client-side search, provider badge, path, description, last activity; **Track** button (zero typing); tracked-repo cards (F1.4) showing description, structure summary, CLAUDE.md indicator, context-freshness timestamp; setup-warning state for repos lacking automation (F1.5); manual-entry fallback form.

@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* PRD §4: minimum body 13px; #e5e7eb on #0b0f17 ≈ 13:1 contrast. */
+  font-size: 13px;
+  line-height: 1.5;
+  background-color: #0b0f17;
+  color: #e5e7eb;
+}
+
+/* PRD §4: minimum caption/label 11.5px. */
+.text-label {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
