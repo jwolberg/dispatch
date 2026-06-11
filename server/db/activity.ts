@@ -7,6 +7,20 @@ export interface ActivityRow {
   summary: string;
   url: string | null;
   occurred_at: string;
+  // Enrichment for grouping (derived via joins; null when unlinked).
+  repo_path: string | null;
+  issue_number: number | null;
+  task_title: string | null;
+}
+
+function titleFromPayload(json: string | null): string | null {
+  if (!json) return null;
+  try {
+    const payload = JSON.parse(json) as { issue?: { title?: string } };
+    return payload?.issue?.title ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export interface NewActivity {
@@ -33,7 +47,21 @@ export function insertActivity(event: NewActivity): void {
 }
 
 export function recentActivity(limit = 50): ActivityRow[] {
-  return getDb()
-    .prepare("SELECT * FROM activity ORDER BY occurred_at DESC, id DESC LIMIT ?")
-    .all(limit) as ActivityRow[];
+  const rows = getDb()
+    .prepare(
+      `SELECT a.id, a.ticket_id, a.type, a.summary, a.url, a.occurred_at,
+              r.path AS repo_path, t.issue_number AS issue_number,
+              s.payload_json AS payload_json
+       FROM activity a
+       LEFT JOIN tickets t ON a.ticket_id = t.id
+       LEFT JOIN repos r ON t.repo_id = r.id
+       LEFT JOIN status_cache s ON s.ticket_id = t.id
+       ORDER BY a.occurred_at DESC, a.id DESC
+       LIMIT ?`
+    )
+    .all(limit) as Array<Omit<ActivityRow, "task_title"> & { payload_json: string | null }>;
+  return rows.map(({ payload_json, ...row }) => ({
+    ...row,
+    task_title: titleFromPayload(payload_json),
+  }));
 }

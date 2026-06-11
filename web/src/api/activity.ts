@@ -7,6 +7,9 @@ export interface ActivityEvent {
   summary: string;
   url: string | null;
   occurred_at: string;
+  repo_path: string | null;
+  issue_number: number | null;
+  task_title: string | null;
 }
 
 export const activityApi = {

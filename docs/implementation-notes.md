@@ -57,3 +57,15 @@ Deferred — need live credentials/infra to confirm end-to-end (code paths imple
 - **#12 (full loop)** a GitLab project completing file→build→MR→ship — needs `GITLAB_TOKEN` + an instance with the Claude CI job
 
 Note on #9 wording: the PRD says "delete data/dispatch.db … rebuild from GitHub alone." Per ARCH §6 (the implementation reference), `repos`+`tickets` are the non-disposable seed and the `*_cache` tables rebuild from the provider. Deleting the whole file also drops repos+tickets (you'd re-track); the implemented guarantee is that all *derived* state is disposable and repopulates.
+
+## 2026-06-11 — UI tweaks (Board title, nav order, Activity grouping)
+- **Board h1** → "Automated Workflow Tracking Board" (via `Page title`); nav reordered to
+  Tracking Board, Spec Chat, Activity, Repo Config (relabeled "Repos"→"Repo Config",
+  "Spec chat"→"Spec Chat").
+- **Activity grouping (repo → task):** activity rows carry no repo/task fields, so
+  `recentActivity()` now LEFT JOINs tickets→repos and status_cache to surface
+  `repo_path`, `issue_number`, and `task_title` (parsed from `status_cache.payload_json`
+  `issue.title`). Decision: task label = `#<issue_number> · <title>`; events with a null
+  `ticket_id`/repo fall back to "General" task under an "Unassigned" repo group. Joins are
+  LEFT so unlinked/uncached events still render. Ordering preserved by relying on the
+  existing newest-first sort + Map insertion order (no extra sort).

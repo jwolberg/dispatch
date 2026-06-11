@@ -17,7 +17,7 @@ export function BoardPage() {
   }
 
   return (
-    <Page title="Board">
+    <Page title="Automated Workflow Tracking Board">
       {error && (
         <div className="mb-3 rounded border border-status-fail/40 bg-status-fail/10 px-3 py-2 text-body text-status-fail">
           {error}

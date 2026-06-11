@@ -11,10 +11,10 @@ import { CardDetailPage } from "./pages/CardDetail.js";
 import { ActivityPage } from "./pages/Activity.js";
 
 const NAV = [
-  { to: "/board", label: "Board" },
-  { to: "/repos", label: "Repos" },
-  { to: "/chat", label: "Spec chat" },
+  { to: "/board", label: "Tracking Board" },
+  { to: "/chat", label: "Spec Chat" },
   { to: "/activity", label: "Activity" },
+  { to: "/repos", label: "Repo Config" },
 ];
 
 export function App() {
