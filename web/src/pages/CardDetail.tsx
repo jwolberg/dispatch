@@ -2,10 +2,11 @@ import { useParams } from "react-router-dom";
 import { Page } from "../components/Page.js";
 import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
-import { ticketsApi, type Check } from "../api/tickets.js";
+import { ticketsApi, type Check, type TicketDetail } from "../api/tickets.js";
 import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
+import { ago } from "../lib/time.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
   success: "text-status-ok",
@@ -19,6 +20,51 @@ const CHECK_ICON: Record<Check["state"], string> = {
   pending: "◐",
   neutral: "•",
 };
+
+const RUN_CLS: Record<string, string> = {
+  success: "text-status-ok",
+  failure: "text-status-fail",
+  queued: "text-status-wait",
+  in_progress: "text-status-wait",
+  neutral: "text-gray-400",
+};
+
+type Status = NonNullable<TicketDetail["status"]>;
+
+// "Where are we / what's next" — interpret the derived column (plus PR/run/plan
+// signals) into a one-line state and the recommended next action.
+function nextStep(s: Status): { label: string; hint: string; cls: string } {
+  const running = s.runs.some((r) => r.state === "queued" || r.state === "in_progress");
+  const ok = "border-status-ok/40 bg-status-ok/10 text-status-ok";
+  const wait = "border-status-wait/40 bg-status-wait/10 text-status-wait";
+  const fail = "border-status-fail/40 bg-status-fail/10 text-status-fail";
+  const info = "border-status-info/40 bg-status-info/10 text-status-info";
+  switch (s.column) {
+    case "Shipped":
+      return { label: "Shipped", hint: "Merged and closed — nothing left to do.", cls: ok };
+    case "Ready to test":
+      return { label: "Ready to test", hint: "Checks are green. Preview the PR, then Ship.", cls: ok };
+    case "Blocked":
+      return { label: "Blocked", hint: "A check or run failed. Click Debug to push a fix.", cls: fail };
+    case "Building":
+      return {
+        label: "Building",
+        hint: s.pr
+          ? "Claude opened a PR — checks are running. Wait for them to finish."
+          : "Claude is working — a run is in progress.",
+        cls: wait,
+      };
+    default: // Queued / Spec
+      if (running) return { label: "Working", hint: "A run is in progress…", cls: wait };
+      if (s.progressComment)
+        return {
+          label: "Plan ready",
+          hint: "Claude posted a plan below. Review it, then click Implement to build.",
+          cls: info,
+        };
+      return { label: "Queued", hint: "Not started. Click Implement to build — or Plan first.", cls: info };
+  }
+}
 
 // Render Claude's progress comment, reflecting markdown checkboxes as ☑ / ☐.
 function ProgressBody({ body }: { body: string }) {
@@ -86,12 +132,26 @@ export function CardDetailPage() {
             spec chat
           </a>
         )}
+        {data.updated_at && (
+          <span className="text-label text-gray-500" title={new Date(data.updated_at).toLocaleString()}>
+            updated {ago(data.updated_at)}
+          </span>
+        )}
       </div>
 
       {!status ? (
         <p className="text-body text-gray-500">Syncing with provider…</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
+          {(() => {
+            const step = nextStep(status);
+            return (
+              <div className={`lg:col-span-2 rounded-lg border px-3 py-2 ${step.cls}`}>
+                <span className="text-body font-semibold">Next: {step.label}</span>
+                <span className="ml-2 text-label opacity-90">{step.hint}</span>
+              </div>
+            );
+          })()}
           <section className="rounded-lg border border-border bg-surface p-4">
             <h2 className="mb-2 text-body font-semibold text-gray-200">Issue</h2>
             <div className="whitespace-pre-wrap text-body text-gray-300">{status.issue.body}</div>
@@ -172,17 +232,22 @@ export function CardDetailPage() {
               {status.column === "Shipped" ? "Deploy runs" : "Workflow runs"}
             </h2>
             {status.runs.length ? (
-              <ul className="flex flex-col gap-1">
+              <ul className="flex flex-col gap-1.5">
                 {status.runs.map((r) => (
-                  <li key={r.id} className="flex items-center gap-2 text-label text-gray-300">
-                    <span className="text-gray-500">{r.state}</span>
+                  <li key={r.id} className="flex items-center gap-2 text-label">
+                    <span className={`w-20 shrink-0 ${RUN_CLS[r.state] ?? "text-gray-400"}`}>
+                      {r.state.replace("_", " ")}
+                    </span>
                     {r.url ? (
-                      <a className="underline" href={r.url} target="_blank" rel="noreferrer">
+                      <a className="flex-1 truncate text-gray-200 underline" href={r.url} target="_blank" rel="noreferrer">
                         {r.name}
                       </a>
                     ) : (
-                      <span>{r.name}</span>
+                      <span className="flex-1 truncate text-gray-200">{r.name}</span>
                     )}
+                    <span className="shrink-0 text-gray-500" title={new Date(r.createdAt).toLocaleString()}>
+                      {ago(r.createdAt)}
+                    </span>
                   </li>
                 ))}
               </ul>

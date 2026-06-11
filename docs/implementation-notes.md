@@ -150,3 +150,21 @@ Refresh context on the repo card.
 
 **Follow-up:** each file is its own commit (per the existing workflow-commit
 pattern); a git-tree batch would be tidier but adds complexity.
+
+## 2026-06-11 — Card detail: "Next step" banner, run timestamps, freshness
+**Why (user feedback):** after clicking Plan a ticket went to Building and showed
+Workflow runs, but with no timestamp/summary (had to click through to GitHub) and
+no sense of "where we are / what to do next."
+
+**Changes (all in CardDetail):**
+- `web/src/lib/time.ts` — shared `ago()` relative-timestamp helper.
+- "Next step" banner (col-span-2, tone-colored) derived from column + PR/run/plan
+  signals: Queued→"click Implement", Plan-posted→"review plan, then Implement",
+  Building→"checks running, wait", Ready to test→"Preview & Ship", Blocked→"click
+  Debug", Shipped→done. Gives the recommended next action without guessing.
+- Workflow run rows now show colored state + run name + relative timestamp
+  (`createdAt`), with full datetime on hover — no click-through needed.
+- Top row shows "updated <ago>" from status_cache `updated_at` (freshness).
+
+**Note:** "Next step" is heuristic (board columns are derived, not authoritative);
+the Plan-ready case keys off a Claude/checkbox progress comment with no PR.
