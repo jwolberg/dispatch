@@ -24,3 +24,10 @@ Running log of decisions, deviations, and tradeoffs for human review.
 - **Anthropic model default = `claude-sonnet-4-20250514`** per PRD §4 (the spec explicitly chose this), overridable via `ANTHROPIC_MODEL`. The general "use opus-4-8" guidance is overridden here by the spec's stated default. Thinking is left unset (off) to stay model-agnostic across whatever model is configured.
 - **S4 retry** implemented in the Anthropic client (`createMessage`): one retry with backoff on RateLimit/5xx; streaming path leaves retry to the route (P2-T2) so typed input is preserved.
 - **Deferred validation:** live Anthropic calls need `ANTHROPIC_API_KEY` (not set); validated via typecheck + structural checks (prompt assembly, no-key guard).
+
+## 2026-06-11 — Phase 3/4 (board, poller, ship)
+- **Column derivation** is pure (`deriveColumn`) and unit-tested (9 cases); Shipped/Blocked take precedence over in-flight states. Just-filed tickets with no cache yet default to Queued in the board route.
+- **Run context (F6.3):** reconcile fetches runs on the PR head branch while building, and on the default branch once shipped (the production deploy) so the card surfaces the deploy run. Given the fixed 6-column set, a merged ticket goes straight to Shipped (acceptance #7) and the deploy run is shown in the card detail rather than introducing a "Deploying" column.
+- **Preview URL (F5.2):** detected from deploy-ish commit statuses + deployment status environment URLs; free-text bot-comment scraping skipped to bound API calls. Pattern fallback (`{n}`) always available.
+- **ETags (F4.2/S3):** status_cache stores an etag map (currently empty); conditional-request plumbing is P6-T1.
+- **Deferred validation:** the full live loop (file → build → PR → ship) needs a real GITHUB_TOKEN and a repo with claude-code-action configured. Validated so far via typecheck, seam guard, unit tests (deriveColumn, PR-linkage, ticket parser), and seeded integration tests (board, card detail, merge gate).

@@ -167,7 +167,9 @@ export function CardDetailPage() {
           </section>
 
           <section className="rounded-lg border border-border bg-surface p-4">
-            <h2 className="mb-2 text-body font-semibold text-gray-200">Workflow runs</h2>
+            <h2 className="mb-2 text-body font-semibold text-gray-200">
+              {status.column === "Shipped" ? "Deploy runs" : "Workflow runs"}
+            </h2>
             {status.runs.length ? (
               <ul className="flex flex-col gap-1">
                 {status.runs.map((r) => (

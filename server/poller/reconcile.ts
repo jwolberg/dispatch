@@ -94,9 +94,14 @@ export async function reconcileTicket(ticket: TicketRow): Promise<StatusPayload 
   const prRef = await provider.findLinkedPR(ref, ticket.issue_number);
   const pr = prRef ? await provider.getPRStatus(ref, prRef.number) : null;
 
-  // Before a PR exists, watch runs on the default branch (the issue-triggered
-  // claude-code-action run); after, watch the PR head branch.
-  const runsRef = prRef?.headBranch ?? repo.default_branch ?? "HEAD";
+  // Run context (F6.3):
+  //  - shipped (merged/closed): default branch → the production deploy run
+  //  - PR exists: the PR head branch → build/check runs
+  //  - pre-PR: default branch → the issue-triggered claude-code-action run
+  const shipped = Boolean(pr?.merged) || issue.state === "closed";
+  const runsRef = shipped
+    ? repo.default_branch ?? "HEAD"
+    : prRef?.headBranch ?? repo.default_branch ?? "HEAD";
   const runs = await provider.getWorkflowRuns(ref, runsRef);
 
   const payload: StatusPayload = {

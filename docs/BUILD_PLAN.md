@@ -27,7 +27,7 @@
 ## Current Status
 - Overall status: In Progress
 - Current phase: Phase 4 — Test + ship
-- Current ticket: P4-T4
+- Current ticket: P4-T5
 - Blockers: None
 
 ---
@@ -251,7 +251,7 @@
   - Files likely involved: `server/poller/reconcile.ts`, `web/pages/CardDetail.tsx`
   - Depends on: P4-T3, P3-T3
   - Acceptance criteria covered: #7
-  - Status: Todo
+  - Status: Complete
 
 - P4-T5 — Activity feed
   - Objective: `GET /api/activity` (most recent 50 derived events) + reverse-chronological feed UI.
