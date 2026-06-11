@@ -21,6 +21,13 @@ Once tracked, the card shows the description, a top-level structure summary,
 whether a `CLAUDE.md` exists, and a context-freshness timestamp. The board then
 includes this repo's tickets; spec chat lets you target it.
 
+> **Existing issues are adopted automatically.** On track (and on every idle
+> poll thereafter), Dispatch imports the repo's **open issues** as board tickets
+> — you don't have to re-file them through spec chat. This is also how the board
+> repopulates after a redeploy wipes the local DB (see `DEPLOY.md` §4): just
+> re-track the repo and its open issues return on the next poll. Import is
+> idempotent, so re-tracking never duplicates tickets.
+
 > A new card may show **⚠ No Claude automation detected** — that's step 2.
 
 ---

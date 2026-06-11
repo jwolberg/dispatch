@@ -286,6 +286,21 @@ export class GitHubProvider implements GitProvider {
     };
   }
 
+  async listOpenIssues(repo: RepoRef): Promise<IssueRef[]> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const issues = await this.octokit.paginate(this.octokit.issues.listForRepo, {
+      owner,
+      repo: name,
+      state: "open",
+      per_page: 100,
+    });
+    // GitHub's issues API returns PRs as issues; exclude them (they carry a
+    // `pull_request` field). Tickets track issues, not PRs.
+    return issues
+      .filter((i) => !i.pull_request)
+      .map((i) => ({ number: i.number, url: i.html_url }));
+  }
+
   async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
     const { owner, repo: name } = splitPath(repo.path);
     const prs = await this.octokit.pulls.list({

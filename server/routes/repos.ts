@@ -9,6 +9,7 @@ import {
 } from "../db/repos.js";
 import { getProvider } from "../providers/index.js";
 import type { ProviderId, RepoRef } from "../providers/index.js";
+import { discoverTickets } from "../poller/discover.js";
 import { safeMessage } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
 
@@ -157,6 +158,13 @@ reposRouter.post("/", async (req, res) => {
       automation_detected: ctx.automationDetected ? 1 : 0,
       context_refreshed_at: new Date().toISOString(),
     });
+    // Adopt the repo's existing open issues onto the board (best-effort — a
+    // discovery failure must not fail the track itself; the poller retries).
+    try {
+      await discoverTickets(getRepo(row.id)!);
+    } catch (err) {
+      console.warn(`[repos] issue import failed for ${path}: ${safeMessage(err)}`);
+    }
     res.status(201).json({ repo: presentRepo(getRepo(row.id)!) });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });

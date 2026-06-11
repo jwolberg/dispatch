@@ -2,6 +2,7 @@ import { listTickets } from "../db/tickets.js";
 import { listRepos } from "../db/repos.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile } from "./reconcile.js";
+import { discoverAllRepos } from "./discover.js";
 import { getProvider } from "../providers/index.js";
 import { isPaused, updateRateLimit } from "../lib/ratelimit.js";
 import { safeMessage } from "../lib/redaction.js";
@@ -57,6 +58,9 @@ async function pollAll(): Promise<void> {
   try {
     await refreshRateLimit();
     if (isPaused()) return;
+    // Adopt any newly-created open issues across tracked repos before reconciling
+    // so they appear on the board without being re-filed through the app.
+    await discoverAllRepos();
     for (const ticket of listTickets()) await safeReconcile(ticket);
   } finally {
     busy = false;

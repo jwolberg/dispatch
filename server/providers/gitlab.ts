@@ -209,6 +209,16 @@ export class GitLabProvider implements GitProvider {
     };
   }
 
+  async listOpenIssues(repo: RepoRef): Promise<IssueRef[]> {
+    // MRs are a separate resource in GitLab, so this returns issues only.
+    const issues = (await this.api.Issues.all({
+      projectId: repo.path,
+      state: "opened",
+      perPage: 100,
+    })) as Loose[];
+    return issues.map((i) => ({ number: i.iid, url: i.web_url }));
+  }
+
   async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
     const mrs = (await this.api.MergeRequests.all({
       projectId: repo.path,

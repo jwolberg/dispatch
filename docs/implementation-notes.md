@@ -69,3 +69,29 @@ Note on #9 wording: the PRD says "delete data/dispatch.db … rebuild from GitHu
   `ticket_id`/repo fall back to "General" task under an "Unassigned" repo group. Joins are
   LEFT so unlinked/uncached events still render. Ordering preserved by relying on the
   existing newest-first sort + Map insertion order (no extra sort).
+
+## 2026-06-11 — Import existing issues onto the board
+**Why:** redeploy wiped the ephemeral SQLite DB (repos+tickets), and Dispatch had
+no way to adopt existing GitHub issues — tickets were only ever created by filing
+*new* issues via the app. So `jwolberg/situation` (and any tracked repo's existing
+work) could never appear on the board.
+
+**Decisions (confirmed with user):**
+- Scope: import **all open issues** in a tracked repo, regardless of label (not
+  just `dispatch`-labeled). The board acts as a general tracker for the repo.
+- Trigger: **auto on track** (`POST /api/repos`) **+ ongoing** — the poller's
+  idle cycle (5 min, also the boot kick) runs discovery across all repos so newly
+  created issues appear without re-filing.
+
+**Implementation:**
+- New provider method `listOpenIssues(repo)` on the `GitProvider` seam; GitHub
+  impl filters out PRs (GitHub returns PRs as issues); GitLab lists `state=opened`.
+- `server/poller/discover.ts`: `discoverTickets(repo)` (idempotent — skips
+  issue numbers already tracked for that repo) and `discoverAllRepos()`.
+- Wired into `routes/repos.ts` (best-effort; a discovery failure does not fail
+  the track) and `poller/scheduler.ts` `pollAll()`.
+
+**Tradeoff / follow-up:** discovery adds one `listForRepo` call per repo per idle
+cycle — fine at current scale. Does NOT survive a redeploy by itself (repos are
+wiped too); durable fix is still a persistent `/data` volume per DEPLOY.md §4.
+Re-tracking after a wipe now repopulates the board, which it previously did not.

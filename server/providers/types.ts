@@ -146,6 +146,8 @@ export interface GitProvider {
   createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef>;
   postComment(target: CommentTarget, body: string): Promise<void>;
   getIssue(repo: RepoRef, issueNumber: number): Promise<Issue>;
+  /** Open issues in the repo (excludes PRs/MRs) — used to adopt existing work onto the board. */
+  listOpenIssues(repo: RepoRef): Promise<IssueRef[]>;
   findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null>;
   getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus>;
   getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]>;
