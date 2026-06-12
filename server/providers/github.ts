@@ -488,6 +488,8 @@ export class GitHubProvider implements GitProvider {
       .map((r) => ({
         id: String(r.id),
         name: r.name ?? r.display_title ?? "workflow",
+        event: r.event ?? null,
+        title: r.display_title ?? null,
         state: mapRun(r.status, r.conclusion),
         url: r.html_url ?? null,
         createdAt: r.created_at,

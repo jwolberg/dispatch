@@ -476,3 +476,15 @@ up the new default on next deploy.
   (still metered, Sonnet). Note: per Anthropic docs, non-interactive subscription
   usage draws from a separate monthly Agent SDK credit pool (effective 2026-06-15);
   OAuth token expires in ~1 year and needs manual rotation.
+
+## 2026-06-12 — CardDetail: Workflow runs show repo · event · title
+- **Change:** the Workflow/Deploy runs panel rendered each run's GitHub workflow
+  name (`r.name` → "Claude Code"), which is uninformative. Now each row reads
+  `<repo> · <event> · <title>` (e.g. `situation · issues · Claude: implement #13`).
+- **Data:** added `event` + `title` to the provider `Run` type. GitHub maps
+  `event` → `r.event`, `title` → `r.display_title`. GitLab parity: `event` →
+  pipeline `source`, `title` → `ref` (pipelines have no display title).
+- **Fallbacks:** row label is `[repoName, event, title].filter(Boolean).join(" · ")`,
+  falling back to `r.name` if event+title are both absent — never an empty row.
+  Repo shown as the last path segment; full label in the `title=` tooltip.
+- **Validation:** typecheck (server+web) clean, seam check clean, web build OK.

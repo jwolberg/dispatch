@@ -30,6 +30,8 @@ export interface PRStatus {
 export interface Run {
   id: string;
   name: string;
+  event: string | null;
+  title: string | null;
   state: string;
   url: string | null;
   createdAt: string;

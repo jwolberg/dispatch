@@ -282,6 +282,8 @@ export class GitLabProvider implements GitProvider {
     return pipelines.slice(0, 20).map((p) => ({
       id: String(p.id),
       name: `pipeline ${p.id}`,
+      event: p.source ?? null, // GitLab pipeline source (push, merge_request_event, …)
+      title: p.ref ?? null, // pipelines have no display title; the ref is the closest "what"
       state: mapRun(p.status),
       url: p.web_url ?? null,
       createdAt: p.created_at,

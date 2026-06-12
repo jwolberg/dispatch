@@ -108,6 +108,8 @@ export type RunState = "queued" | "in_progress" | "success" | "failure" | "neutr
 export interface Run {
   id: string;
   name: string;
+  event: string | null; // triggering event (GitHub) / pipeline source (GitLab)
+  title: string | null; // run/display title — the descriptive "what" of the run
   state: RunState;
   url: string | null;
   createdAt: string;

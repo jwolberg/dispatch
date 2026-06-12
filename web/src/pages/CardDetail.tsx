@@ -233,23 +233,31 @@ export function CardDetailPage() {
             </h2>
             {status.runs.length ? (
               <ul className="flex flex-col gap-1.5">
-                {status.runs.map((r) => (
+                {status.runs.map((r) => {
+                  // Show the repo and what the run is (event + title), not the
+                  // generic workflow name ("Claude Code"). Fall back to name when
+                  // event/title are absent so the row is never empty.
+                  const repoName = repo.path.split("/").pop() || repo.path;
+                  const label =
+                    [repoName, r.event, r.title].filter(Boolean).join(" · ") || r.name;
+                  return (
                   <li key={r.id} className="flex items-center gap-2 text-label">
                     <span className={`w-20 shrink-0 ${RUN_CLS[r.state] ?? "text-gray-400"}`}>
                       {r.state.replace("_", " ")}
                     </span>
                     {r.url ? (
-                      <a className="flex-1 truncate text-gray-200 underline" href={r.url} target="_blank" rel="noreferrer">
-                        {r.name}
+                      <a className="flex-1 truncate text-gray-200 underline" href={r.url} target="_blank" rel="noreferrer" title={label}>
+                        {label}
                       </a>
                     ) : (
-                      <span className="flex-1 truncate text-gray-200">{r.name}</span>
+                      <span className="flex-1 truncate text-gray-200" title={label}>{label}</span>
                     )}
                     <span className="shrink-0 text-gray-500" title={new Date(r.createdAt).toLocaleString()}>
                       {ago(r.createdAt)}
                     </span>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             ) : (
               <p className="text-body text-gray-500">No runs yet.</p>
