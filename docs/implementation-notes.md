@@ -488,3 +488,19 @@ up the new default on next deploy.
   falling back to `r.name` if event+title are both absent — never an empty row.
   Repo shown as the last path segment; full label in the `title=` tooltip.
 - **Validation:** typecheck (server+web) clean, seam check clean, web build OK.
+
+## 2026-06-12 — Architecture diagram: OAuth auth + accurate CI gate
+- **Why:** the pipeline diagram predated the Claude-subscription (OAuth) auth
+  switch and described the CI gate generically ("lint · unit · integration ·
+  build"). Updated both the diagram and the Architecture page.
+- **Auth split made explicit:** Actions-workflow box now shows
+  `CLAUDE_CODE_OAUTH_TOKEN` (Claude subscription); control-plane Claude API box
+  shows `ANTHROPIC_API_KEY` (spec chat only). New footnote spells out the split.
+- **CI gate corrected (not "npx"):** it runs the repo's own npm scripts —
+  `npm run lint/test/build` each `--if-present` (Node) — or `ruff + pytest`
+  (Python), stack-aware. Box + footnote updated to match scripts/repo-ci/*.yml.
+- **Layout:** grew three boxes 82→104 / 84→104 for the added third line, and the
+  canvas/svg 820→880 (+ iframe 880→940) so the extra footnote line isn't clipped.
+  Verified via full-page screenshot — no overflow.
+- **Sync:** docs/pipeline-architecture-diagram.html and web/public/pipeline.html
+  kept byte-identical (cp). Typecheck + web build clean.

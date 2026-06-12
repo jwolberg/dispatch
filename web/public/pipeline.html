@@ -25,7 +25,7 @@
     padding: 24px; overflow-x: auto;
   }
   .canvas {
-    position: relative; width: 1280px; height: 820px; margin: 0 auto;
+    position: relative; width: 1280px; height: 880px; margin: 0 auto;
   }
 
   /* ---- group containers ---- */
@@ -55,7 +55,7 @@
   .box .new { color: var(--green); font-weight: 700; }
 
   /* ---- svg arrow layer ---- */
-  svg.flows { position: absolute; inset: 0; width: 1280px; height: 820px; z-index: 1; pointer-events: none; overflow: visible; }
+  svg.flows { position: absolute; inset: 0; width: 1280px; height: 880px; z-index: 1; pointer-events: none; overflow: visible; }
 
   /* ---- flow labels ---- */
   .lbl {
@@ -81,7 +81,7 @@
 <div class="canvas">
 
   <!-- ===================== SVG FLOW LAYER ===================== -->
-  <svg class="flows" viewBox="0 0 1280 820">
+  <svg class="flows" viewBox="0 0 1280 880">
     <defs>
       <marker id="aO" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#e8973c"/></marker>
       <marker id="aB" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#4a9eef"/></marker>
@@ -138,7 +138,7 @@
   </div>
   <div class="box" style="left:100px; top:380px; width:290px; height:92px;">
     <div class="bt">Claude API</div>
-    <div class="bl">/v1/messages — stateless<br>context injected per call:<br>CLAUDE.md + file tree</div>
+    <div class="bl">/v1/messages — spec chat<br>auth · <span class="accent">ANTHROPIC_API_KEY</span><br>context: CLAUDE.md + file tree</div>
   </div>
 
   <!-- github -->
@@ -146,9 +146,9 @@
     <div class="bt">Issue #123</div>
     <div class="bl">spec body + @claude<br>progress checkboxes</div>
   </div>
-  <div class="box" style="left:788px; top:60px; width:232px; height:82px;">
+  <div class="box" style="left:788px; top:60px; width:232px; height:104px;">
     <div class="bt">Actions workflow</div>
-    <div class="bl">@claude trigger filter<br>permissions · timeout</div>
+    <div class="bl">@claude trigger · timeout<br>auth · <span class="new">CLAUDE_CODE_OAUTH_TOKEN</span><br>Claude subscription, not API key</div>
   </div>
 
   <!-- ephemeral runner (sub-group) -->
@@ -169,9 +169,9 @@
     <div class="bl">diff · review · checks</div>
   </div>
   <!-- NEW: CI tests gate -->
-  <div class="box ci" style="left:758px; top:398px; width:276px; height:84px;">
+  <div class="box ci" style="left:758px; top:398px; width:276px; height:104px;">
     <div class="bt">CI tests <span class="new">· gate</span></div>
-    <div class="bl"><span class="accent">on: pull_request</span> — repo's own workflow<br>lint · unit · integration · build</div>
+    <div class="bl"><span class="accent">on: pull_request</span> — repo's own workflow<br>node · <span class="accent">npm lint/test/build</span><br>python · ruff + pytest</div>
   </div>
 
   <!-- deploy targets -->
@@ -216,7 +216,8 @@
     <span><span class="dash"></span>dashed = async / on-demand</span>
   </div>
   <div class="notes">
-    <b>CI tests (6)</b> run from the repo's own <span style="color:var(--blue)">on: pull_request</span> workflow — not claude-code-action — and feed Dispatch's board (Building → Ready&nbsp;to&nbsp;test → Blocked).<br>
+    <b>Build auth</b> — claude-code-action signs in to Anthropic with a Claude subscription token (<span style="color:var(--green)">CLAUDE_CODE_OAUTH_TOKEN</span>), not the metered API key; only the control-plane spec chat still uses <b>ANTHROPIC_API_KEY</b>.<br>
+    <b>CI tests (6)</b> run from the repo's own <span style="color:var(--blue)">on: pull_request</span> workflow — not claude-code-action — and feed Dispatch's board (Building → Ready&nbsp;to&nbsp;test → Blocked). Stack-aware: Node runs your <b>npm lint/test/build</b> (each <span style="color:var(--blue)">--if-present</span>), Python runs <b>ruff + pytest</b> only when present.<br>
     <b>Merge (8)</b> auto-deploys to <span style="color:var(--green)">Staging</span> + runs smoke tests; <b>Production (9)</b> is gated behind a manual approval on the GitHub <b>“production” Environment</b>. Board: Shipped → <b>In&nbsp;staging</b> → <b>Released</b>.
   </div>
 
