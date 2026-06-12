@@ -504,3 +504,13 @@ up the new default on next deploy.
   Verified via full-page screenshot — no overflow.
 - **Sync:** docs/pipeline-architecture-diagram.html and web/public/pipeline.html
   kept byte-identical (cp). Typecheck + web build clean.
+
+## 2026-06-12 — Architecture page: fix double scrollbar
+- **Cause:** the iframe was `w-full` (responsive) while the embedded diagram is a
+  fixed 1280px canvas, so the iframe scrolled its own content *and* the wrapper
+  scrolled — two scrollbars.
+- **Fix:** size the iframe to fully contain the diagram (1328×932 = canvas + body
+  padding) and set `scrolling="no"`; wrapper changed to `overflow-x-auto` so it's
+  the sole scroller (horizontal on narrow viewports; page handles vertical).
+- **Verified** via a faithful mini-harness screenshot: single page scrollbar, no
+  nested iframe scrollbar. Typecheck + build clean.

@@ -10,12 +10,16 @@ export function ArchitecturePage() {
         subscription token, not the API key), the stack-aware CI gate, and the staging
         approval gate.
       </p>
-      <div className="overflow-auto rounded-lg border border-border bg-bg">
+      {/* The diagram is a fixed 1280px canvas (+24px body padding each side). Size
+          the iframe to fully contain it and disable its own scrolling, so only this
+          wrapper scrolls horizontally — no nested/double scrollbars. */}
+      <div className="overflow-x-auto rounded-lg border border-border bg-bg">
         <iframe
           title="Dispatch pipeline architecture"
           src="/pipeline.html"
-          className="block w-full"
-          style={{ height: 940, border: 0 }}
+          scrolling="no"
+          className="block"
+          style={{ width: 1328, height: 932, border: 0 }}
         />
       </div>
     </Page>
