@@ -454,3 +454,25 @@ reference. Drop-in: spec-chat + ticket-gen call sites pass only model/max_tokens
 system/messages (no temperature/thinking/budget_tokens/prefill), so no breaking
 changes. Still overridable via ANTHROPIC_MODEL; prod has no override, so it picks
 up the new default on next deploy.
+
+## 2026-06-12 — install-claude-action: Claude subscription (OAuth) auth
+- **Why:** builds run via `claude-code-action` were billing the metered
+  `ANTHROPIC_API_KEY`. Switched onboarding to prefer a Claude **subscription**
+  token so build runs draw on the subscription instead.
+- **Behavior:** `scripts/install-claude-action.sh` now picks auth by precedence —
+  `CLAUDE_CODE_OAUTH_TOKEN` (env or keychain `dispatch-CLAUDE_CODE_OAUTH_TOKEN`)
+  preferred; falls back to `ANTHROPIC_API_KEY` when no token is present. Backward
+  compatible: existing API-key installs behave exactly as before.
+- **Precedence gotcha encoded:** in OAuth mode the script also **deletes** any
+  existing `ANTHROPIC_API_KEY` repo secret, because the API key outranks the OAuth
+  token in Claude's auth precedence and would otherwise keep billing the API.
+- **Workflow rendering:** the `claude.yml` heredoc carries a `__CLAUDE_AUTH_INPUT__`
+  placeholder, swapped post-write via `awk` literal replacement (not `sed`) so the
+  `${{ secrets.* }}` is emitted verbatim and indentation is preserved. Verified
+  both modes render correctly; `bash -n` clean.
+- **Scope/known limits:** only affects **future** installs. Repos already onboarded
+  need the per-repo secret swap (done manually for the current repos). Does **not**
+  touch local Claude Code CLI auth, nor Dispatch's own spec-chat `ANTHROPIC_API_KEY`
+  (still metered, Sonnet). Note: per Anthropic docs, non-interactive subscription
+  usage draws from a separate monthly Agent SDK credit pool (effective 2026-06-15);
+  OAuth token expires in ~1 year and needs manual rotation.

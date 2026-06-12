@@ -2,7 +2,9 @@
 # Enable anthropics/claude-code-action on a repo via the GitHub API — no app install.
 #
 # Does the automatable setup steps (the GitHub App is optional; see caveat):
-#   1. Sets the ANTHROPIC_API_KEY + GH_PAT repository secrets (gh handles encryption)
+#   1. Sets the Claude auth + GH_PAT repository secrets (gh handles encryption).
+#      Prefers a Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN) so builds bill
+#      the subscription; falls back to ANTHROPIC_API_KEY (metered API) when absent.
 #   2. Commits .github/workflows/claude.yml — triggers builds on @claude mentions and
 #      opens a PR (gh pr create post-step) under GH_PAT so the PR triggers CI
 #   3. Commits .claude/skills/{plan,implement,debug}/SKILL.md so the web console's
@@ -23,8 +25,12 @@
 #       fine-grained: Contents=write, Workflows=write, Secrets=write
 #       (classic PAT equivalent: `repo` + `workflow` scopes)
 #     NOTE: your Dispatch token is Contents=read only — make a new PAT for this.
-#   - ANTHROPIC_API_KEY : the key to store (defaults to macOS keychain
-#       item `dispatch-ANTHROPIC_API_KEY`)
+#   - Claude auth (one of; OAuth preferred):
+#       CLAUDE_CODE_OAUTH_TOKEN : Claude subscription token from `claude setup-token`
+#         (defaults to macOS keychain item `dispatch-CLAUDE_CODE_OAUTH_TOKEN`).
+#         Bills your Claude subscription instead of the metered API. PREFERRED.
+#       ANTHROPIC_API_KEY : metered API key, used only when no OAuth token is found
+#         (defaults to macOS keychain item `dispatch-ANTHROPIC_API_KEY`).
 #
 # Usage:
 #   GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh jwolberg/situation
@@ -47,14 +53,38 @@ REPO="${1:?usage: install-claude-action.sh <owner/repo>}"
 : "${GH_SETUP_TOKEN:?set GH_SETUP_TOKEN to a PAT with Contents+Workflows+Secrets write}"
 PAT_FOR_ACTION="${GH_PAT:-$GH_SETUP_TOKEN}"
 
+# Claude auth — prefer a subscription OAuth token (bills the Claude subscription,
+# not the metered API); fall back to ANTHROPIC_API_KEY when none is available.
+OAUTH="${CLAUDE_CODE_OAUTH_TOKEN:-$(security find-generic-password -s dispatch-CLAUDE_CODE_OAUTH_TOKEN -w 2>/dev/null || true)}"
 KEY="${ANTHROPIC_API_KEY:-$(security find-generic-password -s dispatch-ANTHROPIC_API_KEY -w 2>/dev/null || true)}"
-: "${KEY:?ANTHROPIC_API_KEY not set and not in keychain (dispatch-ANTHROPIC_API_KEY)}"
+if [ -n "$OAUTH" ]; then
+  AUTH_MODE="oauth"
+elif [ -n "$KEY" ]; then
+  AUTH_MODE="apikey"
+else
+  echo "error: no Claude auth found. Set CLAUDE_CODE_OAUTH_TOKEN (preferred — run" >&2
+  echo "  'claude setup-token', then export it or store in keychain dispatch-CLAUDE_CODE_OAUTH_TOKEN)" >&2
+  echo "  or set ANTHROPIC_API_KEY (metered API)." >&2
+  exit 1
+fi
 
 export GH_TOKEN="$GH_SETUP_TOKEN"
 command -v gh >/dev/null || { echo "gh CLI not found"; exit 1; }
 
-echo "==> Setting ANTHROPIC_API_KEY secret on $REPO"
-printf %s "$KEY" | gh secret set ANTHROPIC_API_KEY --repo "$REPO"
+if [ "$AUTH_MODE" = "oauth" ]; then
+  echo "==> Setting CLAUDE_CODE_OAUTH_TOKEN secret on $REPO (Claude subscription auth)"
+  printf %s "$OAUTH" | gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo "$REPO"
+  # ANTHROPIC_API_KEY outranks the OAuth token in Claude's auth precedence, so a
+  # leftover one would keep billing the metered API. Remove it if present.
+  if gh secret delete ANTHROPIC_API_KEY --repo "$REPO" 2>/dev/null; then
+    echo "    (removed existing ANTHROPIC_API_KEY — it would override the OAuth token)"
+  fi
+  AUTH_LINE='          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}'
+else
+  echo "==> Setting ANTHROPIC_API_KEY secret on $REPO (no OAuth token — metered API)"
+  printf %s "$KEY" | gh secret set ANTHROPIC_API_KEY --repo "$REPO"
+  AUTH_LINE='          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}'
+fi
 
 echo "==> Setting GH_PAT secret on $REPO (workflow uses it to open PRs that trigger CI)"
 printf %s "$PAT_FOR_ACTION" | gh secret set GH_PAT --repo "$REPO"
@@ -89,7 +119,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         id: claude
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          __CLAUDE_AUTH_INPUT__
           # Use the PAT (not the default GITHUB_TOKEN) so the branch push and the PR
           # opened below come from a real identity — a PR opened by GITHUB_TOKEN would
           # not trigger on: pull_request CI (GitHub anti-recursion).
@@ -120,6 +150,10 @@ jobs:
             --body "Fixes #${issue} — automated implementation by @claude; review before merging." \
             || echo "gh pr create skipped (no diff, or PR already open)"
 YAML
+
+# Swap the chosen auth input into the workflow. Literal replacement (awk, not sed)
+# so AUTH_LINE's ${{ ... }} is emitted verbatim; AUTH_LINE carries its own indent.
+awk -v repl="$AUTH_LINE" 'index($0,"__CLAUDE_AUTH_INPUT__"){print repl; next} {print}' "$TMP" > "$TMP.auth" && mv "$TMP.auth" "$TMP"
 
 CONTENT="$(base64 < "$TMP" | tr -d '\n')"
 SHA="$(gh api "/repos/$REPO/contents/$WF" --jq .sha 2>/dev/null || true)"
