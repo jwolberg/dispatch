@@ -1,7 +1,32 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+*.tsbuildinfo
+
+# Local runtime data (SQLite db, etc.)
 data/
+
+# Env / secrets
 .env
 .env.local
+.env.*.local
+*.pem
+*.key
+
+# Logs
 *.log
+npm-debug.log*
+
+# Coverage / test artifacts
+coverage/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp

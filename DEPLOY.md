@@ -1,19 +1,12 @@
 # Deploying Dispatch to Cloud Run (authenticated)
 
-> **Live deployment (2026-06-11):** service `dispatch` in `dispatch-1-499113`,
-> region `us-central1` — `https://dispatch-4mq3uiar6q-uc.a.run.app`
-> (`--no-allow-unauthenticated`; unauthenticated requests return 403). Access it
-> with `gcloud beta run services proxy dispatch --region us-central1`, or
-> `curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" <url>`.
-
-
 > **Read this first.** Dispatch has **no built-in authentication** and holds
 > credentials that can **merge PRs to production**, file issues, and spend your
 > Anthropic budget. Deploy it **authenticated only** — never with
 > `--allow-unauthenticated`. Access it through an IAM-gated proxy. Hosting it
 > openly contradicts the local-first design and is unsafe.
 
-- **Project:** `dispatch-1` → project id **`dispatch-1-499113`**
+- **Project:** pick a GCP project → project id **`YOUR_PROJECT_ID`**
 - **Service:** `dispatch` on Cloud Run, region `us-central1` (adjust as needed)
 - **Runtime:** single container — Express serves the built SPA + API on `$PORT`,
   binds `0.0.0.0` with `ALLOW_NONLOCAL=1` (a container can't bind localhost)
@@ -29,7 +22,7 @@
 ## 0. Prerequisites
 
 ```bash
-gcloud config set project dispatch-1-499113
+gcloud config set project YOUR_PROJECT_ID
 # Billing must be enabled on the project; Cloud Run + Cloud Build require it.
 gcloud services enable \
   run.googleapis.com \
@@ -64,7 +57,7 @@ deploys — no local Docker needed.
 
 ```bash
 gcloud run deploy dispatch \
-  --project dispatch-1-499113 \
+  --project YOUR_PROJECT_ID \
   --region us-central1 \
   --source . \
   --no-allow-unauthenticated \
@@ -84,14 +77,14 @@ Grant yourself invoker access:
 ```bash
 gcloud run services add-iam-policy-binding dispatch \
   --region us-central1 \
-  --member="user:jmwolberg@gmail.com" \
+  --member="user:you@example.com" \
   --role="roles/run.invoker"
 ```
 
 If the deploy reports the runtime service account can't read a secret, grant it:
 
 ```bash
-PROJNUM=$(gcloud projects describe dispatch-1-499113 --format='value(projectNumber)')
+PROJNUM=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
 for s in anthropic-api-key github-token; do
   gcloud secrets add-iam-policy-binding "$s" \
     --member="serviceAccount:${PROJNUM}-compute@developer.gserviceaccount.com" \
@@ -133,7 +126,7 @@ file-locking semantics.)
 
 ```bash
 # Redeploy after changes
-gcloud run deploy dispatch --project dispatch-1-499113 --region us-central1 --source .
+gcloud run deploy dispatch --project YOUR_PROJECT_ID --region us-central1 --source .
 
 # Logs
 gcloud run services logs read dispatch --region us-central1 --limit 100

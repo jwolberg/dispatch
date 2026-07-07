@@ -33,10 +33,10 @@
 #         (defaults to macOS keychain item `dispatch-ANTHROPIC_API_KEY`).
 #
 # Usage:
-#   GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh jwolberg/situation
+#   GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh youruser/yourrepo
 #   # add the optional staging+production deploy gate:
 #   GH_SETUP_TOKEN=github_pat_xxx INSTALL_DEPLOY_GATE=1 \
-#     ./scripts/install-claude-action.sh jwolberg/situation
+#     ./scripts/install-claude-action.sh youruser/yourrepo
 #
 # PRs: claude-code-action never opens PRs itself — by design it pushes a branch
 # and links a "Create PR" page (docs/faq). The workflow below adds a `gh pr create`
