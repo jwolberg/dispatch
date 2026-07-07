@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-Dispatch is a lightweight, local-first web app that lets a solo developer take a feature idea or bug report from rough description to production deploy without leaving one browser tab. It orchestrates three external systems — the Claude API (spec refinement), the Git provider (**GitHub or GitLab**: issues, CI, pull/merge requests), and the existing deploy pipeline (PR previews + merge-triggered CI/CD) — while keeping **the Git provider as the single source of truth** for all work-item state. Dispatch stores almost nothing itself.
+Dispatch's model is a structured web UI wrapping a Git provider as the source of truth: chat → AI-drafted ticket → poller-computed kanban. It lets a solo developer take a feature idea or bug report from rough description to production deploy without leaving one browser tab, orchestrating three external systems — the Claude API (spec refinement), the Git provider (**GitHub or GitLab**: issues, CI, pull/merge requests), and the existing deploy pipeline (PR previews + merge-triggered CI/CD) — while keeping **the Git provider as the single source of truth** for all work-item state. Dispatch stores almost nothing itself.
 
 All provider interaction goes through a **provider adapter interface** (§5.5) so GitHub and GitLab repos coexist on one board. Throughout this document, "PR" means pull request (GitHub) or merge request (GitLab) interchangeably.
 
@@ -26,7 +26,7 @@ All provider interaction goes through a **provider adapter interface** (§5.5) s
 
 - **Thin control plane.** Dispatch reads/writes the Git provider; it never duplicates the provider's state machine.
 - **Provider-agnostic core.** Board, chat, and ship logic depend only on the adapter interface — never on Octokit or GitLab types directly.
-- **Local-first.** Runs on `localhost`. No hosted backend, no user accounts, no database server.
+- **Web UI, not a system of record.** The Git provider — not Dispatch — is the database. Runs single-operator on `localhost` by default; no accounts.
 - **Human gate before production.** Nothing merges without an explicit click.
 - **Stateless AI.** Every Claude API call carries its own context (CLAUDE.md + file tree); no assumed memory.
 
@@ -81,7 +81,7 @@ All provider interaction goes through a **provider adapter interface** (§5.5) s
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | React 18 + Vite + Tailwind v3 | Mirror existing VOLSCAN conventions |
+| Frontend | React 18 + Vite + Tailwind v3 | Mirror existing project conventions |
 | Backend | Express on Node 20 | Single process, port 3001; Vite dev server proxies `/api` |
 | Storage | SQLite via better-sqlite3 | File: `./data/dispatch.db` |
 | GitHub client | Octokit (`@octokit/rest`) | Fine-grained PAT from env |
