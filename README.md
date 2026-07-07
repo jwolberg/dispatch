@@ -1,10 +1,16 @@
 # Dispatch
 
-A local-first control plane that takes a feature or bug from a chat-refined spec
-→ a one-click GitHub/GitLab issue with an `@claude` mention → a live build/PR
-board → preview testing → one-click ship to production — without leaving one
-browser tab. The Git provider is the single source of truth; Dispatch stores
-almost nothing and rebuilds its board from the provider alone.
+**A structured web UI wrapping GitHub/GitLab as the source of truth: chat →
+AI-drafted ticket → poller-computed kanban.** Describe a feature or bug in a
+chat UI, file it as an issue with one click, and `claude-code-action` builds
+it on a runner and opens a PR. A poller turns issue/PR/check state into a live
+board — spec → queued → building → ready to test → shipped — optionally
+mirrored to a Slack channel, so you can test the preview and ship to
+production without leaving one browser tab (or Slack). Dispatch
+stores almost nothing itself: delete the local SQLite cache and it rebuilds
+the whole board from the provider on the next poll.
+
+![Overview: ](docs/img/dispatch_arch.png)
 
 - **Frontend:** React 18 + Vite + Tailwind v3 (dark), `http://localhost:5173`
 - **Backend:** Express on Node 20, `http://127.0.0.1:3001` (localhost-only)
