@@ -17,7 +17,25 @@ the whole board from the provider on the next poll.
 - **Storage:** SQLite (`./data/dispatch.db`) — disposable cache; deletable
 - **Providers:** GitHub (Octokit) and GitLab (gitbeaker), behind one adapter seam
 
-## Quick start
+
+## How it works
+
+1. **Repos** — Dispatch lists every repo your token(s) can access; click
+   **Track** (zero typing) or paste a path/URL. Tracked repos cache their
+   description, `CLAUDE.md`, README excerpt, and a depth-2 file tree (refreshed
+   on demand, ≤6h).
+2. **Spec chat** — converse with Claude (scoped to a repo, context injected) to
+   refine an issue spec, then **Generate ticket** → edit → **File ticket**.
+3. **Board** — six columns derived from provider state: Spec, Queued, Building,
+   Ready to test, Shipped, Blocked. A poller reconciles every 20s (active) /
+   5min (idle); columns, PR linkage, and checks are derived, never stored.
+4. **Test** — open the PR preview and per-check statuses from the card; **Steer**
+   by commenting `@claude` to re-trigger the build.
+5. **Ship** — one-click merge (gated on green + mergeable), confirmation modal,
+   then the issue auto-closes and the card reaches Shipped.
+
+
+## Quick start (local dev)
 
 ```bash
 cp .env.example .env     # fill in the keys below
@@ -27,6 +45,10 @@ npm run dev              # starts backend (:3001) + Vite (:5173) together
 
 Open `http://localhost:5173`. With a valid `.env` you'll get an empty board and a
 working health check (footer shows DB + rate-limit status).
+
+This runs Dispatch as a single local process with no auth — fine for one
+operator on `localhost`. To deploy it for real (authenticated, on Cloud Run),
+see [`DEPLOY.md`](DEPLOY.md).
 
 ## Environment (`.env`, gitignored)
 
@@ -87,21 +109,6 @@ just routes notifications to that same channel.
    `https://myapp-pr-{n}.vercel.app`) when tracking a repo; Dispatch prefers a
    live URL from deployment statuses when available.
 
-## How it works
-
-1. **Repos** — Dispatch lists every repo your token(s) can access; click
-   **Track** (zero typing) or paste a path/URL. Tracked repos cache their
-   description, `CLAUDE.md`, README excerpt, and a depth-2 file tree (refreshed
-   on demand, ≤6h).
-2. **Spec chat** — converse with Claude (scoped to a repo, context injected) to
-   refine an issue spec, then **Generate ticket** → edit → **File ticket**.
-3. **Board** — six columns derived from provider state: Spec, Queued, Building,
-   Ready to test, Shipped, Blocked. A poller reconciles every 20s (active) /
-   5min (idle); columns, PR linkage, and checks are derived, never stored.
-4. **Test** — open the PR preview and per-check statuses from the card; **Steer**
-   by commenting `@claude` to re-trigger the build.
-5. **Ship** — one-click merge (gated on green + mergeable), confirmation modal,
-   then the issue auto-closes and the card reaches Shipped.
 
 ## Scripts
 
