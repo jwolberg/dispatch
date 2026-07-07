@@ -17,7 +17,8 @@ These shape every decision below and are the lens for reviewing changes:
    provider's state machine. Board columns are *derived* from provider state, not stored.
 2. **Provider-agnostic core.** UI, chat, board, and ship logic depend only on the
    `GitProvider` interface — never on Octokit or Gitbeaker types. (PRD §5.5, acceptance #12)
-3. **Local-first, single-operator.** One process, binds to `127.0.0.1`, no accounts, no
+3. **Structured web UI, not a system of record.** GitHub/GitLab — not Dispatch — is the
+   database. One process, single-operator, binds to `127.0.0.1` by default, no accounts, no
    hosted backend. (PRD §2 Non-Goals, S1)
 4. **Disposable local state.** The Git provider is the source of truth. Deleting
    `data/dispatch.db` and restarting must fully rebuild the board from the provider. (PRD §7,
@@ -31,7 +32,7 @@ These shape every decision below and are the lens for reviewing changes:
 
 ```
 ┌────────────────────────────┐        ┌──────────────────────────────────┐
-│  CONTROL PLANE (localhost)  │        │  GIT PROVIDER (GitHub / GitLab)    │
+│  WEB UI (localhost)         │        │  GIT PROVIDER (GitHub / GitLab)    │
 │                             │        │                                    │
 │  React + Vite SPA           │  REST  │  Issue ──▶ Actions / CI pipeline   │
 │   (browser, :5173 dev)      │◀──────▶│             │ checkout            │
@@ -319,7 +320,7 @@ Backend routes (all credentials server-side only; PRD §6):
 
 ## 13. Frontend conventions
 
-- React 18 + Vite + Tailwind v3, dark theme; mirrors existing VOLSCAN conventions.
+- React 18 + Vite + Tailwind v3, dark theme; mirrors existing project conventions.
 - Talks only to the local backend via typed `web/api/` wrappers.
 - **Readability is a hard requirement (PRD §4):** body ≥13px, caption/label ≥11.5px, all text
   ≥4.5:1 contrast. Status colors — green=passing/deployed, amber=in-progress/waiting,

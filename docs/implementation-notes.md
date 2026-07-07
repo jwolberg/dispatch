@@ -73,7 +73,7 @@ Note on #9 wording: the PRD says "delete data/dispatch.db … rebuild from GitHu
 ## 2026-06-11 — Import existing issues onto the board
 **Why:** redeploy wiped the ephemeral SQLite DB (repos+tickets), and Dispatch had
 no way to adopt existing GitHub issues — tickets were only ever created by filing
-*new* issues via the app. So `jwolberg/situation` (and any tracked repo's existing
+*new* issues via the app. So `youruser/yourrepo` (and any tracked repo's existing
 work) could never appear on the board.
 
 **Decisions (confirmed with user):**
@@ -143,8 +143,8 @@ install them via the repo-setup script (not a verbatim copy, not plugin inputs).
   repo's `.claude/skills/<name>/SKILL.md` via the contents API (idempotent;
   updates in place by sha). Header/footer docs updated.
 
-**To install on situation:** re-run the script with a write-scoped PAT:
-`GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh jwolberg/situation`
+**To install on yourrepo:** re-run the script with a write-scoped PAT:
+`GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh youruser/yourrepo`
 (the read-only Dispatch token can't write Contents/Workflows/Secrets). Then click
 Refresh context on the repo card.
 
@@ -184,7 +184,7 @@ as per board column (cap EVERY column at its 10 most recent), with a "+N more" h
 total stays accurate. If the board grows large, move the cap server-side later.
 
 ## 2026-06-11 — BUG FIX: generated claude.yml ignored the @claude comment
-**Symptom (live test on jwolberg/situation #1):** skill buttons posted @claude
+**Symptom (live test on youruser/yourrepo #1):** skill buttons posted @claude
 comments (plan ×3, implement ×1); all 5 claude-code-action runs succeeded but
 produced no PR, no branch, and no Claude comment — "nothing happened."
 
@@ -271,7 +271,7 @@ Blocked states. Without it those states are vacuous (no checks on PRs).
 events, so on the API-key-only setup the gate won't run on Claude's PRs. The
 Claude GitHub App (`/install-github-app`) makes PRs app-authored → CI fires.
 
-**To enable on situation:** re-run the installer (write PAT), ideally also install
+**To enable on yourrepo:** re-run the installer (write PAT), ideally also install
 the GitHub App so the gate actually runs.
 
 ## 2026-06-11 — Build step 2: optional staging+production deploy gate (deploy.yml)
@@ -399,7 +399,7 @@ green.
 
 ## 2026-06-11 — Stack-aware CI gate (Node gate was blocking a Python repo)
 **Why:** the build-step-1 `ci.yml` is a Node/npm workflow. Installed on the Python
-repo `situation` (app.py + requirements.txt, no package.json), its `npm ci ||
+repo `yourrepo` (app.py + requirements.txt, no package.json), its `npm ci ||
 npm install` step hard-fails — and since that step isn't (can't be) `--if-present`
 guarded, **every PR on that repo lands in Blocked** regardless of the diff. Surfaced
 while debugging why issue 7's PR #9 was Blocked + unshippable: the CI run failed at
@@ -419,13 +419,13 @@ while debugging why issue 7's PR #9 was Blocked + unshippable: the CI run failed
 an always-failing gate is worse than none (it blocks the board). Extensible: add
 `ci-<stack>.yml` + a `repo_has` branch to support Go/Ruby/etc.
 
-**Does NOT retroactively fix existing repos:** create-if-absent means `situation`
+**Does NOT retroactively fix existing repos:** create-if-absent means `yourrepo`
 keeps its broken Node `ci.yml` until it's replaced. Unblocking PR #9 requires
 overwriting that file with `ci-python.yml` (separate action).
 
 ## 2026-06-11 — Auto-open PRs (so CI runs) — fix for "branches but no PRs"
 **Diagnosis:** claude-code-action never opens PRs by design (FAQ) — it pushes a
-`claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on situation
+`claude/issue-N-*` branch and posts a "Create PR ➔" link. Confirmed on yourrepo
 #3 (branch pushed, link given, checklist "✅ Provide PR link"). So the board never
 reaches PR/CI. Also: a PR opened by GITHUB_TOKEN wouldn't trigger CI anyway
 (GitHub anti-recursion).
@@ -444,7 +444,7 @@ reaches PR/CI. Also: a PR opened by GITHUB_TOKEN wouldn't trigger CI anyway
   generally don't trigger CI; PAT (or a *custom* app via create-github-app-token)
   does. Updated adding-a-repo.md + installer comments accordingly.
 
-**To apply on situation:** re-run installer with a PAT that also has PRs+Issues RW.
+**To apply on yourrepo:** re-run installer with a PAT that also has PRs+Issues RW.
 
 ## 2026-06-11 — Default model → claude-sonnet-4-6
 **Why (user request):** cheaper default. The old default `claude-sonnet-4-20250514`
@@ -480,7 +480,7 @@ up the new default on next deploy.
 ## 2026-06-12 — CardDetail: Workflow runs show repo · event · title
 - **Change:** the Workflow/Deploy runs panel rendered each run's GitHub workflow
   name (`r.name` → "Claude Code"), which is uninformative. Now each row reads
-  `<repo> · <event> · <title>` (e.g. `situation · issues · Claude: implement #13`).
+  `<repo> · <event> · <title>` (e.g. `yourrepo · issues · Claude: implement #13`).
 - **Data:** added `event` + `title` to the provider `Run` type. GitHub maps
   `event` → `r.event`, `title` → `r.display_title`. GitLab parity: `event` →
   pipeline `source`, `title` → `ref` (pipelines have no display title).
