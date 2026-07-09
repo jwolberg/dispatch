@@ -104,6 +104,48 @@ CREATE TABLE IF NOT EXISTS spend (
   usd                         REAL NOT NULL
 );
 
+-- CONFIDENTIAL (#2). A third axis, orthogonal to the disposable/irreplaceable one
+-- this file reasons about above: these two tables are the only ones whose
+-- *contents* are a credential.
+--
+-- It matters because snapshot.ts does `VACUUM INTO` and uploads the resulting
+-- bytes to GCS, and DEPLOY.md enables object versioning on purpose — so anything
+-- written here in plaintext stays readable in an old object version until a
+-- lifecycle rule expires it (ADR-0006 [6.2]). Every `*_enc` column below is an
+-- AES-256-GCM envelope from lib/crypto.ts, keyed by DISPATCH_ENCRYPTION_KEY.
+-- Nothing writes a bare secret to this table. Not disposable, not rebuildable:
+-- losing it means re-registering the App.
+--
+-- Singleton: Dispatch is deployed per-operator and each deployment registers its
+-- own App (ADR-0006 [5]). There is no central Dispatch App to be one row among many.
+CREATE TABLE IF NOT EXISTS github_app (
+  id                 INTEGER PRIMARY KEY CHECK (id = 1),
+  app_id             INTEGER NOT NULL,
+  slug               TEXT NOT NULL,
+  name               TEXT NOT NULL,
+  client_id          TEXT NOT NULL,
+  client_secret_enc  TEXT NOT NULL,
+  private_key_enc    TEXT NOT NULL,
+  webhook_secret_enc TEXT NOT NULL,
+  html_url           TEXT,
+  created_at         TEXT NOT NULL
+);
+
+-- CONFIDENTIAL by association: no secret of its own, but it is the map from a
+-- repo to the credential above. `repos_json` is the repo selection GitHub granted
+-- at install time; it goes stale when the operator edits the selection on
+-- github.com, and #17's webhooks are what will keep it fresh.
+CREATE TABLE IF NOT EXISTS installations (
+  installation_id      INTEGER PRIMARY KEY,
+  account_login        TEXT NOT NULL,
+  account_type         TEXT,                            -- 'User' | 'Organization'
+  repository_selection TEXT NOT NULL DEFAULT 'all',     -- 'all' | 'selected'
+  repos_json           TEXT NOT NULL DEFAULT '[]',      -- ["owner/name", ...]
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_installations_account ON installations(account_login);
 CREATE INDEX IF NOT EXISTS idx_spend_occurred_at ON spend(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_spend_ticket ON spend(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_activity_occurred_at ON activity(occurred_at DESC);
