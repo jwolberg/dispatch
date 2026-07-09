@@ -187,10 +187,16 @@ and it is a prerequisite, not a follow-up.
 ## [7] Consequences for the tickets
 
 - **#2** — amended. Registration is per-deployment via the manifest flow; the App
-  name is a UI field. The private-key criterion is replaced by [6.1]–[6.3]:
-  persisted in SQLite, protected at rest, and covered by a value-registering
-  redactor. `redaction.ts` changes here.
-- **#3** — unchanged. The credential seam still lands before the source swaps.
+  name is a UI field. The private-key criterion is replaced by [6.1]–[6.2]:
+  persisted in SQLite, encrypted at rest, with a lifecycle rule expiring
+  noncurrent object versions.
+- **#3** — the credential seam still lands before the source swaps, and it now
+  also carries [6.3]'s redactor inversion. *(Corrected 2026-07-09, after this ADR
+  was written: [6.3] assigned `redaction.ts` to #2, but #3 is what first holds a
+  secret outside `process.env` — a **minted installation token** lives only in
+  memory. #3's own "no token is ever logged" criterion fails without the
+  inversion, so the fix lands there. #3 also does not depend on #2; see
+  SES-0001 [2.2].)*
 - **#4** — amended. It no longer writes `APP_CLIENT_ID` / `APP_PRIVATE_KEY`, and no
   longer needs to detect `can_approve_pull_request_reviews`. It gains: delete the
   `gh pr create` post-step from the `claude.yml` template, and add
