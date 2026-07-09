@@ -120,7 +120,11 @@ export function getProviderForRepo(ref: RepoRef): GitProvider {
  *
  * These always use the env token. Under a GitHub App there is no account-level
  * credential at all — `discoverRepos()` would enumerate an *installation's*
- * repos — so rewiring them belongs to #2's source swap, not to this seam.
+ * repos — so rewiring them is its own ticket (#21), not this seam.
+ *
+ * That means a deployment with an App but no `GITHUB_TOKEN` still throws here.
+ * #2 registers the App and resolves per-repo credentials; #21 is what finally
+ * retires the env token from these three call sites.
  */
 export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
   if (factoryOverride) return factoryOverride(provider, host);
