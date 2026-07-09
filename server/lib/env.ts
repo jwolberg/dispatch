@@ -55,6 +55,8 @@ export function isMountPoint(dir: string): boolean {
 export interface EphemeralDbProbe {
   allowNonLocal: boolean;
   isMountPoint: (dir: string) => boolean;
+  /** A GCS snapshot makes the DB durable without a mounted volume (#20). */
+  snapshotEnabled?: boolean;
 }
 
 /**
@@ -71,21 +73,24 @@ export interface EphemeralDbProbe {
  */
 export function ephemeralDbWarning(dbPath: string, probe: EphemeralDbProbe): string | null {
   if (!probe.allowNonLocal) return null;
+  if (probe.snapshotEnabled) return null; // durable via GCS snapshot, no volume needed
   const dir = dirname(dbPath);
   if (probe.isMountPoint(dir)) return null;
   return (
-    `[dispatch] WARNING: ${dbPath} is not on a mounted volume. ` +
-    `In a container this file is lost on redeploy or instance recycle, taking ` +
-    `the repo registry and filed tickets with it. Derived state rebuilds from ` +
-    `the provider, but tracked repos do not. Mount a volume at ${dir} — see DEPLOY.md §4.`
+    `[dispatch] WARNING: ${dbPath} is not on a mounted volume and no GCS snapshot ` +
+    `is configured. In a container this file is lost on redeploy or instance ` +
+    `recycle, taking the repo registry and filed tickets with it. Derived state ` +
+    `rebuilds from the provider, but tracked repos do not. Set DISPATCH_GCS_BUCKET, ` +
+    `or mount a volume at ${dir} — see DEPLOY.md §4.`
   );
 }
 
 /** Emit the ephemeral-DB warning to stderr, if applicable. */
-export function warnIfEphemeralDb(dbPath: string): void {
+export function warnIfEphemeralDb(dbPath: string, snapshotOn = false): void {
   const warning = ephemeralDbWarning(dbPath, {
     allowNonLocal: process.env.ALLOW_NONLOCAL === "1",
     isMountPoint,
+    snapshotEnabled: snapshotOn,
   });
   if (warning) console.warn(warning);
 }

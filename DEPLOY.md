@@ -63,9 +63,12 @@ gcloud run deploy dispatch \
   --no-allow-unauthenticated \
   --min-instances 1 --max-instances 1 \
   --memory 512Mi \
-  --set-env-vars ALLOW_NONLOCAL=1,HOST=0.0.0.0,DISPATCH_DB_PATH=/data/dispatch.db \
+  --set-env-vars ALLOW_NONLOCAL=1,HOST=0.0.0.0,DISPATCH_DB_PATH=/data/dispatch.db,DISPATCH_GCS_BUCKET=YOUR_PROJECT_ID-state \
   --set-secrets ANTHROPIC_API_KEY=anthropic-api-key:latest,GITHUB_TOKEN=github-token:latest
 ```
+
+`DISPATCH_GCS_BUCKET` makes the database survive redeploys — see §4. Without it
+every deploy resets the repo registry.
 
 - `--no-allow-unauthenticated` — **the safety control.** Only callers with the
   `run.invoker` IAM role can reach the service.
@@ -102,25 +105,57 @@ gcloud beta run services proxy dispatch --region us-central1
 # → opens http://localhost:8080 tunneled with your gcloud identity
 ```
 
-## 4. Persistence caveat
+## 4. Persistence — a GCS snapshot, not a volume
 
 The SQLite DB lives on the instance's ephemeral disk at `/data/dispatch.db`.
-With one warm instance it survives across requests, but it is **lost on
-redeploy or instance recycle** — tracked repos and filed tickets would reset
-(the issues themselves remain on GitHub, labeled `dispatch`). Derived state
-(`status_cache`, `activity`) always rebuilds from the provider on the next poll.
+With one warm instance it survives across requests, but it is **lost on redeploy
+or instance recycle**. Without the snapshot below, tracked repos, chats and the
+spend ledger reset (issues themselves remain on GitHub, labeled `dispatch`, and
+`status_cache` / `activity` rebuild from the provider on the next poll).
 
-For durable state across redeploys, mount a persistent volume at `/data`. A
-Filestore (NFS) mount is the most SQLite-friendly option:
+**Set `DISPATCH_GCS_BUCKET` and the problem goes away**, for about a cent a
+month. Dispatch uploads a consistent snapshot (`VACUUM INTO`) whenever a table
+the provider cannot rebuild is written — `repos`, `chats`, `tickets`, `spend` —
+and restores it on boot when the local file is absent. The upload happens
+*before the response is acked*, because Cloud Run throttles CPU the moment a
+response is returned.
 
 ```bash
-# After creating a Filestore instance + share, add to the deploy command:
-#   --add-volume=name=data,type=nfs,location=<FS_IP>:/<share> \
-#   --add-volume-mount=volume=data,mount-path=/data
+gcloud storage buckets create gs://YOUR_PROJECT_ID-state \
+  --location us-central1 --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets update gs://YOUR_PROJECT_ID-state --versioning
+
+# The Cloud Run runtime service account needs object access on this bucket only.
+gcloud storage buckets add-iam-policy-binding gs://YOUR_PROJECT_ID-state \
+  --member="serviceAccount:$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')-compute@developer.gserviceaccount.com" \
+  --role=roles/storage.objectAdmin
+
+gcloud run services update dispatch --region us-central1 \
+  --update-env-vars DISPATCH_GCS_BUCKET=YOUR_PROJECT_ID-state
 ```
 
-(GCS/`gcsfuse` volumes also exist but are not recommended for SQLite due to
-file-locking semantics.)
+Optional: `DISPATCH_GCS_OBJECT` (defaults to `dispatch.db`). Turn versioning on
+— a corrupt snapshot then stays recoverable. The server logs a warning at boot
+whenever the DB is on an unmounted path *and* no bucket is configured.
+
+### Why not a volume?
+
+Cloud Run supports both, and both are wrong here:
+
+- **Filestore (NFS)** has a **1 TiB minimum** on its cheapest tier — roughly
+  **$164/month** to protect a file measured in kilobytes — and needs a VPC plus
+  Direct VPC egress.
+- **Cloud Storage FUSE** is disqualified by Google's own documentation: it "does
+  not support file locking", is "not POSIX compliant", and "shouldn't be used as
+  the backend for storing a database." SQLite would corrupt silently.
+- **Litestream** is the usual answer for durable SQLite, but it replicates on a
+  background ticker, and this service uses request-based billing where CPU is
+  throttled outside requests. Making it work means instance-based billing, where
+  you are charged for the entire lifecycle of the instance, every hour of the
+  month.
+
+The snapshot works because the data is tiny and rarely written. See
+`server/db/snapshot.ts` and ADR-0005.
 
 ## 5. Operate
 
