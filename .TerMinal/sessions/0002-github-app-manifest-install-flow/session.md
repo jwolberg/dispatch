@@ -145,60 +145,60 @@ Branch for this session comes off `main`.
 
 ### [3.1] Encryption at rest (ADR-0006 [6.2])
 
-- [ ] write failing test: `encrypt`/`decrypt` round-trips, rejects a tampered
+- [x] write failing test: `encrypt`/`decrypt` round-trips, rejects a tampered
       ciphertext, and refuses a missing/short `DISPATCH_ENCRYPTION_KEY`
-- [ ] implement `server/lib/crypto.ts` (AES-256-GCM, `node:crypto`, no new dep)
-- [ ] write failing test: boot fails loudly when an `installations` row exists and
+- [x] implement `server/lib/crypto.ts` (AES-256-GCM, `node:crypto`, no new dep)
+- [x] write failing test: boot fails loudly when an `installations` row exists and
       `DISPATCH_ENCRYPTION_KEY` is unset — never silently degrade to plaintext
 
 ### [3.2] Persistence + the store (`InstallationStore` implementation)
 
-- [ ] write failing test: `installations` round-trips through a reopened DB; the
+- [x] write failing test: `installations` round-trips through a reopened DB; the
       private key column is ciphertext on disk and PEM after `forRepo()`
-- [ ] write failing test: a private key loaded from SQLite does **not** appear in
+- [x] write failing test: a private key loaded from SQLite does **not** appear in
       `safeMessage()` output for an error that embeds it (AC 9)
-- [ ] write failing test: writing an installation calls `resetProviderCache()`
+- [x] write failing test: writing an installation calls `resetProviderCache()`
       (the stale-key trap in [2.4])
-- [ ] implement the `installations` schema migration + schema.sql comment naming
+- [x] implement the `installations` schema migration + schema.sql comment naming
       this the first **confidential** table
-- [ ] implement `server/db/installations.ts` → `SqliteInstallationStore`, calling
+- [x] implement `server/db/installations.ts` → `SqliteInstallationStore`, calling
       `registerSecret()` on every key it decrypts
 
 ### [3.3] Manifest registration
 
-- [ ] write failing test: the manifest has exactly the seven permissions from
+- [x] write failing test: the manifest has exactly the seven permissions from
       [2.1], carries a CSRF `state`, and takes the App name from the request
-- [ ] implement `GET /api/github/app/manifest` + the form POST target
+- [x] implement `GET /api/github/app/manifest` + the form POST target
       (`github.com/settings/apps/new`, optional `?org=`)
-- [ ] write failing test: the conversion callback handles valid code, **replayed
+- [x] write failing test: the conversion callback handles valid code, **replayed
       code**, and **mismatched state** correctly (AC 12)
-- [ ] implement `POST /api/github/callback` — exchange the code once for app id,
+- [x] implement `POST /api/github/callback` — exchange the code once for app id,
       client id, client secret, private key, webhook secret; persist encrypted
 
 ### [3.4] Install flow + boot wiring
 
-- [ ] write failing test: the install callback records installation id, account,
+- [x] write failing test: the install callback records installation id, account,
       and repo selection
-- [ ] implement the install redirect + callback
-- [ ] wire `setInstallationStore(new SqliteInstallationStore(db))` in
+- [x] implement the install redirect + callback
+- [x] wire `setInstallationStore(new SqliteInstallationStore(db))` in
       `server/index.ts` (AC 5 — without this the whole seam stays dead)
-- [ ] write failing test: with no App installed, `getProviderForRepo()` still
+- [x] write failing test: with no App installed, `getProviderForRepo()` still
       resolves the `GITHUB_TOKEN` adapter (AC 11 — the local path must not regress)
 
 ### [3.5] Setup screen
 
-- [ ] App name field (defaulted, editable), optional org field, Register button,
+- [x] App name field (defaulted, editable), optional org field, Register button,
       then Install button; installation state rendered on the repo card
 
 ### [3.6] Close out
 
-- [ ] fix the stale `#2` comment at `providers/index.ts:124` → point at #21
-- [ ] `DEPLOY.md`: `DISPATCH_ENCRYPTION_KEY` + the noncurrent-version lifecycle
+- [x] fix the stale `#2` comment at `providers/index.ts:124` → point at #21
+- [x] `DEPLOY.md`: `DISPATCH_ENCRYPTION_KEY` + the noncurrent-version lifecycle
       rule (AC 10)
-- [ ] `npm run verify` green
-- [ ] open PR + link the url into ticket #2 `prs:`
+- [x] `npm run verify` green
+- [x] open PR + link the url into ticket #2 `prs:`
 
-### [3.7] Live verification — needs a real App (AC 6, 13)
+### [3.7] Live verification — needs a real App (AC 6, 13) → **moved to #22**
 
 Cannot be satisfied by unit tests, and cannot be done for you: it requires the
 operator to register an App on their own account.
