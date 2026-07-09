@@ -7,7 +7,7 @@ import {
   updateRepoContext,
   type RepoRow,
 } from "../db/repos.js";
-import { getProvider } from "../providers/index.js";
+import { getProviderForRepo } from "../providers/index.js";
 import type { ProviderId, RepoRef } from "../providers/index.js";
 import { discoverTickets } from "../poller/discover.js";
 import { safeMessage } from "../lib/redaction.js";
@@ -90,10 +90,8 @@ async function refreshContext(row: RepoRow, force: boolean): Promise<RepoRow> {
     Date.now() - Date.parse(row.context_refreshed_at) < SIX_HOURS_MS;
   if (fresh) return row;
 
-  const ctx = await getProvider(row.provider as ProviderId, row.host).getRepoContext(
-    refToRow(row),
-    row.claude_md_path
-  );
+  const ref = refToRow(row);
+  const ctx = await getProviderForRepo(ref).getRepoContext(ref, row.claude_md_path);
   updateRepoContext(row.id, {
     description: ctx.description,
     default_branch: ctx.defaultBranch,
@@ -134,7 +132,7 @@ reposRouter.post("/", async (req, res) => {
 
     // Validate access before saving (throws on bad token / missing repo).
     const ref: RepoRef = { provider, host, path, defaultBranch: body.default_branch ?? null };
-    const ctx = await getProvider(provider, host).getRepoContext(ref, body.claude_md_path ?? null);
+    const ctx = await getProviderForRepo(ref).getRepoContext(ref, body.claude_md_path ?? null);
 
     const row = insertRepo({
       provider,

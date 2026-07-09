@@ -5,7 +5,7 @@ import { getStatus } from "../db/status.js";
 import { getSummary, putSummary } from "../db/summary-cache.js";
 import { assertWithinBudget, BudgetExceededError } from "../anthropic/budget.js";
 import { summarizeChange, type ChangeSummary } from "../anthropic/summary.js";
-import { getProvider } from "../providers/index.js";
+import { getProviderForRepo } from "../providers/index.js";
 import type { ProviderId, RepoRef } from "../providers/index.js";
 import type { StatusPayload } from "../poller/reconcile.js";
 import { safeMessage } from "../lib/redaction.js";
@@ -99,7 +99,7 @@ summaryRouter.get("/:id/summary", async (req, res) => {
     assertWithinBudget(new Date());
 
     const summary = await coalesce(`${ticket.id}:${pr.headSha}`, async () => {
-      const diff = await getProvider(ref.provider, repo.host).getPRDiff(ref, pr.number);
+      const diff = await getProviderForRepo(ref).getPRDiff(ref, pr.number);
       const generated = await summarizeChange(pr.title, diff, ticket.id);
       putSummary(ticket.id, pr.headSha, generated, new Date().toISOString());
       return generated;
