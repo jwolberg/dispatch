@@ -249,9 +249,6 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
-  // ── Methods below are implemented in their own tickets (P3-T1/T2, P4-T1/T3).
-  //    Stubbed here so the class satisfies the GitProvider interface.
-
   private async ensureLabel(owner: string, repo: string, name: string): Promise<void> {
     try {
       await this.octokit.issues.getLabel({ owner, repo, name });
