@@ -18,7 +18,8 @@ refs:
 depends_on: [1]
 acceptance:
   - "An operator can register their OWN GitHub App from the browser via the manifest flow, with no shell step and no App name or client id committed to this repo"
-  - "The App name is an editable field on the setup screen, defaulted but not hardcoded; personal-vs-org ownership is chosen in GitHub's own UI via the optional ?org= parameter"
+  - "The App name is an editable field on the setup screen, defaulted but not hardcoded; personal-vs-org ownership is chosen in GitHub's own UI, by POSTing the manifest to /settings/apps/new or /organizations/<org>/settings/apps/new (there is no ?org= parameter — corrected 2026-07-09, see ADR-0006 [5])"
+  - "The conversion callback is one-shot: Dispatch rejects a replayed code itself, because GitHub documents the code as valid for an hour but never promises single use"
   - "An operator can install that App on one or more repos and land back in Dispatch with the installation recorded"
   - "Installation records (app id, installation id, account, repo selection) persist in SQLite and survive a container restart"
   - "server/index.ts calls setInstallationStore() with a SQLite-backed InstallationStore at boot — without this the seam #3 landed stays dead code and AppTokenSource is never constructed in production"

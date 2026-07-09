@@ -217,7 +217,56 @@ done (only the SQLite-key registration and its test remain), and the account-lev
 
 ## [5] Decisions
 
-*(none yet)*
+### [5.1] AES-256-GCM envelope, `v1.iv.tag.ciphertext`, keyed by `DISPATCH_ENCRYPTION_KEY`
+
+`node:crypto`, no new dependency. GCM over CBC because the auth tag distinguishes
+"this snapshot was edited" from "this private key decrypts to garbage." Versioned
+envelope so a later rotation is *detected* rather than mis-parsed, and so
+`decryptSecret()` fails closed on a value that was never encrypted. Fresh random
+IV per call — GCM loses confidentiality outright on IV reuse under one key.
+
+### [5.2] `forRepo()` resolves by account, then narrows by the granted repo list
+
+When `repository_selection` is `selected` and the repo is not among the grants,
+return `null` and let `GITHUB_TOKEN` serve it. The alternative — hand back the
+installation anyway — turns every call on that repo into a 404 and regresses a repo
+the operator was already tracking before they installed the App. The cost is that a
+stale `repos_json` silently keeps a newly-granted repo on the env token until the
+install flow re-runs; #17's webhooks are the real fix.
+
+### [5.3] Boot refuses to start when an App is registered and the key is missing
+
+Not "warn and fall back." A registered App whose private key cannot be decrypted,
+silently reverting to `GITHUB_TOKEN`, is precisely the failure mode this ticket
+exists to prevent. `openInstallationStore()` throws. No App and no key is still a
+clean boot — that is the documented local path.
+
+### [5.4] ADR-0006 [5] was factually wrong about `?org=` — corrected
+
+The ADR (and #2's acceptance criteria, and `BUILD_PLAN-v2`) said the manifest form
+POSTs to `github.com/settings/apps/new` with "an optional `?org=<org>`" to choose
+org ownership. **No such parameter exists.** Ownership is chosen by the path:
+
+| Owner | Form action |
+|---|---|
+| Personal | `https://github.com/settings/apps/new?state=<state>` |
+| Organization | `https://github.com/organizations/<org>/settings/apps/new?state=<state>` |
+
+`state` is the only query parameter, on either path. Two further corrections found
+the same way, both now in ADR-0006 [5] and the ticket:
+
+- `POST /app-manifests/{code}/conversions` types `webhook_secret` as **nullable**.
+  Dispatch must tolerate a null, not assume a string.
+- The code is documented valid for **one hour**; single use is *never stated*. So
+  `/api/github/callback` enforces one-shot exchange itself rather than trusting
+  GitHub to reject a replay. This became a new acceptance criterion.
+
+Method: the seven permission keys were read out of the `app-permissions` schema in
+GitHub's OpenAPI description, and cross-checked against the live `permissions`
+object of three real Apps (`gh api /apps/dependabot` and friends). `workflows`
+accepts only `write` — there is no `read`. This is the
+[[verify-generated-formats-against-real-data]] rule paying for itself: three of the
+ADR's claims about an external format were wrong, and all three would have compiled.
 
 ## [6] Outcomes
 
