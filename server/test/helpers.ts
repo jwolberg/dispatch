@@ -20,6 +20,8 @@ export function resetDb(): void {
     DELETE FROM tickets;
     DELETE FROM chats;
     DELETE FROM repos;
+    DELETE FROM installations;
+    DELETE FROM github_app;
   `);
 }
 

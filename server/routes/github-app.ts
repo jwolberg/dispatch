@@ -1,0 +1,319 @@
+import { Router, type Request } from "express";
+import { randomBytes } from "node:crypto";
+import { openInstallationStore, type AppRecord, type SqliteInstallationStore } from "../db/installations.js";
+import { resetProviderCache } from "../providers/index.js";
+import { ENCRYPTION_KEY_ENV } from "../lib/crypto.js";
+import { registerSecret, safeMessage } from "../lib/redaction.js";
+
+// GitHub App registration via the manifest flow (#2, ADR-0006 [5]).
+//
+// Dispatch is a public repo that anyone deploys for themselves, so there is no
+// central Dispatch App. Each operator registers their own from their own
+// instance: we serve a manifest, GitHub redirects back with a temporary code, and
+// we exchange it once for the App's credentials.
+//
+// Every external detail below was verified against GitHub's OpenAPI description
+// and three live Apps before being written down, because ADR-0006's prose
+// description of this flow was wrong in three places — see the correction note in
+// that ADR. In particular there is no `?org=` parameter, `webhook_secret` is
+// nullable, and GitHub never promises the code is single-use.
+
+const GITHUB_API = "https://api.github.com";
+const GITHUB_WEB = "https://github.com";
+
+/**
+ * GitHub documents the manifest flow as "complete all three steps within one
+ * hour". A pending registration older than that cannot be completed anyway.
+ */
+const STATE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Exactly the access #2 specifies, and no more. Every key and value was checked
+ * against the `app-permissions` schema in GitHub's OpenAPI description:
+ *
+ *  - `pull_requests: write` — Dispatch's server opens the PR now (ADR-0006 [2]).
+ *  - `contents`, `workflows`, `secrets: write` — #4's setup commits and the one
+ *    remaining repo secret (the Claude auth token).
+ *  - `issues: write` — filing tickets.
+ *  - `actions: read` — reading workflow runs for the board.
+ *  - `metadata: read` — mandatory for every App.
+ *
+ * `workflows` accepts only `write`; its enum has no `read`.
+ */
+export const APP_PERMISSIONS = {
+  contents: "write",
+  issues: "write",
+  pull_requests: "write",
+  workflows: "write",
+  secrets: "write",
+  actions: "read",
+  metadata: "read",
+} as const;
+
+export interface GitHubAppManifest {
+  name: string;
+  url: string;
+  hook_attributes: { url: string; active: boolean };
+  redirect_url: string;
+  setup_url: string;
+  description: string;
+  public: boolean;
+  default_events: string[];
+  default_permissions: typeof APP_PERMISSIONS;
+}
+
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
+/**
+ * The manifest the operator's browser POSTs to GitHub.
+ *
+ * `url` is the only field GitHub requires. The App is registered **private**
+ * (`public: false`) — a public App could be installed by anyone on their own
+ * repos, which is not what "register your own instance's App" means.
+ *
+ * The webhook is declared but left `active: false`: nothing verifies its
+ * signatures until #17 lands, and an App delivering to an endpoint that does not
+ * exist yet is just a queue of failed deliveries.
+ */
+export function buildManifest(opts: { name: string; baseUrl: string; description?: string }): GitHubAppManifest {
+  const base = trimSlash(opts.baseUrl);
+  return {
+    name: opts.name,
+    url: base,
+    hook_attributes: { url: `${base}/api/webhooks/github`, active: false },
+    redirect_url: `${base}/api/github/callback`,
+    setup_url: `${base}/api/github/installed`,
+    description: opts.description ?? "Dispatch — browser-native agent control plane.",
+    public: false,
+    default_events: [],
+    default_permissions: APP_PERMISSIONS,
+  };
+}
+
+/**
+ * Where the manifest form POSTs. Ownership is chosen by the **path**, not by a
+ * query parameter — `?org=` does not exist, and sending it to the personal path
+ * would quietly register the App on the operator's personal account while looking
+ * like it had worked.
+ */
+export function manifestActionUrl(org: string | null | undefined, state: string): string {
+  const q = `?state=${encodeURIComponent(state)}`;
+  if (!org) return `${GITHUB_WEB}/settings/apps/new${q}`;
+
+  // An org containing a slash or a traversal segment would rewrite the path.
+  if (!/^[A-Za-z0-9-_. ]+$/.test(org)) {
+    throw new Error(`Invalid GitHub org name: ${JSON.stringify(org)}`);
+  }
+  return `${GITHUB_WEB}/organizations/${encodeURIComponent(org)}/settings/apps/new${q}`;
+}
+
+export interface PendingRegistration {
+  org: string | null;
+}
+
+/**
+ * The CSRF `state` for an in-flight registration, and the reason the callback is
+ * one-shot.
+ *
+ * GitHub says the manifest code is valid for an hour; it never says the code is
+ * single-use. So Dispatch enforces that itself: a state is consumed on first
+ * presentation, and a replayed callback URL finds nothing to consume.
+ *
+ * In memory, not in SQLite. A registration in flight across a process restart is
+ * simply retried from the setup screen — cheaper than a table whose only rows
+ * live for under an hour.
+ */
+export class PendingRegistrations {
+  private readonly pending = new Map<string, { rec: PendingRegistration; expiresAt: number }>();
+  private readonly now: () => number;
+
+  constructor(deps: { now?: () => number } = {}) {
+    this.now = deps.now ?? Date.now;
+  }
+
+  issue(rec: PendingRegistration): string {
+    this.sweep();
+    const state = randomBytes(24).toString("base64url"); // 32 chars, 192 bits
+    this.pending.set(state, { rec, expiresAt: this.now() + STATE_TTL_MS });
+    return state;
+  }
+
+  /** Returns the registration and forgets it, or null for unknown/expired/replayed. */
+  consume(state: string): PendingRegistration | null {
+    const entry = this.pending.get(state);
+    if (!entry) return null;
+    this.pending.delete(state);
+    return this.now() > entry.expiresAt ? null : entry.rec;
+  }
+
+  private sweep(): void {
+    const now = this.now();
+    for (const [state, entry] of this.pending) {
+      if (now > entry.expiresAt) this.pending.delete(state);
+    }
+  }
+}
+
+interface ConversionResponse {
+  id?: number;
+  slug?: string;
+  name?: string;
+  html_url?: string;
+  client_id?: string;
+  client_secret?: string;
+  /** Nullable, per GitHub's schema. */
+  webhook_secret?: string | null;
+  pem?: string;
+}
+
+/**
+ * Exchange the temporary manifest code for the App's credentials.
+ *
+ * The 201 body carries the private key. Any error raised from here must not, so
+ * failures are re-thrown with a message built from the status alone — never from
+ * the body.
+ */
+export async function convertManifestCode(
+  code: string,
+  deps: { fetchImpl?: typeof fetch; apiBase?: string } = {}
+): Promise<AppRecord> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const apiBase = deps.apiBase ?? GITHUB_API;
+
+  const res = await fetchImpl(`${apiBase}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`GitHub rejected the App manifest code: ${res.status}`);
+  }
+
+  const body = (await res.json()) as ConversionResponse;
+
+  // Register the credentials with the redactor the moment they exist, not when
+  // they are later read back out of SQLite (ADR-0006 [6.3]: "secrets register
+  // their values when they are loaded"). This response body IS the load.
+  //
+  // Without this there is a window — from here until saveApp() encrypts them —
+  // where the plaintext private key is live in memory and unknown to
+  // safeMessage(). Anything that throws in that window (a disk error, a
+  // constraint violation) can carry the PEM into a log line or a 502 body.
+  registerSecret(body.pem);
+  registerSecret(body.client_secret);
+  registerSecret(body.webhook_secret);
+
+  // `webhook_secret` may legitimately be null. Everything else is required by the
+  // response schema, and a blank credential stored now is a 401 an hour from now.
+  if (!body.id || !body.pem || !body.client_id || !body.client_secret || !body.slug) {
+    throw new Error("GitHub returned an incomplete App manifest conversion (missing credentials)");
+  }
+
+  return {
+    appId: body.id,
+    slug: body.slug,
+    name: body.name ?? body.slug,
+    clientId: body.client_id,
+    clientSecret: body.client_secret,
+    privateKey: body.pem,
+    webhookSecret: body.webhook_secret ?? null,
+    htmlUrl: body.html_url ?? null,
+  };
+}
+
+export interface GithubAppDeps {
+  /** Null when DISPATCH_ENCRYPTION_KEY is unset — we cannot store what we register. */
+  store: () => SqliteInstallationStore | null;
+  fetchImpl: typeof fetch;
+  baseUrl: (req: Request) => string;
+  pending: PendingRegistrations;
+}
+
+/** The deployment's own public origin, which the manifest's URLs must point at. */
+function defaultBaseUrl(req: Request): string {
+  const configured = process.env.DISPATCH_PUBLIC_URL?.trim();
+  if (configured) return trimSlash(configured);
+  return `${req.protocol}://${req.get("host") ?? "localhost"}`;
+}
+
+export function createGithubAppRouter(deps: Partial<GithubAppDeps> = {}): Router {
+  const store = deps.store ?? (() => openInstallationStore(process.env, resetProviderCache));
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const baseUrl = deps.baseUrl ?? defaultBaseUrl;
+  const pending = deps.pending ?? new PendingRegistrations();
+
+  const router = Router();
+
+  // Step 1. Hand the browser a manifest and the action URL to POST it to. The
+  // operator's click on GitHub's own page is the escalating-cost action, and it
+  // never leaves their hands (ADR-0006 [5]).
+  router.post("/app/manifest", (req, res) => {
+    if (!store()) {
+      res.status(400).json({
+        error:
+          `Set ${ENCRYPTION_KEY_ENV} before registering a GitHub App. Its private key is ` +
+          `stored in SQLite and must be encrypted at rest. Generate one with: openssl rand -base64 32`,
+      });
+      return;
+    }
+
+    const body = req.body as { name?: unknown; org?: unknown };
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const org = typeof body.org === "string" && body.org.trim() ? body.org.trim() : null;
+    if (!name) {
+      res.status(400).json({ error: "An App name is required." });
+      return;
+    }
+
+    let action: string;
+    try {
+      const state = pending.issue({ org });
+      action = manifestActionUrl(org, state);
+      res.json({ action, state, manifest: buildManifest({ name, baseUrl: baseUrl(req) }) });
+    } catch (err) {
+      res.status(400).json({ error: safeMessage(err) });
+    }
+  });
+
+  // Step 3. GitHub redirects here with the temporary code. Consume the state
+  // FIRST — before any network call — so a replayed callback cannot re-exchange,
+  // and so a failed exchange cannot be retried with the same code.
+  router.get("/callback", async (req, res) => {
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+
+    const registration = state ? pending.consume(state) : null;
+    if (!registration) {
+      res.status(400).json({ error: "Unrecognized, expired, or already-used registration state." });
+      return;
+    }
+    if (!code) {
+      res.status(400).json({ error: "GitHub did not return a manifest code." });
+      return;
+    }
+
+    const installations = store();
+    if (!installations) {
+      res.status(400).json({ error: `Set ${ENCRYPTION_KEY_ENV} before registering a GitHub App.` });
+      return;
+    }
+
+    try {
+      const app = await convertManifestCode(code, { fetchImpl });
+      installations.saveApp(app); // fires onChange → resetProviderCache()
+      res.redirect(302, `${GITHUB_WEB}/apps/${encodeURIComponent(app.slug)}/installations/new`);
+    } catch (err) {
+      // safeMessage, not the raw error: the conversion body carries the private key.
+      res.status(502).json({ error: safeMessage(err) });
+    }
+  });
+
+  return router;
+}
+
+export const githubAppRouter = createGithubAppRouter();

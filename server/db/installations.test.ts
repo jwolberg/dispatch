@@ -108,6 +108,23 @@ describe("installations store", () => {
       expect(newStore().getApp()).toEqual(APP);
     });
 
+    it("round-trips a null webhook secret as null, not as an empty string", () => {
+      // GitHub's conversion response types webhook_secret as nullable. #17's HMAC
+      // verification has to be able to see the absence, so `"" ⇄ null` must survive
+      // the encrypted round trip.
+      newStore().saveApp({ ...APP, webhookSecret: null });
+      expect(newStore().getApp()?.webhookSecret).toBeNull();
+    });
+
+    it("still encrypts the column when the webhook secret is null", () => {
+      newStore().saveApp({ ...APP, webhookSecret: null });
+      const row = getDb().prepare("SELECT webhook_secret_enc FROM github_app").get() as {
+        webhook_secret_enc: string;
+      };
+      expect(row.webhook_secret_enc.startsWith("v1.")).toBe(true);
+      expect(row.webhook_secret_enc).not.toBe("");
+    });
+
     it("registers the decrypted private key with the redactor", () => {
       // ADR-0006 [6.3]: redaction.ts scans process.env, and a key from SQLite is
       // never in process.env. Without registering it on decrypt, safeMessage()

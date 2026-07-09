@@ -22,7 +22,15 @@ export interface AppRecord {
   clientSecret: string;
   /** PEM. Encrypted at rest; registered with the redactor whenever it is read. */
   privateKey: string;
-  webhookSecret: string;
+  /**
+   * Null when the App has no webhook secret. GitHub's conversion response types
+   * this nullable, so #17's HMAC verification must be able to see the absence.
+   *
+   * Stored as the envelope of the empty string rather than a NULL column: it
+   * keeps the column NOT NULL and needs no migration, and GitHub never issues an
+   * empty-string secret, so `"" ⇄ null` is lossless.
+   */
+  webhookSecret: string | null;
   htmlUrl?: string | null;
 }
 
@@ -102,7 +110,7 @@ export class SqliteInstallationStore implements InstallationStore {
         client_id: app.clientId,
         client_secret: encryptSecret(app.clientSecret, this.key),
         private_key: encryptSecret(app.privateKey, this.key),
-        webhook_secret: encryptSecret(app.webhookSecret, this.key),
+        webhook_secret: encryptSecret(app.webhookSecret ?? "", this.key),
         html_url: app.htmlUrl ?? null,
         created_at: new Date().toISOString(),
       });
@@ -115,6 +123,7 @@ export class SqliteInstallationStore implements InstallationStore {
     if (!row) return null;
 
     const privateKey = this.reveal(row.private_key_enc);
+    const webhookSecret = this.reveal(row.webhook_secret_enc);
     return {
       appId: row.app_id,
       slug: row.slug,
@@ -122,7 +131,7 @@ export class SqliteInstallationStore implements InstallationStore {
       clientId: row.client_id,
       clientSecret: this.reveal(row.client_secret_enc),
       privateKey,
-      webhookSecret: this.reveal(row.webhook_secret_enc),
+      webhookSecret: webhookSecret === "" ? null : webhookSecret,
       htmlUrl: row.html_url,
     };
   }

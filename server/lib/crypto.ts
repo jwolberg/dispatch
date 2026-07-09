@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 // Envelope encryption for the one confidential column in SQLite: the GitHub App
 // private key (#2, ADR-0006 [6.2]).
@@ -132,12 +132,4 @@ export function decryptSecret(envelope: string, key: Buffer): string {
     // library-supplied detail into a log line.
     throw new Error("Failed to decrypt: wrong key, or the value was tampered with");
   }
-}
-
-/** Constant-time equality, for comparing OAuth `state` and webhook secrets. */
-export function safeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a, "utf8");
-  const bufB = Buffer.from(b, "utf8");
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
 }

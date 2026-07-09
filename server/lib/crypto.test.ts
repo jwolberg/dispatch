@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { randomBytes } from "node:crypto";
-import {
-  ENCRYPTION_KEY_ENV,
-  decryptSecret,
-  encryptSecret,
-  loadEncryptionKey,
-  safeEqual,
-} from "./crypto.js";
+import { ENCRYPTION_KEY_ENV, decryptSecret, encryptSecret, loadEncryptionKey } from "./crypto.js";
 
 /** A well-formed key, as `openssl rand -base64 32` would produce it. */
 function freshKeyB64(): string {
@@ -157,31 +151,5 @@ describe("encryptSecret / decryptSecret", () => {
       expect(msg).not.toContain(PEM);
       expect(msg).not.toContain(k2b64);
     }
-  });
-});
-
-describe("safeEqual", () => {
-  it("matches identical strings", () => {
-    expect(safeEqual("state-abc123", "state-abc123")).toBe(true);
-  });
-
-  it("rejects different strings of equal length", () => {
-    expect(safeEqual("state-abc123", "state-abc124")).toBe(false);
-  });
-
-  it("rejects strings of different length without throwing", () => {
-    // timingSafeEqual() throws on a length mismatch. A CSRF `state` comparison is
-    // reached with attacker-controlled input, so this must return false, not 500.
-    expect(safeEqual("short", "considerably-longer")).toBe(false);
-    expect(safeEqual("", "x")).toBe(false);
-  });
-
-  it("matches two empty strings", () => {
-    expect(safeEqual("", "")).toBe(true);
-  });
-
-  it("compares by bytes, not by code units", () => {
-    expect(safeEqual("é", "é")).toBe(true);
-    expect(safeEqual("é", "e")).toBe(false);
   });
 });
