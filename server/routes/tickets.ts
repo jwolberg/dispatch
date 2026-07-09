@@ -5,7 +5,7 @@ import { setChatStatus } from "../db/chats.js";
 import { insertActivity } from "../db/activity.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile, type StatusPayload } from "../poller/reconcile.js";
-import { getProvider } from "../providers/index.js";
+import { getProviderForRepo } from "../providers/index.js";
 import type { CommentTarget, MergeMethod, ProviderId, RepoRef } from "../providers/index.js";
 import { isSkill, skillPrompt, defaultTarget } from "../lib/skills.js";
 import { safeMessage } from "../lib/redaction.js";
@@ -45,7 +45,7 @@ ticketsRouter.post("/", async (req, res) => {
   };
 
   try {
-    const issue = await getProvider(repo.provider as ProviderId, repo.host).createIssue(ref, {
+    const issue = await getProviderForRepo(ref).createIssue(ref, {
       title: body.title,
       body_markdown: body.body_markdown,
       labels: Array.isArray(body.labels) ? body.labels : [],
@@ -167,7 +167,7 @@ ticketsRouter.post("/:id/comment", async (req, res) => {
   const target: CommentTarget = { repo: ref, kind, number };
 
   try {
-    await getProvider(repo.provider as ProviderId, repo.host).postComment(target, body.body);
+    await getProviderForRepo(ref).postComment(target, body.body);
     insertActivity({
       ticket_id: ticket.id,
       type: "steer",
@@ -229,7 +229,7 @@ ticketsRouter.post("/:id/skill", async (req, res) => {
   const target: CommentTarget = { repo: ref, kind, number };
 
   try {
-    await getProvider(provider, repo.host).postComment(
+    await getProviderForRepo(ref).postComment(
       target,
       skillPrompt(skill, provider, ticket.issue_number, note)
     );
@@ -297,7 +297,7 @@ ticketsRouter.post("/:id/merge", async (req, res) => {
   };
 
   try {
-    const result = await getProvider(repo.provider as ProviderId, repo.host).mergePR(
+    const result = await getProviderForRepo(ref).mergePR(
       ref,
       pr.number,
       method
@@ -370,7 +370,7 @@ ticketsRouter.get("/:id/revert-url", async (req, res) => {
   };
 
   try {
-    const url = await getProvider(repo.provider as ProviderId, repo.host).getRevertUrl(
+    const url = await getProviderForRepo(ref).getRevertUrl(
       ref,
       pr.number
     );

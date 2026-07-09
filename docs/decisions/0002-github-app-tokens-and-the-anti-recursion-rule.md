@@ -109,6 +109,11 @@ So `POST /api/repos/:id/setup` (#4) writes `APP_CLIENT_ID` + `APP_PRIVATE_KEY`
 instead of `GH_PAT`. One secret becomes one secret. Onboarding loses the PAT
 scope matrix — the actual goal — because the user never mints anything.
 
+> **Resolved 2026-07-09 by ADR-0006 [2]:** alternative (a). Dispatch's server
+> opens the pull request; no App credential is written into any user repo. The
+> approval gate below is closed. ADR-0006 [3] also finds that (a) is closer to a
+> *deletion* than a move — `claude-code-action` never opened PRs itself.
+
 **The tradeoff, flagged for explicit approval before #4 executes:** a
 fine-grained `GH_PAT` is scoped to one repo. An App private key can mint tokens
 for *every installation of that App*. Writing it into each user repo's secrets

@@ -2,7 +2,7 @@ import { getRepo, type RepoRow } from "../db/repos.js";
 import { type TicketRow } from "../db/tickets.js";
 import { getStatus, upsertStatus } from "../db/status.js";
 import { insertActivity } from "../db/activity.js";
-import { getProvider } from "../providers/index.js";
+import { getProviderForRepo } from "../providers/index.js";
 import type { Issue, PRStatus, ProviderId, RepoRef, RevertRef, Run } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
 import { markRateLimited, retryAfter } from "../lib/ratelimit.js";
@@ -106,13 +106,13 @@ export async function reconcileTicket(ticket: TicketRow): Promise<StatusPayload 
   const repo = getRepo(ticket.repo_id);
   if (!repo) return null;
 
-  const provider = getProvider(repo.provider as ProviderId, repo.host);
   const ref: RepoRef = {
     provider: repo.provider as ProviderId,
     host: repo.host,
     path: repo.path,
     defaultBranch: repo.default_branch,
   };
+  const provider = getProviderForRepo(ref);
 
   const issue = await provider.getIssue(ref, ticket.issue_number);
   const prRef = await provider.findLinkedPR(ref, ticket.issue_number);

@@ -105,6 +105,54 @@ gcloud beta run services proxy dispatch --region us-central1
 # → opens http://localhost:8080 tunneled with your gcloud identity
 ```
 
+## 3.5 Connect your repos
+
+Connecting a repo works exactly as it does locally — same tokens, same
+permissions, same Track button. See **Connecting a repo** in
+[`README.md`](README.md#connecting-a-repo) for the fine-grained PAT permissions,
+the `claude-code-action` install, and how preview URLs are discovered. Only two
+things differ on Cloud Run.
+
+**Where the tokens live.** `GITHUB_TOKEN` came from Secret Manager in §1–2. To
+also track GitLab repos, add its token the same way and attach it:
+
+```bash
+security find-generic-password -s dispatch-GITLAB_TOKEN -w \
+  | gcloud secrets create gitlab-token --data-file=- --replication-policy=automatic
+
+gcloud run services update dispatch --region us-central1 \
+  --update-secrets GITLAB_TOKEN=gitlab-token:latest
+
+# Self-hosted GitLab only — the default base URL for repos tracked by path:
+gcloud run services update dispatch --region us-central1 \
+  --update-env-vars GITLAB_HOST=https://gitlab.example.com
+```
+
+Grant the runtime service account `secretmanager.secretAccessor` on any new
+secret, as in §2. Tokens are read per provider on first use, so a GitHub-only
+deployment never needs `GITLAB_TOKEN` set.
+
+**Reaching the API.** Track repos through the proxy's UI at
+`http://localhost:8080`. The same origin serves the API, so the pattern/merge
+settings that have no UI yet are a curl away — add `-u any:$DISPATCH_PASSWORD`
+if you set the shared-password gate:
+
+```bash
+curl -X POST http://localhost:8080/api/repos \
+  -H 'content-type: application/json' \
+  -d '{"path":"acme/widgets","preview_url_pattern":"https://widgets-pr-{n}.vercel.app"}'
+```
+
+Preview deploys need **nothing** on the Cloud Run side: Vercel (or Netlify,
+Render, Cloudflare Pages) reports the URL to GitHub as a commit or deployment
+status, and Dispatch reads it from there on the next poll. The only requirement
+is that the PAT carries **Commit statuses: read** and **Deployments: read**.
+
+Tracked repos live in the `repos` table, which the provider cannot rebuild — if
+you skip the snapshot bucket in §4, every redeploy loses them and you re-Track.
+Issues themselves are never lost; they're on GitHub, labeled `dispatch`, and
+re-import on the first poll after tracking.
+
 ## 4. Persistence — a GCS snapshot, not a volume
 
 The SQLite DB lives on the instance's ephemeral disk at `/data/dispatch.db`.

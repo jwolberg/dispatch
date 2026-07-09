@@ -1,6 +1,6 @@
 import { listRepos, type RepoRow } from "../db/repos.js";
 import { createTicket, listTickets } from "../db/tickets.js";
-import { getProvider } from "../providers/index.js";
+import { getProviderForRepo } from "../providers/index.js";
 import type { ProviderId, RepoRef } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
 
@@ -20,8 +20,9 @@ function refOf(repo: RepoRow): RepoRef {
  * live provider state). Returns the number of new tickets created.
  */
 export async function discoverTickets(repo: RepoRow): Promise<number> {
-  const provider = getProvider(repo.provider as ProviderId, repo.host);
-  const open = await provider.listOpenIssues(refOf(repo));
+  const ref = refOf(repo);
+  const provider = getProviderForRepo(ref);
+  const open = await provider.listOpenIssues(ref);
   const known = new Set(
     listTickets()
       .filter((t) => t.repo_id === repo.id)

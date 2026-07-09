@@ -4,7 +4,7 @@ title: "POST /api/repos/:id/setup — write workflows + secrets via API"
 status: open
 priority: high
 horizon: now
-hitl: true
+hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
@@ -15,12 +15,18 @@ refs:
   - "T1-3"
   - "scripts/install-claude-action.sh"
   - "ADR-0002"
+  - "ADR-0006"
 depends_on: [3]
 acceptance:
   - "One POST commits .github/workflows/claude.yml, a stack-aware ci.yml from scripts/repo-ci/, and the plan/implement/debug skills from scripts/repo-skills/ into the target repo"
+  - "The claude.yml template drops the `gh pr create` post-step and the GH_PAT secret entirely; claude-code-action pushes a branch under the default GITHUB_TOKEN and nothing else"
+  - "No App credential is written into the target repo — no GH_PAT, no APP_CLIENT_ID, no APP_PRIVATE_KEY. Exactly one secret is written: the Claude auth token"
   - "The Claude auth secret is set via the Secrets API using libsodium sealed-box encryption"
   - "When installing in OAuth mode, any existing ANTHROPIC_API_KEY repo secret is deleted"
   - "OAuth-token-preferred behavior from install-claude-action.sh is preserved"
+  - "The provider seam gains createPullRequest and branch listing, for both GitHub and GitLab, with no SDK import outside server/providers/ (npm run check:seam stays green)"
+  - "The poller opens a PR for a branch that links to an open dispatch-labeled issue and has no open PR, authenticated with the App installation token"
+  - "The poller does NOT open a PR from a branch a human pushed — the discriminator is sampled from a real claude-code-action run and cited in a test fixture, never inferred from documentation"
   - "Re-running setup on an already-configured repo is idempotent and does not duplicate commits"
   - "Templates are embedded at build time; scripts/repo-ci/ and scripts/repo-skills/ remain the single source"
   - "Setup runs end-to-end from the browser with no shell step"
@@ -40,49 +46,70 @@ The endpoint commits the Claude workflow, a stack-aware CI workflow, and the
 `plan`/`implement`/`debug` skills into the target repo, and sets the Claude auth
 secret.
 
+**ADR-0006 removed the hard part.** The workflow no longer opens pull requests, so
+it no longer needs a non-default token, so no App credential is written into a
+user's repo at all. What used to be this ticket's approval gate is now a deletion.
+
 ## Acceptance criteria
 
-- One `POST /api/repos/:id/setup` commits `.github/workflows/claude.yml`, a
-  stack-aware `ci.yml` from `scripts/repo-ci/`, and the skills from
-  `scripts/repo-skills/`.
-- Claude auth secret set through the Secrets API with libsodium sealed-box
-  encryption.
-- In OAuth mode, an existing `ANTHROPIC_API_KEY` repo secret is **deleted**.
-- OAuth-token-preferred behavior preserved.
-- Idempotent on re-run.
-- Templates embedded at build time from their existing locations.
-- Whole flow runs from the browser.
-- No secret is ever logged or returned.
+See frontmatter. What changed, and why:
+
+- **`claude.yml` loses its `gh pr create` post-step** (`install-claude-action.sh:136–151`)
+  and its `GH_PAT` secret. `claude-code-action` pushes a branch with the default
+  `GITHUB_TOKEN`; that always worked, because pushing was never the blocked
+  operation.
+- **Dispatch's poller opens the PR** with its App installation token. The PR is
+  App-authored, so `pull_request` runs execute without approval, and Actions never
+  attempts a PR creation that `can_approve_pull_request_reviews: false` would 403.
+- **One secret, not two.** The Claude auth token. Its blast radius is the
+  operator's own Anthropic account, which onboarding already accepts.
 
 ## Design notes
 
 The sealed-box encryption is the one genuinely fiddly part; everything else is a
 transliteration of the bash.
 
-**Credential shape changed by ADR-0002.** `GH_PAT` leaves onboarding, but it is
-replaced by `APP_CLIENT_ID` (a repo variable) + `APP_PRIVATE_KEY` (a repo
-secret), which `actions/create-github-app-token` uses to mint an installation
-token inside the workflow. Before implementing, settle the tradeoff recorded in
-ADR-0002 [4]: an App private key mints tokens for *every* installation of the
-App, so writing it into each user repo inverts the blast radius versus a
-per-repo fine-grained PAT. Two alternatives are costed there and neither has
-been chosen. **This is an approval gate, not an implementation detail.**
+**Detecting `can_approve_pull_request_reviews` is no longer required.** ADR-0002 [3.1]
+demanded it because a `GITHUB_TOKEN`-authored PR 403s at creation when the setting
+is off. Under ADR-0006 [3] Actions never creates a PR, so the setting is
+unreachable. #5's canary still reports the condition if a repo somehow lands there.
 
-**Also from ADR-0002 [3.1]:** setup should detect
-`can_approve_pull_request_reviews` on the target repo. With it off, a
-`GITHUB_TOKEN`-authored PR 403s at creation. An App installation token is
-unaffected by that toggle, so the App path sidesteps it — but the canary (#5)
-must still report the condition clearly if a repo lands in that state.
+**The `ANTHROPIC_API_KEY` deletion is not a nicety.** Per `docs/implementation-notes.md`
+(2026-06-12): the API key outranks the OAuth token in Claude's auth precedence, so
+leaving it in place silently keeps billing the metered API. Cover it with a test.
 
-The `ANTHROPIC_API_KEY` deletion is not a nicety. Per `docs/implementation-notes.md`
-(2026-06-12): the API key outranks the OAuth token in Claude's auth precedence,
-so leaving it in place silently keeps billing the metered API. Cover it with a
-test.
+### New provider surface
+
+`server/providers/github.ts` has `createIssue`, `postComment`, `mergePR`,
+`getWorkflowRuns` and the read path. It has **no `createPullRequest` and no branch
+listing.** Both land here, behind the seam, with GitLab counterparts.
+
+### Identifying Claude's branch — sample it, do not infer it
+
+`linkage.ts`'s `linksToIssue()` already matches a branch to an issue by
+digit-bounded number, so `claude/issue-7-…` → #7 needs no new regex and no
+branch-name convention. Reuse it.
+
+But "links to an open `dispatch` issue and has no open PR" **also matches a human
+branch named `fix-7`**, and opening a pull request from somebody's
+work-in-progress is not a recoverable mistake. The likely discriminator is the
+branch tip's committer identity (`github-actions[bot]`).
+
+**This has not been observed.** `steps.claude.outputs.branch_name` proves the
+workflow knows the branch name from the inside; it says nothing about what the
+poller can see from the outside. Run `claude-code-action` against a scratch repo,
+read the branch and its tip commit off the API, and build the fixture from that.
+ADR-0006 [4], [8].
+
+### The poller is now load-bearing
+
+A branch becomes a PR only while Dispatch is running. That adds no availability
+requirement — Dispatch must be up to render the board — but it turns a missed poll
+from "the board is stale" into "the build never proceeds." Note it in the runbook.
 
 ## Action needed
 
-**Human, before execution:** this endpoint writes workflow files and secrets into
-a user's repository — an escalating-cost, outward-facing action flagged in
-`docs/BUILD_PLAN-v2.md §4` for explicit approval. Confirm before executing, and
-confirm the scratch repo used for testing. Do not run against a real user repo
-during development.
+None blocking. The approval gate that lived here — ADR-0002 [4]'s blast-radius
+tradeoff — was closed on 2026-07-09 by ADR-0006 [2] in favor of the option that
+writes no App credential to any user repo. Still confirm the scratch repo used for
+testing, and do not run setup against a real user repo during development.

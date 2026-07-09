@@ -926,3 +926,100 @@ mounting a volume.
 **Not done here:** the bucket, its IAM grant, and setting `DISPATCH_GCS_BUCKET`
 on the service are infrastructure, already applied to `dispatch-1-499113`. The
 env var takes effect on the next deploy — until then production still resets.
+
+## 2026-07-09 — ADR-0006: PR authorship and per-deployment App registration
+
+**Two decisions, no code.** Closed the approval gate ADR-0002 [4] left open, and
+settled #2's App-ownership question. Recorded in
+`docs/decisions/0006-dispatch-opens-the-pr-and-the-app-is-registered-per-deployment.md`.
+#2 and #4 amended; both drop `hitl: true` because the gates they were waiting on
+are now closed.
+
+**Dispatch's server opens the PR** (ADR-0002 [4](a)), rather than writing
+`APP_PRIVATE_KEY` into every onboarded repo. The plan-of-record option inverted
+the blast radius — an App key mints tokens for every installation — and it turned
+out (a) is barely a change: `install-claude-action.sh:41` says
+`claude-code-action` never opens PRs, so `GH_PAT` exists *only* to feed a
+bolted-on `gh pr create` post-step. Delete the step and the secret has no caller.
+Both of ADR-0002 [3.1]'s failure modes stop being reachable.
+
+**The App is registered per deployment.** This is a public repo people deploy for
+themselves, so there is no central App to own or name. GitHub's manifest flow is
+built for it. Consequence: #2's "human decides the owning org and name" gate
+dissolves into a form field.
+
+**The consequence nobody had costed** — and the reason this was worth writing down
+rather than just answering in chat. Self-registration makes the App private key
+*runtime* state, arriving in a callback rather than read from env at boot. So it
+must be written to SQLite, and three things in `main` today are wrong for that:
+
+1. `redaction.ts` scans `process.env` for four hardcoded keys. A secret in SQLite
+   is never in `process.env`, so `safeMessage()` would log it verbatim. The
+   redactor has to invert to value-registration. Prerequisite, not follow-up.
+2. `snapshot.ts` `VACUUM INTO`s and uploads the whole DB unencrypted. `schema.sql`
+   reasons carefully about *disposable* vs *irreplaceable* and never about
+   *confidential* — orthogonal axes, and #20 only settled the first.
+3. `DEPLOY.md:126` enables bucket versioning on purpose, so a rotated private key
+   stays readable in an old object version indefinitely. Needs a lifecycle rule
+   expiring noncurrent versions.
+
+Rejected GCP Secret Manager: it needs `roles/secretmanager.admin` (we grant only
+`storage.objectAdmin`) and couples a deploy-anywhere tool to one cloud.
+
+**Two things left as inference, deliberately, both flagged in ADR-0006 [8].**
+That an *installation-token*-authored PR triggers runs without approval — ADR-0002
+[5] already flagged this; we observed a PAT, and #2 registers the first App we can
+actually test with. And that the branch tip's committer identity distinguishes
+Claude's branch from a human's — needed because `linksToIssue()` would happily
+match a human branch named `fix-7` and open a PR from someone's WIP. Sample it
+from a real run before encoding it; do not read it off the action's docs.
+
+## 2026-07-09 — #3, the per-repo credential seam (SES-0001)
+
+**The seam, not the swap.** `getProvider` memoizes on
+`(provider, host, installationId)`; installations are *injected* via
+`setInstallationStore()`, mirroring `setCondCacheStore()`, so `providers/` never
+imports the db layer and no call site outside it names an installation. Repo-scoped
+sites moved to `getProviderForRepo(ref)` — each already had the `RepoRef` in hand.
+
+**#3 did not depend on #2.** Its frontmatter said it did and BUILD_PLAN's graph drew
+it that way, but the plan's prose says to land the seam first with the env token
+still flowing through. Minting is unit-testable against a fake key and a fake
+`fetch`. Inverted the dependency.
+
+**The redactor inversion moved from #2 to #3.** ADR-0006 [6.3] reasoned that the App
+private key is the first secret to live outside `process.env`. Off by one ticket: a
+*minted installation token* also lives only in memory. `redaction.ts` had no test
+file at all; it does now.
+
+**Hand-rolled `AppTokenSource`, not `@octokit/auth-app`** (asked; answered). No new
+dependency, `node:crypto` signs RS256 natively, and the refresh policy is ours to
+state and test. `iat` is backdated 60s because GitHub rejects a JWT issued in its
+future and the resulting 401 is indistinguishable from a bad private key.
+
+**Auth resolves per request, in a single Octokit `wrap` hook.** The adapter is
+memoized for the process lifetime; the token dies after an hour. It has to be one
+hook rather than `before` + `wrap`, because the 401 retry must know *which* token
+it failed with.
+
+**Three account-level call sites keep the env token** — `scheduler.ts`, `health.ts`,
+`routes/discover.ts` ask for a provider with no repo. Under an App there is no
+account-level credential at all; `discoverRepos()` would enumerate an
+*installation's* repos. That rewiring is #2's swap, and it is written down rather
+than silently designed for.
+
+**Two concurrency bugs, found by adversarial review, not by me.** `mint()`
+unregistered `this.token` — a shared field read after its own `await` — instead of
+the token it superseded, so a late-resolving mint stripped redaction from a newer,
+in-use token. Since every error path runs through `safeMessage()`, that was a live
+credential-into-logs route. And `invalidate()` took no argument, so concurrent 401s
+on one dead token each discarded the fresh token the previous one minted.
+Fixed by single-flighting `get()` and by `invalidate(staleToken)`.
+
+Worth recording: my *first* regression test for the first bug passed against the
+buggy code, because it asserted on the wrong value. Tests that guard a fix must be
+run red against the code they guard.
+
+**Left for #2:** a memoized `AppTokenSource` outlives a rotated private key or a
+reinstalled App. The store is the only thing that knows; `resetProviderCache()` on
+any write to the installations table is probably enough. Noted in the ticket.

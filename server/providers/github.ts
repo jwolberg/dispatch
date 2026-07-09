@@ -3,6 +3,7 @@ import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
 import { findLinked, findRevert } from "./linkage.js";
 import { CondCache, type CondCacheStore } from "./cond-cache.js";
+import type { TokenSource } from "./token-source.js";
 import { DIFF_MAX_FILES, mapGitHubFile } from "./diff.js";
 import type {
   Check,
@@ -93,11 +94,40 @@ export class GitHubProvider implements GitProvider {
   // this instance, and survives process restarts when a store is supplied.
   private readonly conds: CondCache;
 
-  constructor(token: string, host?: string | null, condStore?: CondCacheStore) {
+  constructor(tokens: TokenSource, host?: string | null, condStore?: CondCacheStore) {
     // Self-hosted GitHub Enterprise uses /api/v3; github.com uses the default.
     const baseUrl = host ? `${host.replace(/\/$/, "")}/api/v3` : undefined;
-    this.octokit = new Octokit({ auth: token, baseUrl });
+    this.octokit = new Octokit({ baseUrl });
     this.conds = new CondCache(condStore);
+
+    // Auth is resolved per request, not at construction (#3). An App installation
+    // token expires hourly, and this adapter is memoized for the life of the
+    // process — baking the token into the Octokit instance would pin a credential
+    // that goes stale an hour later. `EnvTokenSource.get()` is a constant, so the
+    // PAT path pays nothing for this.
+    //
+    // Auth and the 401 retry live in ONE wrap rather than a `before` hook plus a
+    // wrap, because the retry has to know *which* token it just failed with.
+    this.octokit.hook.wrap("request", async (request, options) => {
+      const used = await tokens.get();
+      options.headers.authorization = `token ${used}`;
+
+      try {
+        return await request(options);
+      } catch (err) {
+        // A 401 means the token died before its stated expiry — revoked, or the
+        // installation removed and re-added. Re-mint once and retry; a second 401
+        // is a real credential failure and must surface rather than loop.
+        if (httpStatus(err) !== 401) throw err;
+
+        // Naming the failed token matters: concurrent requests sharing this
+        // memoized adapter all 401 on the same dead token, and only the first
+        // may discard it. The rest are no-ops and reuse the fresh one.
+        tokens.invalidate(used);
+        options.headers.authorization = `token ${await tokens.get()}`;
+        return request(options);
+      }
+    });
   }
 
   /** Wrap a single GET so an unchanged resource costs no rate-limit quota. */
