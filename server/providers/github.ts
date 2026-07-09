@@ -1,6 +1,8 @@
 import { Octokit } from "@octokit/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
+import { findLinked } from "./linkage.js";
+import { CondCache, type CondCacheStore } from "./cond-cache.js";
 import type {
   Check,
   CheckState,
@@ -82,42 +84,27 @@ function splitPath(path: string): { owner: string; repo: string } {
 export class GitHubProvider implements GitProvider {
   private readonly octokit: Octokit;
 
-  // In-process conditional-request cache (S3). Keyed per endpoint+args; sends
-  // If-None-Match and returns the cached body on a 304 — which GitHub does NOT
-  // charge against the rate-limit budget. Survives across poll cycles because
-  // getProvider() memoizes this provider instance.
-  private readonly condCache = new Map<string, { etag: string; data: unknown }>();
+  // Conditional-request cache (S3). Keyed per endpoint+args; sends If-None-Match
+  // and replays the cached body on a 304 — which GitHub does NOT charge against
+  // the rate-limit budget. Survives poll cycles because getProvider() memoizes
+  // this instance, and survives process restarts when a store is supplied.
+  private readonly conds: CondCache;
 
-  constructor(token: string, host?: string | null) {
+  constructor(token: string, host?: string | null, condStore?: CondCacheStore) {
     // Self-hosted GitHub Enterprise uses /api/v3; github.com uses the default.
     const baseUrl = host ? `${host.replace(/\/$/, "")}/api/v3` : undefined;
     this.octokit = new Octokit({ auth: token, baseUrl });
+    this.conds = new CondCache(condStore);
   }
 
-  /**
-   * Wrap a single GET so an unchanged resource costs no rate-limit quota. Sends
-   * If-None-Match from the cached ETag; on 304 returns the cached body, on 200
-   * stores the fresh ETag + body. Octokit surfaces 304 either as a response with
-   * status 304 or (on some paths) a thrown error — both are handled. Errors
-   * other than 304 (404, etc.) propagate so existing handlers behave unchanged.
-   */
-  private async cond<T>(
+  /** Wrap a single GET so an unchanged resource costs no rate-limit quota. */
+  private cond<T>(
     key: string,
     call: (
       headers: Record<string, string>
     ) => Promise<{ status: number; headers: { etag?: string }; data: T }>
   ): Promise<T> {
-    const cached = this.condCache.get(key);
-    const headers: Record<string, string> = cached ? { "if-none-match": cached.etag } : {};
-    try {
-      const res = await call(headers);
-      if (res.status === 304 && cached) return cached.data as T;
-      if (res.headers.etag) this.condCache.set(key, { etag: res.headers.etag, data: res.data });
-      return res.data;
-    } catch (err) {
-      if (httpStatus(err) === 304 && cached) return cached.data as T;
-      throw err;
-    }
+    return this.conds.run(key, call);
   }
 
   async getRateLimit(): Promise<RateLimit> {
@@ -248,9 +235,6 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
-  // ── Methods below are implemented in their own tickets (P3-T1/T2, P4-T1/T3).
-  //    Stubbed here so the class satisfies the GitProvider interface.
-
   private async ensureLabel(owner: string, repo: string, name: string): Promise<void> {
     try {
       await this.octokit.issues.getLabel({ owner, repo, name });
@@ -351,12 +335,11 @@ export class GitHubProvider implements GitProvider {
       })
     );
     // F4.4: linked if the PR body references #<n> or its branch name contains
-    // the issue number (bounded so #1 doesn't match #10 or branch "v10").
-    const bodyRef = new RegExp(`#${issueNumber}(?!\\d)`);
-    const branchRef = new RegExp(`(?<!\\d)${issueNumber}(?!\\d)`);
-    const match = prs.find(
-      (pr) => bodyRef.test(pr.body ?? "") || branchRef.test(pr.head.ref)
-    );
+    // the issue number. Rule lives in ./linkage.ts (shared with the GitLab adapter).
+    const match = findLinked(issueNumber, prs, (pr) => ({
+      body: pr.body,
+      branch: pr.head.ref,
+    }));
     if (!match) return null;
     return {
       number: match.number,

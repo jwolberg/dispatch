@@ -2,8 +2,10 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig } from "./lib/env.js";
+import { loadConfig, warnIfEphemeralDb } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
+import { sqliteCondCacheStore } from "./db/http-cache.js";
+import { setCondCacheStore } from "./providers/index.js";
 import { healthRouter } from "./routes/health.js";
 import { discoverRouter } from "./routes/discover.js";
 import { reposRouter } from "./routes/repos.js";
@@ -25,6 +27,12 @@ const config = loadConfig();
 // was deleted (the board then rebuilds from the provider on first poll).
 getDb();
 console.log(`[dispatch] sqlite ready at ${DB_PATH}`);
+// Announce non-durable storage at boot rather than after a redeploy wipes it.
+warnIfEphemeralDb(DB_PATH);
+
+// Back the adapters' conditional-request cache with SQLite so a restart (or a
+// Cloud Run cold start) replays ETags instead of re-fetching everything (T0-9).
+setCondCacheStore(sqliteCondCacheStore);
 
 const app = express();
 // Shared-password gate (no-op unless DISPATCH_PASSWORD is set) — runs before

@@ -1,6 +1,7 @@
 import { Gitlab } from "@gitbeaker/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
+import { findLinked } from "./linkage.js";
 import type {
   Check,
   CheckState,
@@ -225,11 +226,11 @@ export class GitLabProvider implements GitProvider {
       orderBy: "updated_at",
       perPage: 50,
     })) as Loose[];
-    const bodyRef = new RegExp(`#${issueNumber}(?!\\d)`);
-    const branchRef = new RegExp(`(?<!\\d)${issueNumber}(?!\\d)`);
-    const match = mrs.find(
-      (mr) => bodyRef.test(mr.description ?? "") || branchRef.test(mr.source_branch ?? "")
-    );
+    // F4.4 — same rule as the GitHub adapter, shared via ./linkage.ts.
+    const match = findLinked(issueNumber, mrs, (mr) => ({
+      body: mr.description,
+      branch: mr.source_branch,
+    }));
     if (!match) return null;
     return {
       number: match.iid,

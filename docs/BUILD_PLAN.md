@@ -1,5 +1,10 @@
 # Build Plan
 
+> **v1 (Phases 1–6) — Complete.** Follow-on work (Tiers 0–2: test suite, CI,
+> browser onboarding, review loop, multi-user auth) lives in
+> [`BUILD_PLAN-v2.md`](./BUILD_PLAN-v2.md). As of 2026-07-09: **Tier 0 complete**
+> (10/10, `npm run verify` green with 100 tests); next up is Tier 1's T1-0 spike.
+
 ## Project
 - Name: Dispatch — Feature-to-Production Orchestration Dashboard
 - Summary: A local-first web app that takes a feature/bug idea from a chat-refined spec, through a one-click GitHub/GitLab issue with an `@claude` mention, to a live build/PR board, preview testing, and one-click ship to production. The Git provider is the single source of truth; Dispatch is a thin, provider-agnostic control plane that stores almost nothing.

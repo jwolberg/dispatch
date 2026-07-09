@@ -27,9 +27,21 @@ export function getDb(): Database.Database {
 
   const schema = readFileSync(resolve(__dirname, "schema.sql"), "utf8");
   conn.exec(schema);
+  dropLegacyEtagColumn(conn);
 
   db = conn;
   return db;
+}
+
+/**
+ * T0-9: status_cache.etag_map_json was always '{}' — ETags are per-repo/resource,
+ * not per-ticket, and now live in http_cache. Drop the column from databases
+ * created before that. Idempotent; the table is disposable either way.
+ */
+function dropLegacyEtagColumn(conn: Database.Database): void {
+  const columns = conn.pragma("table_info(status_cache)") as { name: string }[];
+  if (!columns.some((c) => c.name === "etag_map_json")) return;
+  conn.exec("ALTER TABLE status_cache DROP COLUMN etag_map_json");
 }
 
 /** For tests/teardown. */
