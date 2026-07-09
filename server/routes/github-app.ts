@@ -1,9 +1,15 @@
 import { Router, type Request } from "express";
 import { randomBytes } from "node:crypto";
-import { openInstallationStore, type AppRecord, type SqliteInstallationStore } from "../db/installations.js";
+import {
+  openInstallationStore,
+  type AppRecord,
+  type InstallationRecord,
+  type SqliteInstallationStore,
+} from "../db/installations.js";
 import { resetProviderCache } from "../providers/index.js";
+import { AppTokenSource, signAppJwt } from "../providers/token-source.js";
 import { ENCRYPTION_KEY_ENV } from "../lib/crypto.js";
-import { registerSecret, safeMessage } from "../lib/redaction.js";
+import { registerSecret, safeMessage, unregisterSecret } from "../lib/redaction.js";
 
 // GitHub App registration via the manifest flow (#2, ADR-0006 [5]).
 //
@@ -226,6 +232,113 @@ export async function convertManifestCode(
   };
 }
 
+/**
+ * A 'selected' installation with more repos than this is not enumerated further.
+ * 10 pages of 100. Beyond that the operator is better served by switching the
+ * installation to "all repositories" than by us paging forever on a setup click.
+ */
+const MAX_REPO_PAGES = 10;
+
+interface InstallationResponse {
+  account?: { login?: string; type?: string } | null;
+  repository_selection?: string;
+}
+
+/**
+ * Ask GitHub what an installation covers: whose account, and which repos.
+ *
+ * Two credentials, and they are not interchangeable. Reading the *installation*
+ * is an App-level call, authenticated with the App JWT. Listing the repositories
+ * that installation was granted is an *installation*-level call, and needs a
+ * minted installation token — the App JWT is rejected there.
+ *
+ * When the selection is `all`, the repo list is deliberately left empty rather
+ * than enumerated: an 'all' installation covers every repo on the account
+ * including ones created tomorrow, so a snapshot would be wrong by the next push.
+ * `forRepo()` reads `repositorySelection` and only consults the list for
+ * `selected`.
+ */
+export async function fetchInstallationRecord(
+  app: AppRecord,
+  installationId: number,
+  deps: { fetchImpl?: typeof fetch; apiBase?: string; now?: () => number } = {}
+): Promise<InstallationRecord> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const apiBase = deps.apiBase ?? GITHUB_API;
+  const now = deps.now ?? Date.now;
+
+  const jwt = signAppJwt(app.appId, app.privateKey, now());
+  registerSecret(jwt); // a bearer credential for ~9 minutes
+  let installation: InstallationResponse;
+  try {
+    const res = await fetchImpl(`${apiBase}/app/installations/${installationId}`, {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (!res.ok) throw new Error(`GitHub rejected the installation lookup: ${res.status}`);
+    installation = (await res.json()) as InstallationResponse;
+  } finally {
+    unregisterSecret(jwt);
+  }
+
+  const selection = installation.repository_selection === "selected" ? "selected" : "all";
+  const repos = selection === "selected"
+    ? await listInstallationRepos(app, installationId, { fetchImpl, apiBase, now })
+    : [];
+
+  return {
+    installationId,
+    accountLogin: installation.account?.login ?? "",
+    accountType: installation.account?.type ?? null,
+    repositorySelection: selection,
+    repos,
+  };
+}
+
+async function listInstallationRepos(
+  app: AppRecord,
+  installationId: number,
+  deps: { fetchImpl: typeof fetch; apiBase: string; now: () => number }
+): Promise<string[]> {
+  // AppTokenSource registers and retires the minted token with the redactor, and
+  // mints exactly once for this burst of pages.
+  const tokens = new AppTokenSource(
+    { appId: app.appId, privateKey: app.privateKey, installationId },
+    { fetchImpl: deps.fetchImpl, now: deps.now, apiBase: deps.apiBase }
+  );
+
+  const names: string[] = [];
+  for (let page = 1; page <= MAX_REPO_PAGES; page++) {
+    const token = await tokens.get();
+    const res = await deps.fetchImpl(
+      `${deps.apiBase}/installation/repositories?per_page=100&page=${page}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      }
+    );
+    if (!res.ok) throw new Error(`GitHub rejected the repository listing: ${res.status}`);
+
+    const body = (await res.json()) as { repositories?: Array<{ full_name?: string }> };
+    const batch = (body.repositories ?? []).map((r) => r.full_name).filter((n): n is string => !!n);
+    names.push(...batch);
+    if (batch.length < 100) return names;
+  }
+
+  console.warn(
+    `[dispatch] installation ${installationId} has more than ${MAX_REPO_PAGES * 100} selected ` +
+      `repositories; the rest will fall back to GITHUB_TOKEN. Switch the installation to ` +
+      `"all repositories" instead.`
+  );
+  return names;
+}
+
 export interface GithubAppDeps {
   /** Null when DISPATCH_ENCRYPTION_KEY is unset — we cannot store what we register. */
   store: () => SqliteInstallationStore | null;
@@ -309,6 +422,44 @@ export function createGithubAppRouter(deps: Partial<GithubAppDeps> = {}): Router
       res.redirect(302, `${GITHUB_WEB}/apps/${encodeURIComponent(app.slug)}/installations/new`);
     } catch (err) {
       // safeMessage, not the raw error: the conversion body carries the private key.
+      res.status(502).json({ error: safeMessage(err) });
+    }
+  });
+
+  // Step 4. GitHub's `setup_url` — the operator has installed the App, and we
+  // record which account and repos the installation covers. Until this row
+  // exists, `forRepo()` returns null and every repo keeps using GITHUB_TOKEN.
+  router.get("/installed", async (req, res) => {
+    // A non-admin asking an org owner to approve the install. There is no
+    // installation yet; writing a row now would invent one.
+    if (req.query.setup_action === "request") {
+      res.redirect(302, "/repos?install=pending");
+      return;
+    }
+
+    const installations = store();
+    if (!installations) {
+      res.status(400).json({ error: `Set ${ENCRYPTION_KEY_ENV} before installing the GitHub App.` });
+      return;
+    }
+
+    const app = installations.getApp();
+    if (!app) {
+      res.status(400).json({ error: "No GitHub App is registered on this deployment yet." });
+      return;
+    }
+
+    const installationId = Number(req.query.installation_id);
+    if (!Number.isInteger(installationId) || installationId <= 0) {
+      res.status(400).json({ error: "GitHub did not return a valid installation_id." });
+      return;
+    }
+
+    try {
+      const record = await fetchInstallationRecord(app, installationId, { fetchImpl });
+      installations.saveInstallation(record); // fires onChange → resetProviderCache()
+      res.redirect(302, `/repos?installed=${installationId}`);
+    } catch (err) {
       res.status(502).json({ error: safeMessage(err) });
     }
   });

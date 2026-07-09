@@ -11,6 +11,7 @@ import {
 } from "./installations.js";
 import { ENCRYPTION_KEY_ENV, loadEncryptionKey } from "../lib/crypto.js";
 import { __resetRegisteredSecrets, safeMessage } from "../lib/redaction.js";
+import { getProvider, getProviderForRepo, setInstallationStore } from "../providers/index.js";
 
 // #2 — the first CONFIDENTIAL table in schema.sql. Every other table here is
 // either disposable (rebuilt from the provider) or irreplaceable-but-public
@@ -298,6 +299,48 @@ describe("installations store", () => {
       store.getApp();
       store.listInstallations();
       expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the GITHUB_TOKEN path must not regress (AC 11)", () => {
+    // providers/index.test.ts proves the fallback against a *fake* store. This
+    // proves it against the real SQLite one, wired through the real factory —
+    // which is the thing server/index.ts actually injects.
+    const original = process.env.GITHUB_TOKEN;
+    beforeEach(() => {
+      process.env.GITHUB_TOKEN = "ghp_local_dev_token";
+    });
+    afterEach(() => {
+      if (original === undefined) delete process.env.GITHUB_TOKEN;
+      else process.env.GITHUB_TOKEN = original;
+      setInstallationStore(undefined);
+    });
+
+    it("resolves every repo to the env adapter when no App is registered", () => {
+      setInstallationStore(newStore());
+      expect(() => getProviderForRepo({ provider: "github", path: "acme/widgets" })).not.toThrow();
+    });
+
+    it("resolves a repo outside the installation's account to the env adapter", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation({ accountLogin: "acme" }));
+      setInstallationStore(store);
+
+      // Same adapter instance as an account-level call → it is the env adapter.
+      const outside = getProviderForRepo({ provider: "github", path: "someone-else/repo" });
+      expect(outside).toBe(getProvider("github"));
+    });
+
+    it("does NOT hand an installed repo the env adapter", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation({ accountLogin: "acme" }));
+      setInstallationStore(store);
+
+      expect(getProviderForRepo({ provider: "github", path: "acme/widgets" })).not.toBe(
+        getProvider("github")
+      );
     });
   });
 
