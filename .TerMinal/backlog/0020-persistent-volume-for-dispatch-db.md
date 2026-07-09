@@ -1,7 +1,7 @@
 ---
 id: 20
 title: "Mount a persistent volume at /data — every redeploy wipes production"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: true
@@ -9,8 +9,7 @@ type: bug
 source: observed
 created: 2026-07-09
 updated: 2026-07-09
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/9"
+prs: []
 refs:
   - "DEPLOY.md"
 depends_on: []

@@ -87,6 +87,25 @@ Do **not** reach for GCP Secret Manager. It needs `roles/secretmanager.admin` on
 the runtime SA (`DEPLOY.md` §4 grants only `storage.objectAdmin`) and couples a
 deploy-anywhere tool to one cloud. ADR-0006 [6.1].
 
+### Invalidating a memoized adapter when an installation changes
+
+Raised by review of #3's seam (2026-07-09), and deliberately left to this ticket.
+
+`providers/index.ts` memoizes one adapter — and therefore one `AppTokenSource`,
+holding one `privateKey` — per `(provider, host, installationId)`, for the life of
+the process. `setInstallationStore()` clears the whole cache, but nothing else
+does.
+
+So once this ticket lands a real SQLite-backed store: if an operator regenerates
+the App's private key, or uninstalls and reinstalls the App, the memoized
+`AppTokenSource` keeps minting against credentials that no longer exist. A 401
+triggers exactly one re-mint (`github.ts`), and that re-mint uses the same stale
+key, so the adapter fails permanently until the process restarts.
+
+The store is the only thing that knows an installation changed. Decide how it
+tells the factory — `resetProviderCache()` on any write to the installations table
+is the crude, correct answer, and it is probably enough.
+
 Depended on #1, which is closed: ADR-0002 settled the anti-recursion question and
 ADR-0006 settled what it implies for scopes. The manifest requests
 `pull_requests: write` because **Dispatch's server** opens PRs now (ADR-0006 [2]),

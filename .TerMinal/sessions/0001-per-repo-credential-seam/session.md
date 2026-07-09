@@ -144,6 +144,30 @@ Deferred to Follow-ups: rewiring `discoverRepos`/rate-limit to installations
 - 2026-07-09 — Session opened. ADR-0006 landed on a branch just before this
   (PR-authorship + per-deployment App registration); #3 is the next step and is
   unblocked once [2.2]'s dependency inversion is recorded.
+- 2026-07-09 — `c3b55b9` redactor inverted to value-registration. `redaction.ts`
+  had **no test file at all** before this; added 10, including regressions on the
+  env-scan path.
+- 2026-07-09 — Suspected `rejects.not.toThrow(/eyJ/)` was a vacuous assertion.
+  Checked by writing a throwaway test that throws a message containing `eyJ` — it
+  **failed**, so the assertion is real. Kept it.
+- 2026-07-09 — `ffffa33` the seam. `AppTokenSource` hand-rolled (see [5]);
+  `getProviderForRepo(ref)` added; 11 repo-scoped call sites migrated; the 3
+  account-level ones left on the env token.
+- 2026-07-09 — Verified against reality, not only fakes: booted the server on
+  :3999 and hit `/api/health`, which resolved a real adapter through the rewritten
+  `hook.before` and got `valid: true, remaining: 4987` from GitHub's live API.
+- 2026-07-09 — 322 tests green, `check:seam` clean, and a grep confirms no
+  production code outside `providers/` names an installation.
+- 2026-07-09 — Fresh-context adversarial review of `ffffa33` found **two real
+  concurrency bugs**, both of which I had predicted but not yet fixed. It proved
+  the HIGH one with a failing test. Fixed in `5e56d0a`; see [5].
+- 2026-07-09 — My first regression test for the HIGH bug **passed against the buggy
+  code** — it asserted on `src.get()` (the re-cached old token, still registered)
+  instead of on the value the concurrent caller actually held. Rewrote it. Both
+  fixes are now pinned by tests verified red against the prior implementation.
+- 2026-07-09 — Re-ran the live boot check after collapsing the auth hooks:
+  `/api/health` still returns `valid: true` from GitHub's real API.
+  327 tests green.
 
 ## [5] Decisions
 
@@ -151,6 +175,44 @@ Deferred to Follow-ups: rewiring `discoverRepos`/rate-limit to installations
 - **Installations are injected, not passed** ([2.3]). Mirrors `setCondCacheStore`.
 - **The redactor inversion lands here, not in #2** ([2.5]). #3 is the first ticket
   to hold a secret outside `process.env`.
+- **Hand-rolled `AppTokenSource`, not `@octokit/auth-app`** (asked, answered
+  2026-07-09). No new dependency; `node:crypto` signs RS256 natively; the refresh
+  policy is ours to state and test rather than the library's to imply. `auth-app`
+  was not already present — `node_modules/@octokit/` had only `auth-token`, and
+  the lockfile had zero hits.
+- **Auth resolves per request, via an Octokit `hook.before`**, not at construction.
+  The adapter is memoized for the process lifetime; an installation token dies
+  after an hour. Baking it into the Octokit instance would pin a stale credential.
+- **`getProviderForRepo(ref)` rather than a widened `getProvider(…, installationId)`**.
+  The widened signature would have forced all 14 call sites to resolve an
+  installation — exactly what #3's own acceptance criterion forbids.
+- **`get()` is single-flight.** Concurrent callers join the one in-flight mint.
+  This is not only a stampede guard: it makes the out-of-order retire that review
+  found *unreachable by construction*, because two mints can never overlap.
+- **`invalidate(staleToken)` takes the token that failed.** N concurrent requests
+  bearing one dead token all 401; only the holder of the token we currently
+  believe in may retire it. Otherwise each discards its predecessor's fresh token
+  and the adapter never converges. This forced `github.ts`'s `before` + `wrap`
+  hooks to collapse into one `wrap`, which is the only place that knows which
+  token a failed request actually bore.
+
+## [5.1] What review caught that I did not
+
+I predicted both concurrency bugs in prose before the review returned, then let
+the reviewer confirm them rather than pre-fixing and racing it on the same files.
+That was the right call for the *finding*, but it left one thing to learn:
+
+The HIGH bug was sharper than my framing. I described it as "no in-flight
+deduplication," a stampede problem. The reviewer located the actual defect —
+`forget()` read the shared `this.token` field *after* its own `await`, so a
+late-resolving mint retired a **newer, live, in-use** token. That is a credential
+leak into logs, not a rate-limit annoyance, because every error path in the app
+funnels through `safeMessage()`.
+
+And my first attempt at a regression test for it passed against the buggy code. It
+asserted on `src.get()` — the re-cached old token, still registered — rather than
+on the token the concurrent caller was holding. Checking that a test fails against
+the implementation it guards is not a formality.
 
 ## [6] Outcomes
 
