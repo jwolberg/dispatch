@@ -1,4 +1,5 @@
 import { getDb } from "./migrate.js";
+import { markDirty } from "./snapshot.js";
 
 export interface RepoRow {
   id: number;
@@ -60,11 +61,14 @@ export function insertRepo(repo: NewRepo): RepoRow {
       merge_method: repo.merge_method ?? "squash",
       claude_md_path: repo.claude_md_path ?? null,
     });
+  markDirty(); // repos cannot be rebuilt from the provider (#20)
   return getRepo(Number(info.lastInsertRowid))!;
 }
 
 export function deleteRepo(id: number): boolean {
-  return getDb().prepare("DELETE FROM repos WHERE id = ?").run(id).changes > 0;
+  const deleted = getDb().prepare("DELETE FROM repos WHERE id = ?").run(id).changes > 0;
+  if (deleted) markDirty();
+  return deleted;
 }
 
 export interface RepoContextCache {

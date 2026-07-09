@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, warnIfEphemeralDb } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
+import { restoreIfMissing, snapshotEnabled, snapshotMiddleware, flush, isDirty } from "./db/snapshot.js";
 import { sqliteCondCacheStore } from "./db/http-cache.js";
 import { setCondCacheStore } from "./providers/index.js";
 import { healthRouter } from "./routes/health.js";
@@ -24,12 +25,18 @@ import { basicAuthGate } from "./lib/auth.js";
 // point.
 const config = loadConfig();
 
+// Restore the GCS snapshot BEFORE opening the DB — Cloud Run's disk is
+// ephemeral, so on a fresh revision the file is simply absent (#20). No-op
+// locally, and when DISPATCH_GCS_BUCKET is unset.
+await restoreIfMissing(DB_PATH);
+
 // Open + migrate the local store on boot. Idempotent; recreates the file if it
 // was deleted (the board then rebuilds from the provider on first poll).
 getDb();
 console.log(`[dispatch] sqlite ready at ${DB_PATH}`);
 // Announce non-durable storage at boot rather than after a redeploy wipes it.
-warnIfEphemeralDb(DB_PATH);
+warnIfEphemeralDb(DB_PATH, snapshotEnabled());
+if (snapshotEnabled()) console.log(`[dispatch] snapshotting state to gs://${process.env.DISPATCH_GCS_BUCKET}`);
 
 // Back the adapters' conditional-request cache with SQLite so a restart (or a
 // Cloud Run cold start) replays ETags instead of re-fetching everything (T0-9).
@@ -40,6 +47,9 @@ const app = express();
 // everything so unauthenticated requests never reach routes or static assets.
 app.use(basicAuthGate);
 app.use(express.json());
+// Upload a snapshot before acking any request that changed irreplaceable state.
+// Must run before the routers so it can wrap the response (#20).
+app.use(snapshotMiddleware());
 
 const api = express.Router();
 api.use("/health", healthRouter);
@@ -80,7 +90,12 @@ const server = app.listen(config.port, config.host, () => {
 
 const shutdown = (signal: string) => {
   console.log(`[dispatch] received ${signal}, shutting down`);
-  server.close(() => process.exit(0));
+  // Last chance to persist: the poller writes tickets outside any request, so a
+  // redeploy could otherwise drop work adopted since the last mutating call.
+  const persist = isDirty()
+    ? flush().catch((err) => console.warn(`[dispatch] final snapshot failed: ${safeMessage(err)}`))
+    : Promise.resolve();
+  void persist.finally(() => server.close(() => process.exit(0)));
 };
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));

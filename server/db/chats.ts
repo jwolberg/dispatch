@@ -1,4 +1,5 @@
 import { getDb } from "./migrate.js";
+import { markDirty } from "./snapshot.js";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -20,6 +21,7 @@ export function createChat(repoId: number, nowIso: string): ChatRow {
        VALUES (?, ?, '[]', 'draft')`
     )
     .run(repoId, nowIso);
+  markDirty();
   return getChat(Number(info.lastInsertRowid))!;
 }
 
@@ -41,6 +43,7 @@ export function setTranscript(id: number, messages: ChatMessage[]): void {
   getDb()
     .prepare("UPDATE chats SET transcript_json = ? WHERE id = ?")
     .run(JSON.stringify(messages), id);
+  markDirty();
 }
 
 export function appendMessage(id: number, message: ChatMessage): ChatMessage[] {
@@ -52,6 +55,7 @@ export function appendMessage(id: number, message: ChatMessage): ChatMessage[] {
 
 export function setChatStatus(id: number, status: "draft" | "filed"): void {
   getDb().prepare("UPDATE chats SET status = ? WHERE id = ?").run(status, id);
+  markDirty();
 }
 
 export function listDraftChats(): ChatRow[] {

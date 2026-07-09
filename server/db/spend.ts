@@ -1,5 +1,6 @@
 import { getDb } from "./migrate.js";
 import { priceUsd, type TokenUsage } from "../anthropic/pricing.js";
+import { markDirty } from "./snapshot.js";
 
 // T1-9 — the spend ledger behind DISPATCH_DAILY_BUDGET_USD.
 //
@@ -58,6 +59,7 @@ export function recordSpend(entry: SpendEntry): number {
       cache_read_input_tokens: entry.usage.cache_read_input_tokens,
       usd,
     });
+  markDirty(); // the budget cap's ledger — a reset would silently re-grant the day's budget (#20)
 
   return usd;
 }

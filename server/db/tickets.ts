@@ -1,4 +1,5 @@
 import { getDb } from "./migrate.js";
+import { markDirty } from "./snapshot.js";
 
 export interface TicketRow {
   id: number;
@@ -20,6 +21,7 @@ export function createTicket(
        VALUES (?, ?, ?, ?)`
     )
     .run(repoId, chatId, issueNumber, nowIso);
+  markDirty(); // shipped tickets are not re-adopted by discover.ts (#20)
   return getTicket(Number(info.lastInsertRowid))!;
 }
 
@@ -36,5 +38,7 @@ export function listTickets(): TicketRow[] {
 }
 
 export function deleteTicket(id: number): boolean {
-  return getDb().prepare("DELETE FROM tickets WHERE id = ?").run(id).changes > 0;
+  const deleted = getDb().prepare("DELETE FROM tickets WHERE id = ?").run(id).changes > 0;
+  if (deleted) markDirty();
+  return deleted;
 }

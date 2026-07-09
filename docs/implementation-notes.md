@@ -871,3 +871,58 @@ excluded from issue linkage, but is not attributed to the PR it reverts —
 `PRStatus` carries no merge-commit sha to match on. GitLab does this correctly
 because it must. If GitHub users start hand-reverting, the fix is to carry the
 merge sha on `PRStatus` and reuse `revertsCommit`.
+
+---
+
+## 2026-07-09 — #20: durable state via a GCS snapshot
+
+**`DEPLOY.md` was wrong by two orders of magnitude, and I nearly followed it.**
+It told us to mount Filestore. Filestore's cheapest tier has a **1 TiB minimum**
+— ~$164/month — to protect a database that is **4 KB**. It also needs a VPC and
+Direct VPC egress, neither of which the project had. Checking the minimum before
+provisioning is the whole lesson.
+
+**The two other obvious answers are both traps.**
+
+- *GCS FUSE* looks perfect and corrupts data. Google's own docs: "does not
+  support file locking", "not POSIX compliant", "shouldn't be used as the backend
+  for storing a database." Cloud Run adds "the last write wins and all previous
+  writes are lost." SQLite needs POSIX advisory locks to checkpoint.
+- *Litestream* is the correct general answer and the wrong one here. It syncs on
+  a background ticker, and this service runs **request-based billing** — CPU is
+  throttled the moment a response returns. Making the ticker fire means
+  instance-based billing, "charged for the entire lifecycle of the instance,"
+  all month. Litestream's replication is free; the CPU it needs is not. It
+  becomes right the day the DB is big or hot enough that per-write snapshots
+  stop being cheap. Nowhere near that today.
+
+**Reading the schema is what made the cheap option viable.** `schema.sql` says
+the provider is the source of truth and every `*_cache` table is disposable, and
+`discover.ts` already re-adopts open issues into `tickets`. So the irreplaceable
+set is just `repos`, `chats`, `spend`, and closed-issue tickets — kilobytes,
+written rarely, and always **during a request**, when CPU is allocated. That is
+what lets a synchronous upload-before-ack work at all.
+
+**Upload before the ack, not on `res.on("finish")`.** A fire-and-forget upload
+can be frozen by CPU throttling the instant the response returns and the instance
+killed mid-flight. ~50ms on a rare write buys durability-before-acknowledge.
+
+**Two failure modes chosen deliberately, both tested.** An upload failure does
+*not* fail the user's write (the row committed locally; stays dirty and retries).
+A restore failure that is *not* 404 *does* throw — treating a transient 503 as
+"no snapshot" would boot an empty DB and then overwrite the good snapshot on the
+next write. That asymmetry is the most dangerous thing in the file.
+
+**Verified against the real bucket before shipping**, not just against fakes:
+404-as-first-boot, upload→restore returning exact bytes, and `%2F` encoding of a
+slashed object name actually resolving. Also checked `VACUUM INTO` against a
+WAL-mode DB with an open handle. Then deleted the probe object.
+
+**The boot warning now tells the truth.** It had been firing on every production
+boot since T0-10 and nobody read it. It stays silent when a snapshot is
+configured, and otherwise names `DISPATCH_GCS_BUCKET` as a remedy alongside
+mounting a volume.
+
+**Not done here:** the bucket, its IAM grant, and setting `DISPATCH_GCS_BUCKET`
+on the service are infrastructure, already applied to `dispatch-1-499113`. The
+env var takes effect on the next deploy — until then production still resets.

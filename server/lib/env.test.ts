@@ -28,8 +28,20 @@ describe("ephemeralDbWarning", () => {
 
   it("names the directory to mount, not the file", () => {
     expect(ephemeralDbWarning("/var/lib/dispatch/db.sqlite", notMounted)).toContain(
-      "Mount a volume at /var/lib/dispatch"
+      "mount a volume at /var/lib/dispatch"
     );
+  });
+
+  // #20 — a GCS snapshot makes the file durable without any volume, so the
+  // warning must stop firing. A warning that cries wolf on every boot of a
+  // correctly-configured service is worse than no warning.
+  it("stays silent when a GCS snapshot is configured, even with no volume", () => {
+    expect(ephemeralDbWarning("/data/dispatch.db", { ...notMounted, snapshotEnabled: true })).toBeNull();
+  });
+
+  it("offers the snapshot as a remedy alongside mounting a volume", () => {
+    const warning = ephemeralDbWarning("/data/dispatch.db", notMounted);
+    expect(warning).toContain("DISPATCH_GCS_BUCKET");
   });
 
   it("checks the DB's directory for mountedness, not the file path", () => {
