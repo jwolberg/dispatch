@@ -926,3 +926,50 @@ mounting a volume.
 **Not done here:** the bucket, its IAM grant, and setting `DISPATCH_GCS_BUCKET`
 on the service are infrastructure, already applied to `dispatch-1-499113`. The
 env var takes effect on the next deploy — until then production still resets.
+
+## 2026-07-09 — ADR-0006: PR authorship and per-deployment App registration
+
+**Two decisions, no code.** Closed the approval gate ADR-0002 [4] left open, and
+settled #2's App-ownership question. Recorded in
+`docs/decisions/0006-dispatch-opens-the-pr-and-the-app-is-registered-per-deployment.md`.
+#2 and #4 amended; both drop `hitl: true` because the gates they were waiting on
+are now closed.
+
+**Dispatch's server opens the PR** (ADR-0002 [4](a)), rather than writing
+`APP_PRIVATE_KEY` into every onboarded repo. The plan-of-record option inverted
+the blast radius — an App key mints tokens for every installation — and it turned
+out (a) is barely a change: `install-claude-action.sh:41` says
+`claude-code-action` never opens PRs, so `GH_PAT` exists *only* to feed a
+bolted-on `gh pr create` post-step. Delete the step and the secret has no caller.
+Both of ADR-0002 [3.1]'s failure modes stop being reachable.
+
+**The App is registered per deployment.** This is a public repo people deploy for
+themselves, so there is no central App to own or name. GitHub's manifest flow is
+built for it. Consequence: #2's "human decides the owning org and name" gate
+dissolves into a form field.
+
+**The consequence nobody had costed** — and the reason this was worth writing down
+rather than just answering in chat. Self-registration makes the App private key
+*runtime* state, arriving in a callback rather than read from env at boot. So it
+must be written to SQLite, and three things in `main` today are wrong for that:
+
+1. `redaction.ts` scans `process.env` for four hardcoded keys. A secret in SQLite
+   is never in `process.env`, so `safeMessage()` would log it verbatim. The
+   redactor has to invert to value-registration. Prerequisite, not follow-up.
+2. `snapshot.ts` `VACUUM INTO`s and uploads the whole DB unencrypted. `schema.sql`
+   reasons carefully about *disposable* vs *irreplaceable* and never about
+   *confidential* — orthogonal axes, and #20 only settled the first.
+3. `DEPLOY.md:126` enables bucket versioning on purpose, so a rotated private key
+   stays readable in an old object version indefinitely. Needs a lifecycle rule
+   expiring noncurrent versions.
+
+Rejected GCP Secret Manager: it needs `roles/secretmanager.admin` (we grant only
+`storage.objectAdmin`) and couples a deploy-anywhere tool to one cloud.
+
+**Two things left as inference, deliberately, both flagged in ADR-0006 [8].**
+That an *installation-token*-authored PR triggers runs without approval — ADR-0002
+[5] already flagged this; we observed a PAT, and #2 registers the first App we can
+actually test with. And that the branch tip's committer identity distinguishes
+Claude's branch from a human's — needed because `linksToIssue()` would happily
+match a human branch named `fix-7` and open a PR from someone's WIP. Sample it
+from a real run before encoding it; do not read it off the action's docs.
