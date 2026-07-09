@@ -176,8 +176,8 @@ first ship, for a user who cannot read a diff and has never minted a PAT.
 |---|---|---|---|
 | T1-0 | **Spike:** GitHub App installation tokens and the anti-recursion rule | S | — |
 | T1-1 | GitHub App: manifest registration + OAuth install flow | L | T1-0 |
-| T1-2 | Per-repo credential resolution (replaces the global env token) | M | T1-1 |
-| T1-3 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-2 |
+| T1-2 | Per-repo credential resolution (replaces the global env token) | M | — (see below) |
+| T1-3 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 |
 | T1-4 | Canary verification: prove the build triggers, at setup time | M | T1-3 |
 | T1-5 | Plain-language change summary on the card | M | T0-1 |
 | T1-6 | Preview-first card: hero preview + single verdict chip | S | T1-5 |
@@ -196,6 +196,14 @@ tokens but we must keep minting a PAT, and T1-3 gets meaningfully uglier.
 
 Do not start T1-1 before this is settled. Timebox to half a day; the answer is a
 paragraph and a link.
+
+> **Corrected 2026-07-09 (SES-0001, shipped as PR #10).** This table and the graph
+> below drew `T1-1 ─► T1-2`, contradicting the prose immediately after it. T1-2 does
+> **not** depend on T1-1: minting is unit-testable against a fake private key and a
+> fake `fetch`, so the seam lands first with the env token still flowing through it,
+> exactly as this section says. T1-3 depends on both. T1-2 is **done**; it defines the
+> `InstallationStore` interface that T1-1 implements. The account-level call sites it
+> could not resolve became ticket #21.
 
 **T1-1 / T1-2 — The auth model change.**
 Today `providers/index.ts` memoizes on `(provider, host)` and reads a single
@@ -381,7 +389,8 @@ workflow files and secrets into user repos), T1-8 (creates revert PRs), T2-6
 ```
 T0 (all)  ──────────────────────────────────► gate: verify green in CI
    │
-   ├─ T1-0 spike ─► T1-1 ─► T1-2 ─► T1-3 ─► T1-4     (browser onboarding)
+   ├─ T1-0 spike ─► T1-1 ─┬─► T1-3 ─► T1-4           (browser onboarding)
+   │                 T1-2 ─┘                          (seam; lands independently)
    ├─ T1-5 ─► T1-6                                    (legible card)
    ├─ T1-7 spike ─► T1-8                              (revert)
    └─ T1-9                                            (spend cap)

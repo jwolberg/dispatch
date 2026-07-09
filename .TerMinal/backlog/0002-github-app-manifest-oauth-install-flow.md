@@ -21,6 +21,8 @@ acceptance:
   - "The App name is an editable field on the setup screen, defaulted but not hardcoded; personal-vs-org ownership is chosen in GitHub's own UI via the optional ?org= parameter"
   - "An operator can install that App on one or more repos and land back in Dispatch with the installation recorded"
   - "Installation records (app id, installation id, account, repo selection) persist in SQLite and survive a container restart"
+  - "server/index.ts calls setInstallationStore() with a SQLite-backed InstallationStore at boot — without this the seam #3 landed stays dead code and AppTokenSource is never constructed in production"
+  - "An end-to-end check proves a tracked repo under an installation polls using a minted installation token, not GITHUB_TOKEN — the App path is verified live, not only by unit tests"
   - "The App private key is persisted in SQLite (not env, not Secret Manager) and encrypted at rest under a key supplied via env; the ciphertext is what reaches the GCS snapshot"
   - "redaction.ts is inverted to value-registration: a secret registers its value with the redactor when loaded, so safeMessage() redacts secrets that live in SQLite and never in process.env"
   - "A test asserts that a private key stored in SQLite does not appear in the output of safeMessage() for an error that embeds it"

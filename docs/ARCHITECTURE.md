@@ -152,6 +152,55 @@ no other code path changes.
 The auto-close keyword is provider-specific and is injected by the adapter when building the
 issue body (F3.1), so the core never branches on provider for ship semantics.
 
+### 5.1 Credential resolution (T1-2 / #3)
+
+Adapters are memoized on `(provider, host, installationId)`, not just `(provider, host)`. The
+memo is load-bearing: it keeps each adapter's conditional-request (ETag) cache warm across
+poll cycles, which is what stops an unchanged poll from spending rate-limit quota (§14, T0-9).
+`installationId` joined the key because two repos under one GitHub App installation share a
+token and should share an adapter, while a repo under a *different* installation must not
+reuse the first one's credential.
+
+**Callers name a repo, never an installation.** That is the seam's rule and it is enforced by
+the shape of the API, not by convention:
+
+```ts
+getProviderForRepo(ref: RepoRef): GitProvider   // resolves the installation internally
+getProvider(provider, host?): GitProvider       // account-level, env token only
+```
+
+An `InstallationStore` is *injected* at boot by `server/index.ts` — the same pattern, and for
+the same reason, as `CondCacheStore`: `providers/` must never import the db layer. With no
+store injected (the local-development path, and all of GitLab), every repo resolves to the
+`GITHUB_TOKEN`-backed adapter.
+
+Behind the seam, a `TokenSource` supplies the bearer token per request rather than at
+construction, because an adapter is memoized for the life of the process while an App
+installation token expires hourly:
+
+| | `EnvTokenSource` | `AppTokenSource` |
+|---|---|---|
+| Source | `GITHUB_TOKEN` / `GITLAB_TOKEN` | minted from the App's private key |
+| Lifetime | process | ~1h, refreshed 10 min early |
+| `invalidate(staleToken)` | no-op | drops the token, if the caller holds the current one |
+
+`get()` is **single-flight** — concurrent callers join one in-flight mint. This is not merely a
+stampede guard: without it, two mints race on the cached token and a late-resolving one can
+retire a newer token another caller is already using, stripping it from the redaction registry
+(`lib/redaction.ts`). `invalidate()` takes the token that actually failed, so N concurrent
+401s on one dead token re-mint once rather than each discarding its predecessor's fresh token.
+
+Three call sites have no repo — the rate-limit probe (`poller/scheduler.ts`, `routes/health.ts`)
+and repo discovery (`routes/discover.ts`) — and use `getProvider()` with the env token. Under a
+GitHub App there is no account-level credential at all, so those are ticket **#21**, not an
+oversight.
+
+> **Status:** the App path is landed but **not yet wired**. Nothing calls
+> `setInstallationStore()` in production, so `AppTokenSource` is currently reachable only from
+> tests. Ticket **#2** registers the App and injects the store; until then every repo uses
+> `GITHUB_TOKEN`. This is deliberate — `docs/BUILD_PLAN-v2.md` §T1-2 says to land the credential
+> seam first with the env token still flowing through it, then swap the source.
+
 ---
 
 ## 6. State ownership & the rebuild rule
