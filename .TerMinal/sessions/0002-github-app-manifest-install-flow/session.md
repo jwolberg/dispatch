@@ -8,8 +8,10 @@ started: 2026-07-09T22:11:01Z
 ended: null
 goal: "Land ticket #2 (T1-1): GitHub App manifest registration + OAuth install flow — per-deployment App registration, SQLite-backed InstallationStore wired at boot, encrypted private key at rest, value-registration redactor"
 tickets: [2]
-branches: []
-prs: []
+branches:
+  - feat/2-github-app-manifest-install-flow
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/11"
 related_research: []
 related_docs:
   - docs/decisions/0002-github-app-tokens-and-the-anti-recursion-rule.md
