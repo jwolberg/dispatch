@@ -1,7 +1,7 @@
 ---
 id: 8
 title: "Spike: revert mechanism per provider"
-status: open
+status: in-progress
 priority: medium
 horizon: now
 hitl: false
