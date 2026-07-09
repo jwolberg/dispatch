@@ -44,11 +44,23 @@ CREATE TABLE IF NOT EXISTS tickets (
 );
 
 -- Disposable: rebuilt by the poller from the provider on first poll after a wipe.
+-- ETags do NOT live here — they are per-repo/resource, not per-ticket. See http_cache.
 CREATE TABLE IF NOT EXISTS status_cache (
   ticket_id     INTEGER PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
   payload_json  TEXT NOT NULL,
-  etag_map_json TEXT NOT NULL DEFAULT '{}',
   updated_at    TEXT NOT NULL
+);
+
+-- Disposable: HTTP conditional-request cache (ETag + the body it came with).
+-- Keyed per provider endpoint+args (e.g. 'pulls.list:acme/widgets'), which is
+-- per-repo/resource — NOT per-ticket. A 304 carries no body, so the body must be
+-- stored alongside the etag or a cold-start 304 would replay `undefined`.
+-- Wiping this table only costs one full re-fetch (T0-9).
+CREATE TABLE IF NOT EXISTS http_cache (
+  key        TEXT PRIMARY KEY,
+  etag       TEXT NOT NULL,
+  body_json  TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 -- Disposable: a human-readable trail derived from polled data (PRD F7).

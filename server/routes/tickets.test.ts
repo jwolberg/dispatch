@@ -56,7 +56,7 @@ function payload(pr: PRStatus | null): StatusPayload {
 function seed(pr: PRStatus | null, mergeMethod = "squash"): number {
   const repo = insertRepo({ provider: "github", path: "acme/widgets", merge_method: mergeMethod });
   const ticket = createTicket(repo.id, 1, null, new Date().toISOString());
-  upsertStatus(ticket.id, payload(pr), {}, new Date().toISOString());
+  upsertStatus(ticket.id, payload(pr), new Date().toISOString());
   return ticket.id;
 }
 

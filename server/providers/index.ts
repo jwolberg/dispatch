@@ -1,8 +1,10 @@
 import type { GitProvider, ProviderId } from "./types.js";
+import type { CondCacheStore } from "./cond-cache.js";
 import { GitHubProvider } from "./github.js";
 import { GitLabProvider } from "./gitlab.js";
 
 export * from "./types.js";
+export type { CondCacheStore, CondEntry } from "./cond-cache.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -30,6 +32,16 @@ export function setProviderFactory(factory: ProviderFactory | null): void {
   resetProviderCache();
 }
 
+// Durable conditional-request cache (T0-9). Injected at boot by server/index.ts
+// so providers/ never imports the db layer. Unset → adapters cache in-process
+// only, which is what tests and one-shot scripts want.
+let condStore: CondCacheStore | undefined;
+
+export function setCondCacheStore(store: CondCacheStore | undefined): void {
+  condStore = store;
+  resetProviderCache(); // rebuild adapters so they hydrate from the new store
+}
+
 /**
  * Factory: select a provider implementation from a repo's stored (provider,
  * host). This is the ONLY place adapters are constructed; callers depend on the
@@ -48,7 +60,7 @@ export function getProvider(provider: ProviderId, host?: string | null): GitProv
   let instance: GitProvider;
   switch (provider) {
     case "github":
-      instance = new GitHubProvider(requireEnv("GITHUB_TOKEN"), host);
+      instance = new GitHubProvider(requireEnv("GITHUB_TOKEN"), host, condStore);
       break;
     case "gitlab":
       // Self-hosted GitLab is handled by passing GITLAB_HOST as the base URL.

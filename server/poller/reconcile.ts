@@ -136,7 +136,7 @@ export async function reconcileTicket(ticket: TicketRow): Promise<StatusPayload 
   }
 
   diffActivity(ticket.id, prev, payload);
-  upsertStatus(ticket.id, payload, {}, new Date().toISOString()); // ETag map filled in P6-T1
+  upsertStatus(ticket.id, payload, new Date().toISOString());
   return payload;
 }
 
