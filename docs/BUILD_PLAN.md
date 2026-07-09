@@ -2,8 +2,8 @@
 
 > **v1 (Phases 1–6) — Complete.** Follow-on work (Tiers 0–2: test suite, CI,
 > browser onboarding, review loop, multi-user auth) lives in
-> [`BUILD_PLAN-v2.md`](./BUILD_PLAN-v2.md). Tier 0 status as of 2026-07-09: 9/10
-> complete, T0-9 blocked on a schema decision.
+> [`BUILD_PLAN-v2.md`](./BUILD_PLAN-v2.md). As of 2026-07-09: **Tier 0 complete**
+> (10/10, `npm run verify` green with 100 tests); next up is Tier 1's T1-0 spike.
 
 ## Project
 - Name: Dispatch — Feature-to-Production Orchestration Dashboard

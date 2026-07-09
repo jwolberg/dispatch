@@ -4,7 +4,9 @@
 
 - **Requested scope:** Tier 0 (T0-1 … T0-10) from `docs/BUILD_PLAN-v2.md`
 - **Related phase:** Tier 0 — "Earn the right to ship publicly"
-- **Related ticket(s):** T0-1, T0-2, T0-3, T0-4, T0-5, T0-6, T0-7, T0-8, T0-10 (Complete); T0-9 (**Blocked**)
+- **Related ticket(s):** T0-1 … T0-10 — **all Complete**. T0-9 was blocked mid-run
+  on a schema decision (its planned mechanism was a latent bug); the decision was
+  taken (new `http_cache` table) and it landed.
 
 ### Input-file substitutions (stated assumptions)
 
@@ -200,44 +202,49 @@ Tickets from `docs/BUILD_PLAN-v2.md` §1:
 | T0-6 | Complete | CI = node 20 + `npm ci` + `verify` + `build` | Unproven on a real runner |
 | T0-7 | Complete | False claims annotated; correction entry + standing rule appended | — |
 | T0-8 | Complete | Stale comment removed | — |
-| T0-9 | **Blocked** | Nothing implemented — see below | Needs a schema decision |
+| T0-9 | Complete | `http_cache` table + `CondCache` with a cold-start guard; 21 cases | — |
 | T0-10 | Complete | Pure `ephemeralDbWarning()` + boot warning; 5 cases | — |
 
-### T0-9 — Blocked, and why (deviation flagged per skill rules)
+### T0-9 — the plan's mechanism was a latent bug (flagged, decided, then landed)
 
-**The plan's stated mechanism is wrong.** `docs/BUILD_PLAN-v2.md` T0-9 says to
-"load the persisted map into the provider on construction and write it back on
-reconcile," using the existing `status_cache.etag_map_json` column.
+**What the plan said.** "Load the persisted `status_cache.etag_map_json` map into
+the provider on construction and write it back on reconcile."
 
-That cannot work, and would introduce a bug:
+**Why that could not work.**
 
 1. `github.ts` `cond()` returns **`cached.data`** on a 304 response.
 2. An HTTP 304 carries **no body** — that is the entire point of the ETag round trip.
-3. Therefore the cache must persist the **body** alongside the ETag. Hydrating
+3. So the cache must persist the **body** alongside the ETag. Hydrating
    `{ etag, data: undefined }` makes `cond()` return `undefined` on the first 304
    after a cold start, which flows into `prs.find(...)` / `issue.state` as a
    `TypeError`. `safeReconcile` swallows it, so the ticket would simply stop
    updating — a silent, permanent failure.
 
 Verified with a throwaway simulation of `cond()` hydrated from an etag-only map:
-it returns `undefined` and throws `TypeError` downstream. (Scratch test removed,
+it returned `undefined` and threw `TypeError` downstream. (Scratch test removed,
 not committed.)
 
-**The grain is also wrong.** `condCache` keys are per-repo/resource
+**The grain was also wrong.** `condCache` keys are per-repo/resource
 (`pulls.list:owner/name`), shared across every ticket in that repo, while
-`status_cache` is keyed per-ticket. Persisting one into the other duplicates
-bodies and races between tickets of the same repo.
+`status_cache` is keyed per-ticket.
 
-**Proposed fix (needs approval — new table = escalating cost):** a disposable
-`http_cache(key TEXT PRIMARY KEY, etag TEXT NOT NULL, body_json TEXT NOT NULL,
-updated_at TEXT NOT NULL)` table, hydrated into the adapter on construction and
-written through on each 200. It preserves the rebuild rule (purely disposable),
-matches the real key grain, and makes `getEtagMap()` — currently dead code — and
-the `status_cache.etag_map_json` column removable.
+**Decision taken (approved):** option (a), a new disposable table.
 
-Not implemented, because adding a table is a schema-shape decision with no
-existing prior, and the alternative (accept in-process-only caching, delete the
-dead column and `getEtagMap()`) is a legitimate cheaper answer.
+**What shipped:**
+- `http_cache(key PRIMARY KEY, etag, body_json, updated_at)` — correct grain, body
+  stored with the etag, disposable so the rebuild rule holds.
+- `providers/cond-cache.ts` — `cond()` extracted from `github.ts` into a testable
+  `CondCache` that **refuses to hydrate an entry lacking a body or a string etag**,
+  making the original bug unrepresentable. Mutation-checked: removing that guard
+  fails exactly the two cold-start regression tests.
+- Store injected at boot from `server/index.ts` via `setCondCacheStore()`, so
+  `providers/` never imports the db layer and tests default to in-process caching.
+- `loadHttpCache()` drops corrupt rows rather than surfacing a bodyless entry;
+  bodies >512 KB and unserializable bodies are never persisted (in-process only).
+- Dead `getEtagMap()` and the always-`{}` `status_cache.etag_map_json` column
+  removed, with an idempotent `ALTER TABLE ... DROP COLUMN` migration — verified on
+  a simulated legacy database: column dropped, rows preserved, `http_cache`
+  created, idempotent on reopen.
 
 ---
 
@@ -248,8 +255,8 @@ dead column and `getEtagMap()`) is a legitimate cheaper answer.
 ```
 ✓ typecheck        server + web, clean
 ✓ seam clean       no @octokit/@gitbeaker imports outside server/providers/
-✓ Test Files  6 passed (6)
-✓      Tests  79 passed (79)   ~2.1s
+✓ Test Files  8 passed (8)
+✓      Tests  100 passed (100)   ~3.1s
 ```
 
 `npm run build` → web bundle builds clean (200.97 kB, gzip 63.40 kB).
@@ -277,8 +284,6 @@ gate, where previously they could not fail at all.
 
 ## Open Issues
 
-- **T0-9 is blocked** on the schema decision above. It is the only Tier 0 ticket
-  not landed.
 - **CI is unproven on a real runner.** The workflow was validated by running its
   exact command sequence locally on macOS/Node 22. The `better-sqlite3` prebuild
   fetch under `npm ci` on `ubuntu-latest` + Node 20 has not been exercised; if no
@@ -292,8 +297,10 @@ gate, where previously they could not fail at all.
   endpoint that merges to production. The poller's reconcile loop, the board
   route, and every adapter's network path remain untested — they need either live
   credentials or an HTTP-level fake, which is outside Tier 0's scope.
-- **`getEtagMap()` in `server/db/status.ts` is dead code** and
-  `status_cache.etag_map_json` is always `{}`. Both resolve with T0-9.
+- **`http_cache` has no eviction.** Entries are overwritten per key and the key set
+  is bounded by (tracked repos × endpoints), so it cannot grow without bound. No
+  TTL or vacuum is wired; if a repo is untracked its rows linger until the table is
+  cleared. Harmless (disposable), but worth a sweep if repo churn is high.
 
 ---
 
@@ -301,14 +308,13 @@ gate, where previously they could not fail at all.
 
 `docs/BUILD_PLAN-v2.md` §1 carries the per-ticket status table.
 
-- **Current phase:** Tier 0 — Earn the right to ship publicly
-- **Current ticket:** T0-9 (Blocked)
-- **Updated ticket status:** T0-1 … T0-8, T0-10 → **Complete**; T0-9 → **Blocked**
-- **Blockers:** T0-9 needs a decision between (a) a new disposable `http_cache`
-  table, or (b) accepting in-process-only ETag caching and deleting the dead
-  column + `getEtagMap()`.
-- **Recommended next ticket:** resolve T0-9's schema decision. Tier 0's exit
-  criteria — `verify` green in CI, no doc claim unbacked by code — are otherwise
-  met, so **Tier 1's T1-0 spike** (GitHub App installation tokens vs. the
-  anti-recursion rule) can start in parallel: it gates all of Tier 1 and depends
-  on nothing in T0-9.
+- **Current phase:** Tier 0 — Earn the right to ship publicly — **Complete**
+- **Current ticket:** none
+- **Updated ticket status:** T0-1 … T0-10 → **Complete**
+- **Blockers:** none. (T0-9 was blocked mid-run on a schema decision; resolved in
+  favour of a new disposable `http_cache` table, and landed.)
+- **Recommended next ticket:** **T1-0** — the spike on whether GitHub App
+  installation tokens trigger workflow runs where the default `GITHUB_TOKEN` does
+  not. It gates the whole of Tier 1 and should be settled before any of T1-1…T1-4
+  is designed. Tier 0's exit criteria are met: `verify` is green (100 tests) and no
+  doc claim is unbacked by code.

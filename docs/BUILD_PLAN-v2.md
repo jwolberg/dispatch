@@ -1,6 +1,6 @@
 # Build Plan v2 — Tiers 0–2
 
-**Status:** Tier 0 in progress — 9/10 complete, T0-9 blocked. Tiers 1–2 not started.
+**Status:** Tier 0 **complete** (10/10). Tiers 1–2 not started.
 **Supersedes:** nothing. `docs/BUILD_PLAN.md` covers v1 (Phases 1–6, complete).
 **Source:** assessment of 2026-07-09 (Dispatch vs. TerMinal vs. the 2026 orchestrator market).
 **Last updated:** 2026-07-09 — see `docs/implementation.md` for the Tier 0 run.
@@ -55,7 +55,7 @@ more to undo than to prevent.
 | T0-6 | Replace the placeholder CI workflow | S | T0-1 | Complete |
 | T0-7 | Correct the false test claims in `implementation-notes.md` | S | T0-2…T0-5 | Complete |
 | T0-8 | Remove the stale "Stubbed here" comment | XS | — | Complete |
-| T0-9 | ~~Persist ETags to `status_cache.etag_map_json`~~ Persist the conditional-request cache | M | T0-1 | **Blocked** |
+| T0-9 | ~~Persist ETags to `status_cache.etag_map_json`~~ Persist the conditional-request cache | M | T0-1 | Complete |
 | T0-10 | Warn at startup when the SQLite path is ephemeral | S | — | Complete |
 
 **T0-1 — Test runner.**
@@ -113,38 +113,41 @@ validated (typecheck, seam guard, manual smoke) and append a dated correction
 entry rather than silently editing history — the file's stated purpose is a
 decision log for human review.
 
-**T0-9 — Conditional-request cache persistence. BLOCKED — this ticket's original
-mechanism was wrong.**
+**T0-9 — Conditional-request cache persistence.** *(Landed. This ticket's original
+mechanism was wrong; recorded here because the reasoning is the useful part.)*
 
-The problem is real: real caching lives in an in-process map in `github.ts`, so on
-Cloud Run every container recycle triggers a full-cost refetch burst against the
+The problem was real: caching lived in an in-process map in `github.ts`, so on
+Cloud Run every container recycle triggered a full-cost refetch burst against the
 rate limit.
 
 The originally-specified fix — *"load the persisted `status_cache.etag_map_json`
-map into the provider on construction"* — **cannot work and would introduce a
-silent bug.** `cond()` returns `cached.data` on a 304, and an HTTP 304 carries no
-body; that is the entire point of the round trip. Hydrating `{etag, data:
-undefined}` makes `cond()` return `undefined` on the first 304 after a cold start,
-which throws a `TypeError` downstream that `safeReconcile` swallows — the ticket
-just stops updating, forever. Verified by simulation on 2026-07-09.
+map into the provider on construction"* — **could not work and would have
+introduced a silent bug.** `cond()` returns `cached.data` on a 304, and an HTTP
+304 carries no body; that is the entire point of the round trip. Hydrating
+`{etag, data: undefined}` makes `cond()` return `undefined` on the first 304 after
+a cold start, which throws a `TypeError` downstream that `safeReconcile` swallows
+— the ticket just stops updating, forever. Verified by simulation on 2026-07-09.
 
-The grain is wrong too: `condCache` keys are per-repo/resource
+The grain was wrong too: `condCache` keys are per-repo/resource
 (`pulls.list:owner/name`) and shared across a repo's tickets, while `status_cache`
 is per-ticket.
 
-**Decision required before this ticket can start:**
+**What was built instead** (option (a), approved 2026-07-09):
 
-- **(a) New disposable `http_cache` table** — `(key PRIMARY KEY, etag, body_json,
-  updated_at)`, hydrated into the adapter on construction, written through on each
-  200. Correct grain, preserves the rebuild rule, and lets us delete the dead
-  `getEtagMap()` and the `status_cache.etag_map_json` column. Costs a schema
-  addition and stores response bodies on disk.
-- **(b) Accept in-process-only caching** — delete the dead column and
-  `getEtagMap()`, document the cold-start burst as a known cost. Zero schema
-  change; keeps the burst.
+- a disposable `http_cache(key PRIMARY KEY, etag, body_json, updated_at)` table,
+  keyed at the real grain, storing the body alongside the ETag;
+- `cond()` extracted from `github.ts` into `providers/cond-cache.ts` as a testable
+  `CondCache` that **refuses to hydrate any entry lacking a body or an etag** —
+  the guard that makes the original bug unrepresentable;
+- the store injected at boot from `server/index.ts`, so `providers/` never imports
+  the db layer and tests default to in-process-only caching;
+- corrupt rows dropped on load; oversized (>512 KB) and unserializable bodies never
+  persisted;
+- dead `getEtagMap()` and the always-`{}` `status_cache.etag_map_json` column
+  removed, via an idempotent `ALTER TABLE ... DROP COLUMN` migration.
 
-Adding a table is an escalating-cost decision with no existing prior, so this
-waits for an explicit answer rather than being taken silently.
+The rebuild rule holds: `http_cache` is disposable, and wiping it costs exactly one
+full re-fetch.
 
 **T0-10 — Ephemeral DB warning.**
 `DISPATCH_DB_PATH` and the Filestore guidance already exist in `DEPLOY.md §4`.

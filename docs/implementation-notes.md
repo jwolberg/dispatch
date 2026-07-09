@@ -550,3 +550,40 @@ This mattered because the repo's own `CLAUDE.md` calls the TDD gate
 
 **Standing rule.** Do not record a validation in this file that was not run. An
 unbacked ✅ is worse than an admitted gap: it stops the next person from looking.
+
+## 2026-07-09 — T0-9: the planned ETag fix was itself a bug
+
+The Tier 0 plan said to persist ETags into the existing
+`status_cache.etag_map_json` column and hydrate the adapter from it on boot.
+Implementing that would have shipped a silent, permanent failure.
+
+**Why.** `github.ts` `cond()` replays `cached.data` on a 304. An HTTP 304 carries
+no body — that is the point of the round trip. Hydrating `{etag, data: undefined}`
+therefore returns `undefined` from the first 304 after a cold start; that flows
+into `prs.find(...)` / `issue.state` as a `TypeError`, which `safeReconcile`
+swallows by design. The ticket would stop updating and nothing would say so.
+
+The key grain was wrong too: `condCache` keys are per-repo/resource
+(`pulls.list:owner/name`), shared across a repo's tickets; `status_cache` is
+per-ticket.
+
+**What was built.** A disposable `http_cache(key, etag, body_json, updated_at)`
+table at the correct grain, storing the body with the ETag. `cond()` moved out of
+`github.ts` into `providers/cond-cache.ts` as a `CondCache` that refuses to
+hydrate any entry lacking a body or a string etag — the bug is now
+unrepresentable, and mutation-checked (removing the guard fails exactly the two
+cold-start regression tests). The store is injected at boot from `server/index.ts`
+so `providers/` never imports the db layer. Dead `getEtagMap()` and the always-`{}`
+column were removed via an idempotent `ALTER TABLE ... DROP COLUMN`, verified
+against a simulated legacy database.
+
+**Tradeoff accepted.** Response bodies now sit on disk (capped at 512 KB each;
+oversized and unserializable bodies stay in-process only). `http_cache` has no TTL
+or eviction — the key set is bounded by tracked repos × endpoints, and rows for an
+untracked repo linger until cleared. Disposable by contract, so the rebuild rule
+holds: wiping the table costs exactly one full re-fetch.
+
+**Lesson.** A plan written from reading code is not the same as a plan validated
+against it. This one was authored the same day and still specified a mechanism the
+HTTP spec forbids. Simulating the mechanism before building it cost ten minutes
+and caught it.
