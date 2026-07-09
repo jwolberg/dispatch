@@ -357,8 +357,13 @@ which is why it depends on T2-6 landing first.
 
 1. **T1-0 — GitHub App installation tokens vs. the anti-recursion rule.** Settle
    by spike, not by argument. Gates all of Tier 1.
-2. **T1-7 — Revert mechanism.** Spike. Fallback (deep-link + track the resulting
-   PR) is acceptable and should be assumed until the spike says otherwise.
+2. ~~**T1-7 — Revert mechanism.** Spike. Fallback (deep-link + track the resulting
+   PR) is acceptable and should be assumed until the spike says otherwise.~~
+   **Resolved 2026-07-09 — the spike said otherwise.** Both providers expose a
+   public revert API, so the fallback is demoted to the permission-denied path.
+   They are asymmetric: GitHub's mutation opens a PR, GitLab's REST endpoint
+   commits directly to a branch and must have an MR synthesized around it. See
+   `docs/decisions/0003-revert-mechanism-per-provider.md` (ADR-0003); #9 amended.
 3. **T2-6 — OIDC provider.** GitHub as the identity provider is the obvious
    default given every user already has an account and we are already asking for
    an App installation. Recommend it; confirm before building.

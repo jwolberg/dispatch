@@ -1,7 +1,7 @@
 ---
 id: 8
 title: "Spike: revert mechanism per provider"
-status: open
+status: in-progress
 priority: medium
 horizon: now
 hitl: false
@@ -9,7 +9,8 @@ type: dx
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-09
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/6"
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-7"

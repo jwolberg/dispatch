@@ -1,7 +1,7 @@
 ---
 id: 7
 title: "Preview-first card: hero preview + single verdict chip"
-status: in-progress
+status: closed
 priority: medium
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: ux
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-09
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/5"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-6"

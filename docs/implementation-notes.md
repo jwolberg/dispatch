@@ -753,3 +753,54 @@ ticket. The card itself meets the "legible at phone width" criterion.
 
 **Scoped out, per the ticket:** preview screenshots. "Hero preview" in this tier
 means the summary block, not a rendered screenshot.
+
+---
+
+## 2026-07-09 — #8 (T1-7): spike, revert mechanism per provider
+
+**The plan's premise was wrong, in our favor.** `BUILD_PLAN-v2.md` §T1-7 assumed
+GitHub probably has no public revert API and pre-approved a deep-link fallback.
+It does have one — the `revertPullRequest` GraphQL mutation, shipped 2023-01-27.
+There is still no REST equivalent, which is presumably why the plan assumed
+otherwise. Full reasoning and citations in `docs/decisions/0003-revert-mechanism-per-provider.md`.
+
+**Verified against the live schema, not just the docs.** `docs.github.com`
+renders its GraphQL reference client-side, so fetching the page does not show the
+mutation body at all — a plain doc-fetch would have produced a false negative
+here. `gh api graphql` introspection on `api.github.com` confirmed the mutation,
+its input type, and its payload directly.
+
+**The real finding is the asymmetry, not the existence.** GitHub's mutation opens
+a PR. GitLab's public revert endpoint commits *straight to the branch you name* —
+it is a commit-level primitive, and the MR "Revert" button is a Rails controller
+action outside `api/v4`. So the obvious GitLab implementation quietly pushes an
+unreviewed commit to a user's default branch. GitLab has to synthesize the MR
+(dry-run → create branch → revert onto it → open MR). That keeps revert flowing
+through the existing Ship gate on both providers, which is the property worth
+having: reverting is shipping.
+
+**Rejected the Git Data API path, and not for the reason the plan gave.** The
+plan called it "awkward." It is actually easy — ~4 calls, zero content uploaded.
+That is the trap. It restores a tree snapshot rather than inverting a patch, so
+it discards every change made after the merge being undone, resurrects deleted
+files, and *cannot raise a conflict* — it always succeeds. A revert that can
+never say no is worse than no revert.
+
+**Tradeoff accepted: no observed call.** Ticket #8 asked for documentation; the
+two things documentation does not cover (which permissions the mutation needs,
+and what it does on an unmerged PR) can only be settled by calling it, and the
+only repo available to call it against is this one — which would write a real PR
+here. Asked; chose docs-only. Both gaps are recorded in ADR-0003 §[6] and folded
+into #9's existing human-approval gate rather than being silently assumed. The
+permission gap couples to #3 (per-repo credentials), which is worth knowing now.
+
+**Amended, not silently:** #9's acceptance criteria (rewritten around the API,
+plus a GitLab squash-merge SHA test — `squash_commit_sha ?? merge_commit_sha`,
+a silent-wrong-revert footgun), and `BUILD_PLAN-v2.md`'s open-question 2, struck
+through with a correction entry per the T0-7 style rather than rewritten.
+
+**No new dependencies**, verified by executing against the installed packages:
+`octokit.graphql` exists on the already-constructed `Octokit`, and gitbeaker
+already exposes `Commits.revert` / `Branches.create` / `MergeRequests.create`.
+
+**No production code changed**, per the ticket.

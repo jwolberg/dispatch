@@ -1,7 +1,7 @@
 ---
 id: 6
 title: "Plain-language change summary on the card"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-09
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/5"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-5"
