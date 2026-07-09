@@ -1,0 +1,40 @@
+# CI for Dispatch. Runs the same gate the repo runs locally: `npm run verify`
+# (typecheck → provider-seam guard → tests), then the web build.
+#
+# The seam guard (scripts/check-seam.sh) enforces PRD acceptance #12: no
+# @octokit / @gitbeaker import may exist outside server/providers/. It is a hard
+# failure, not a lint warning — it is the invariant the provider abstraction
+# rests on.
+#
+# This replaced an unadapted project-template workflow that assumed a bun
+# project with `format:check` and `bun test`. Dispatch is npm + tsx + vite and
+# has neither script, so that workflow would have failed on its first run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` installs from package-lock.json and fetches the better-sqlite3
+      # prebuild for linux-x64, so no native toolchain step is needed.
+      - name: Install
+        run: npm ci
+
+      # typecheck (server + web) → seam guard → vitest
+      - name: Verify
+        run: npm run verify
+
+      - name: Build web
+        run: npm run build
