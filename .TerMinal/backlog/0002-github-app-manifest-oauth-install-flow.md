@@ -1,7 +1,7 @@
 ---
 id: 2
 title: "GitHub App: manifest registration + OAuth install flow"
-status: open
+status: in-progress
 priority: high
 horizon: now
 hitl: false
