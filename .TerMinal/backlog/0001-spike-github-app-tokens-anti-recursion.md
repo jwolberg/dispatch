@@ -1,7 +1,7 @@
 ---
 id: 1
 title: "Spike: do GitHub App installation tokens trigger workflow runs?"
-status: open
+status: in-progress
 priority: high
 horizon: now
 hitl: false
@@ -13,6 +13,7 @@ prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-0"
+  - "ADR-0002"
 depends_on: []
 acceptance:
   - "A written answer lands in docs/decisions/ (ADR) or docs/learnings/, citing GitHub's own documentation by URL"
@@ -49,6 +50,21 @@ start #2 before it is settled.
 - Explicit consequence for #4 (`POST /api/repos/:id/setup`): does `GH_PAT` leave
   onboarding, or stay?
 - No production code changes.
+
+## Progress — 2026-07-09
+
+Documentary half **done**: [ADR-0002](../../docs/decisions/0002-github-app-tokens-and-the-anti-recursion-rule.md)
+(`status: proposed`). The claim holds, but the "default token does not trigger"
+half was overstated — a `pull_request` opened by `GITHUB_TOKEN` *does* create a
+run, in `action_required`. That correction already fixed a latent bug in the
+acceptance criteria of #5.
+
+Empirical half **blocked, needs approval**: acceptance criterion 3 requires an
+observed run in a scratch repo. Creating a repo and running Actions against a
+real GitHub account is outward-facing and was not done unilaterally.
+
+Ticket stays `in-progress` until the observed runs are recorded in ADR-0002 §5
+and the ADR moves to `accepted`.
 
 ## Design notes
 
