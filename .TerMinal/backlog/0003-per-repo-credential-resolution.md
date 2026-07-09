@@ -89,7 +89,7 @@ at boot from `server/index.ts`, so `providers/` never imports the db layer
 (`cond-cache.ts:20–27`). Inject an `InstallationStore` the same way and resolve
 `installationId` **inside** `getProvider`.
 
-### Three call sites have no repo, and that is #2's problem
+### Three call sites have no repo — split out as #21
 
 `poller/scheduler.ts:34`, `routes/health.ts:26`, and `routes/discover.ts:21` call
 `getProvider(provider)` with no repo — account-level rate limit and repo listing.
