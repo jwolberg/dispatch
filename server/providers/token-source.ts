@@ -20,8 +20,15 @@ import { registerSecret, unregisterSecret } from "../lib/redaction.js";
 export interface TokenSource {
   /** A currently-valid token, minting or refreshing as needed. */
   get(): Promise<string>;
-  /** Discard the cached token; the next `get()` re-mints. Called on a 401. */
-  invalidate(): void;
+  /**
+   * Discard the cached token; the next `get()` re-mints. Called on a 401.
+   *
+   * `staleToken` is the token whose request actually failed. Pass it. When many
+   * concurrent requests all 401 on the same dead token, the first `invalidate()`
+   * re-mints and the rest must become no-ops — otherwise each one throws away the
+   * fresh token its predecessor just minted, and the adapter never recovers.
+   */
+  invalidate(staleToken?: string): void;
 }
 
 /** GitHub caps an App JWT at 10 minutes. Stay under it, after backdating. */
@@ -68,7 +75,7 @@ export class EnvTokenSource implements TokenSource {
   }
 
   /** Nothing to re-mint — a PAT is whatever the environment says it is. */
-  invalidate(): void {}
+  invalidate(_staleToken?: string): void {}
 }
 
 export interface AppCredentials {
@@ -93,6 +100,15 @@ export class AppTokenSource implements TokenSource {
   private token: string | null = null;
   private expiresAtMs = 0;
 
+  /**
+   * The mint currently in flight, if any. Without this, a poll cycle firing
+   * twenty concurrent requests as the token crosses the refresh margin sends
+   * twenty POSTs to GitHub — and, worse, twenty `mint()` bodies race on
+   * `this.token`, so a late one can unregister a *newer* token that another
+   * caller is already using. See the "concurrent" tests.
+   */
+  private inflight: Promise<string> | null = null;
+
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
   private readonly apiBase: string;
@@ -108,27 +124,48 @@ export class AppTokenSource implements TokenSource {
 
   async get(): Promise<string> {
     if (this.token && this.now() < this.expiresAtMs - REFRESH_MARGIN_MS) return this.token;
-    return this.mint();
-  }
-
-  invalidate(): void {
-    this.forget();
+    // Every concurrent caller awaits the one mint, and all of them get its token.
+    this.inflight ??= this.mint().finally(() => {
+      this.inflight = null;
+    });
+    return this.inflight;
   }
 
   /**
-   * A minted token is a credential that never appears in `process.env`, so the
-   * redactor cannot find it by scanning. It registers its own value.
+   * Drop the cached token so the next `get()` re-mints.
    *
-   * Dropping the predecessor is not housekeeping: without it the registry gains
-   * an entry every hour for the life of the process.
+   * `staleToken` guards against the concurrent-401 stampede: N in-flight requests
+   * bearing one dead token all fail, all call `invalidate()`, and only the caller
+   * holding the token we currently believe in is allowed to discard it. Without
+   * the guard, caller 2 discards the token caller 1 just minted, caller 3
+   * discards caller 2's, and the adapter mints forever without converging.
    */
-  private forget(): void {
-    unregisterSecret(this.token);
-    this.token = null;
-    this.expiresAtMs = 0;
+  invalidate(staleToken?: string): void {
+    if (staleToken !== undefined && staleToken !== this.token) return;
+    this.drop(this.token);
+  }
+
+  /**
+   * Unregister a *specific* token value and clear the cache if it is still the
+   * current one.
+   *
+   * Taking the value as a parameter rather than reading `this.token` is the whole
+   * fix: `mint()` must retire the token *it* superseded, not whatever happens to
+   * be in the field by the time its fetch resolves.
+   *
+   * Dropping the predecessor is not housekeeping — without it the redactor's
+   * registry gains an entry every hour for the life of the process.
+   */
+  private drop(token: string | null): void {
+    unregisterSecret(token);
+    if (this.token === token) {
+      this.token = null;
+      this.expiresAtMs = 0;
+    }
   }
 
   private async mint(): Promise<string> {
+    const superseded = this.token; // captured now, not read after the await
     const url = `${this.apiBase}/app/installations/${this.creds.installationId}/access_tokens`;
     const jwt = signAppJwt(this.creds.appId, this.creds.privateKey, this.now());
 
@@ -146,7 +183,7 @@ export class AppTokenSource implements TokenSource {
       });
 
       if (!res.ok) {
-        // Leave the previous token dropped rather than caching the failure — the
+        // Leave the previous token in place rather than caching the failure — the
         // next get() retries, which is what a transient 500 deserves.
         throw new Error(`installation token mint failed: ${res.status}`);
       }
@@ -156,7 +193,7 @@ export class AppTokenSource implements TokenSource {
         throw new Error("installation token mint returned no token");
       }
 
-      this.forget(); // unregister the token this one supersedes
+      this.drop(superseded);
       this.token = body.token;
       this.expiresAtMs = Date.parse(body.expires_at);
       registerSecret(this.token);

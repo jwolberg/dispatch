@@ -105,19 +105,25 @@ export class GitHubProvider implements GitProvider {
     // process — baking the token into the Octokit instance would pin a credential
     // that goes stale an hour later. `EnvTokenSource.get()` is a constant, so the
     // PAT path pays nothing for this.
-    this.octokit.hook.before("request", async (options) => {
-      options.headers.authorization = `token ${await tokens.get()}`;
-    });
-
-    // A 401 means the token died before its stated expiry — revoked, or the
-    // installation was removed and re-added. Re-mint once and retry; a second
-    // 401 is a real credential failure and must surface rather than loop.
+    //
+    // Auth and the 401 retry live in ONE wrap rather than a `before` hook plus a
+    // wrap, because the retry has to know *which* token it just failed with.
     this.octokit.hook.wrap("request", async (request, options) => {
+      const used = await tokens.get();
+      options.headers.authorization = `token ${used}`;
+
       try {
         return await request(options);
       } catch (err) {
+        // A 401 means the token died before its stated expiry — revoked, or the
+        // installation removed and re-added. Re-mint once and retry; a second 401
+        // is a real credential failure and must surface rather than loop.
         if (httpStatus(err) !== 401) throw err;
-        tokens.invalidate();
+
+        // Naming the failed token matters: concurrent requests sharing this
+        // memoized adapter all 401 on the same dead token, and only the first
+        // may discard it. The rest are no-ops and reuse the fresh one.
+        tokens.invalidate(used);
         options.headers.authorization = `token ${await tokens.get()}`;
         return request(options);
       }

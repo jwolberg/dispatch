@@ -195,6 +195,88 @@ describe("AppTokenSource", () => {
     await expect(src.get()).rejects.not.toThrow(/BEGIN|eyJ/); // no PEM, no JWT
   });
 
+  describe("concurrency", () => {
+    /** A mint endpoint whose responses are released by hand, so order is controllable. */
+    function deferredMint() {
+      const releases: Array<(token: string) => void> = [];
+      const impl = vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            releases.push((token) =>
+              resolve(
+                new Response(
+                  JSON.stringify({
+                    token,
+                    expires_at: new Date(Date.now() + HOUR_MS).toISOString(),
+                  }),
+                  { status: 201 }
+                )
+              )
+            );
+          })
+      );
+      return { impl: impl as unknown as typeof fetch, releases, calls: impl.mock.calls };
+    }
+
+    it("coalesces concurrent get() calls into a single mint", async () => {
+      // A poll cycle fans out ~20 requests through one memoized adapter. Twenty
+      // mints for one credential is both a stampede on GitHub and the setup for
+      // the out-of-order race below.
+      const mint = deferredMint();
+      const src = appSource({ fetchImpl: mint.impl, now: () => Date.now() });
+
+      const all = Promise.all([src.get(), src.get(), src.get()]);
+      await vi.waitFor(() => expect(mint.releases).toHaveLength(1));
+      mint.releases[0]("ghs_single_flight");
+
+      expect(await all).toEqual(["ghs_single_flight", "ghs_single_flight", "ghs_single_flight"]);
+      expect(mint.calls).toHaveLength(1);
+    });
+
+    it("a caller waiting on an in-flight mint never has its token unregistered under it", async () => {
+      // The bug this guards. mint() used to unregister `this.token` — a shared
+      // field read AFTER its own await — rather than the token it superseded. With
+      // two mints in flight, the later-resolving one stripped redaction from the
+      // newer token that the other caller was already using, and every log line in
+      // the app runs through safeMessage().
+      //
+      // Single-flight is what makes that unreachable: a second get() during a mint
+      // joins the first rather than starting a rival. Asserting it here, on the
+      // value the *concurrent caller* holds, is what the old code failed.
+      const mint = deferredMint();
+      const src = appSource({ fetchImpl: mint.impl, now: () => Date.now() });
+
+      const first = src.get();
+      await vi.waitFor(() => expect(mint.releases).toHaveLength(1));
+      const joined = src.get(); // arrives mid-mint
+
+      mint.releases[0]("ghs_shared_token");
+      const [a, b] = await Promise.all([first, joined]);
+
+      expect(a).toBe(b);
+      expect(mint.calls).toHaveLength(1); // no rival mint, so no out-of-order retire
+      expect(safeMessage(`still using ${b}`)).toBe("still using «redacted»");
+    });
+
+    it("invalidate() from a stale holder does not discard a freshly minted token", async () => {
+      // N concurrent requests 401 on one dead token. The first re-mints; the rest
+      // must be no-ops, or each discards its predecessor's fresh token forever.
+      const clock = clockAt(Date.now());
+      const mint = fakeMint({ expiresInMs: HOUR_MS });
+      const src = appSource({ fetchImpl: mint.impl, now: clock.now });
+
+      const dead = await src.get(); // ghs_minted_token_1
+      src.invalidate(dead); // first 401 handler: legitimate
+      const fresh = await src.get(); // ghs_minted_token_2
+
+      src.invalidate(dead); // second 401 handler, still holding the dead token
+      src.invalidate(dead); // third
+
+      expect(await src.get()).toBe(fresh);
+      expect(mint.calls).toHaveLength(2); // not 4
+    });
+  });
+
   it("retries the mint on the next get() after a failure rather than caching the error", async () => {
     let fail = true;
     const impl = vi.fn(async () => {

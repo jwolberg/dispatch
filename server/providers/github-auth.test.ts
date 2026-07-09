@@ -26,16 +26,23 @@ function unauthorized() {
   });
 }
 
-/** A TokenSource whose value changes on invalidate(), so a retry is observable. */
-function rotatingSource(): TokenSource & { invalidations: number } {
+/**
+ * A TokenSource whose value changes on invalidate(), so a retry is observable.
+ * Honours the `staleToken` contract: only the holder of the current token may
+ * retire it, which is what stops N concurrent 401s from minting N times.
+ */
+function rotatingSource(): TokenSource & { invalidations: number; mints: number } {
   let n = 1;
   return {
     invalidations: 0,
+    mints: 0,
     async get() {
       return `tok_${n}`;
     },
-    invalidate() {
+    invalidate(staleToken?: string) {
       this.invalidations += 1;
+      if (staleToken !== undefined && staleToken !== `tok_${n}`) return;
+      this.mints += 1;
       n += 1;
     },
   };
@@ -81,8 +88,51 @@ describe("GitHubProvider auth hooks", () => {
     const rl = await new GitHubProvider(src).getRateLimit();
 
     expect(rl.remaining).toBe(4999);
-    expect(src.invalidations).toBe(1);
+    expect(src.mints).toBe(1);
     expect(authHeadersOf(fetchMock)).toEqual(["token tok_1", "token tok_2"]);
+  });
+
+  it("tells invalidate() WHICH token failed, so a stale 401 cannot retire a fresh token", async () => {
+    const fetchMock = vi.fn();
+    fetchMock.mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(okRateLimit());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const src = rotatingSource();
+    const seen: Array<string | undefined> = [];
+    const spy: TokenSource = {
+      get: () => src.get(),
+      invalidate: (stale) => {
+        seen.push(stale);
+        src.invalidate(stale);
+      },
+    };
+
+    await new GitHubProvider(spy).getRateLimit();
+
+    expect(seen).toEqual(["tok_1"]); // the token the failed request actually bore
+  });
+
+  it("does not mint once per concurrent 401 — only the first holder retires the token", async () => {
+    // Three requests share one memoized adapter and all 401 on the same dead
+    // token. Without the staleToken guard, each discards its predecessor's fresh
+    // token and the adapter never converges.
+    const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const auth = new Headers(init?.headers).get("authorization");
+      return auth === "token tok_1" ? unauthorized() : okRateLimit();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const src = rotatingSource();
+    const provider = new GitHubProvider(src);
+    const results = await Promise.all([
+      provider.getRateLimit(),
+      provider.getRateLimit(),
+      provider.getRateLimit(),
+    ]);
+
+    expect(results.every((r) => r.remaining === 4999)).toBe(true);
+    expect(src.invalidations).toBe(3); // all three 401 handlers ran
+    expect(src.mints).toBe(1); // but only one actually rotated the token
   });
 
   it("surfaces a second 401 instead of retrying forever", async () => {
@@ -92,7 +142,7 @@ describe("GitHubProvider auth hooks", () => {
     const src = rotatingSource();
     await expect(new GitHubProvider(src).getRateLimit()).rejects.toThrow();
 
-    expect(src.invalidations).toBe(1); // invalidated once, not once per attempt
+    expect(src.mints).toBe(1); // rotated once, not once per attempt
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -105,6 +155,6 @@ describe("GitHubProvider auth hooks", () => {
     const src = rotatingSource();
     await expect(new GitHubProvider(src).getRateLimit()).rejects.toThrow();
 
-    expect(src.invalidations).toBe(0);
+    expect(src.mints).toBe(0);
   });
 });
