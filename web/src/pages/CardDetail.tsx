@@ -3,6 +3,7 @@ import { Page } from "../components/Page.js";
 import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { ticketsApi, type Check, type TicketDetail } from "../api/tickets.js";
+import { ChangeSummaryCard } from "../components/ChangeSummaryCard.js";
 import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
@@ -152,6 +153,12 @@ export function CardDetailPage() {
               </div>
             );
           })()}
+          {/* Above the fold, before the issue body: the reader cannot read a
+              diff, and a list of check names tells them nothing (T1-5). */}
+          <div className="lg:col-span-2">
+            <ChangeSummaryCard ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
+          </div>
+
           <section className="rounded-lg border border-border bg-surface p-4">
             <h2 className="mb-2 text-body font-semibold text-gray-200">Issue</h2>
             <div className="whitespace-pre-wrap text-body text-gray-300">{status.issue.body}</div>

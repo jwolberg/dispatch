@@ -15,6 +15,8 @@ export function resetDb(): void {
   db.exec(`
     DELETE FROM activity;
     DELETE FROM status_cache;
+    DELETE FROM summary_cache;
+    DELETE FROM spend;
     DELETE FROM tickets;
     DELETE FROM chats;
     DELETE FROM repos;

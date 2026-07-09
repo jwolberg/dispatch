@@ -24,6 +24,7 @@ function pr(over: Partial<PRStatus> = {}): PRStatus {
     mergeable: true,
     draft: false,
     headBranch: "claude/issue-7",
+    headSha: "0".repeat(40),
     baseBranch: "main",
     url: "https://example.test/pr/7",
     checks: [],

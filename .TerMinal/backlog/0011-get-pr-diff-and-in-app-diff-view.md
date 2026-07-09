@@ -1,6 +1,6 @@
 ---
 id: 11
-title: "getPRDiff() on the provider interface + in-app diff view"
+title: "In-app diff view (getPRDiff landed early, in #6)"
 status: open
 priority: medium
 horizon: next
@@ -13,11 +13,10 @@ prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T2-1"
-depends_on: []
+depends_on: [6]
 acceptance:
-  - "getPRDiff(ref, prNumber) is added to the GitProvider interface and implemented in both the GitHub and GitLab adapters"
+  - "A unified diff renders in the app for an open PR, from the getPRDiff() that #6 landed"
   - "Nothing outside server/providers/ imports Octokit or any GitLab client type — the seam holds"
-  - "A unified diff renders in the app for an open PR"
   - "Large diffs are bounded: a documented file/byte cap, with truncation shown to the user rather than silently dropped"
   - "Both adapters are tested against the same table, as T0-3 does for linkage"
   - "Diff responses participate in the existing conditional-request cache rather than refetching every poll"
@@ -31,14 +30,16 @@ agent_kind: classic
 The feature that keeps a professional from bouncing to github.com. v1 explicitly
 made "read the diff elsewhere" a non-goal; Tier 2 reverses that.
 
-Add `getPRDiff(ref, prNumber)` to `GitProvider`, implement it in both adapters,
-and render a unified diff in the tab.
+**Scope reduced 2026-07-09.** `getPRDiff()` was pulled forward into #6, which
+needed a diff to summarize and found the interface had no way to fetch one. The
+seam method and both adapter implementations therefore land in #6's PR. What
+remains here is the *view*: render the unified diff in the tab. Sized down from
+L; `depends_on: [6]`.
 
 ## Acceptance criteria
 
-- `getPRDiff()` on the interface, in both adapters.
 - Provider seam holds — no Octokit outside `providers/`.
-- Unified diff renders for an open PR.
+- Unified diff renders for an open PR, consuming #6's `getPRDiff()`.
 - Bounded: documented cap, truncation surfaced not hidden.
 - Both adapters tested against one shared table.
 - Diff fetches use the conditional-request cache (`providers/cond-cache.ts`).

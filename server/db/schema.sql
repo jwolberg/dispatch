@@ -73,6 +73,17 @@ CREATE TABLE IF NOT EXISTS activity (
   occurred_at TEXT NOT NULL
 );
 
+-- Disposable: the plain-language change summary shown above the fold (T1-5).
+-- Keyed by head_sha so a force-push invalidates it rather than describing code
+-- that no longer exists. Wiping it costs exactly one re-summarize per open card.
+-- CASCADE (unlike `spend` below): this table records no money, only prose.
+CREATE TABLE IF NOT EXISTS summary_cache (
+  ticket_id    INTEGER PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
+  head_sha     TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
 -- NOT disposable (T1-9). Every other cache table here can be wiped for the cost
 -- of a re-fetch; this one is the sole record that money was spent. Wiping it
 -- resets DISPATCH_DAILY_BUDGET_USD to zero spent — it fails OPEN. Treat it like
