@@ -587,3 +587,66 @@ holds: wiping the table costs exactly one full re-fetch.
 against it. This one was authored the same day and still specified a mechanism the
 HTTP spec forbids. Simulating the mechanism before building it cost ten minutes
 and caught it.
+
+---
+
+## 2026-07-09 — T1-9 (#10): spend tracking + daily budget cap
+
+**Two of the ticket's acceptance criteria were wrong, and the tests say why.**
+
+*Usage is not one number.* The ticket said "record token usage per chat turn."
+The Messages API reports `input_tokens` as the **uncached remainder**, with
+`cache_creation_input_tokens` and `cache_read_input_tokens` alongside it. Cache
+reads bill at ~0.10x the base input rate; 5-minute cache writes at 1.25x. Pricing
+only `input_tokens` under-reports every cached request — the normal path here, not
+an edge case. `pricing.test.ts` pins a 90%-cached prompt at $0.57 rather than the
+$3.00 or $3.27 the two plausible wrong implementations produce.
+
+*"Never $0" needed a sharper test than it sounds.* The obvious implementation of
+"an unpriced model is an error" is `if (total === 0) return 0` before the table
+lookup — which passes a naive reading of the criterion while leaving exactly the
+hole it was written to close. There is a test for the zero-usage case.
+
+**Decisions taken (flat cost, logged not asked).**
+
+- **UTC day boundary**, injected as a `Date` rather than read from the wall clock,
+  so the tests can assert the boundary. A local boundary makes the reset time
+  depend on the container's TZ.
+- **`>=`, not `>`.** At $3 spent against a $3 cap the budget is gone. Allowing one
+  more call there lets any single request overshoot by its own full cost.
+- **A malformed `DISPATCH_DAILY_BUDGET_USD` throws** rather than reading as
+  "no cap". Someone who typed `"ten dollars"` wanted a limit; silently uncapping
+  them is the outcome this ticket exists to prevent.
+- **429, not 502.** A budget refusal is not an upstream failure. The check runs
+  before the chat is created, before the message is persisted, and before the SSE
+  headers are flushed — once the event-stream headers are out, no status code can
+  be sent, and S4 needs a 4xx for the client to redisplay the user's input.
+- **Boot-ish guard**: if a budget is configured and `ANTHROPIC_MODEL` is unpriced,
+  the first call throws. An uncapped deployment on a brand-new model still works.
+
+**A foreign key nearly re-introduced the bug the ticket was about.** `spend.ticket_id`
+initially had a plain `REFERENCES tickets(id)`. If a ticket is deleted while a call
+is in flight, the insert throws *after* the money was spent, the row is lost, and
+the day's remaining budget silently rises — fail-open. `ticket_id` is now resolved
+through `(SELECT id FROM tickets WHERE id = ?)`, which yields NULL for a missing
+ticket, and the column is `ON DELETE SET NULL`. **Attribution is best-effort; the
+ledger is not.** Two tests hold this.
+
+**Tradeoffs accepted.**
+
+- `spend` is the **only non-disposable table** added since T0-9. Wiping it resets
+  the cap to zero-spent and fails open. Noted in `schema.sql` so nobody treats it
+  like `http_cache`.
+- **Two known under-counts, both fail-open by a bounded amount.** A `createMessage`
+  call that fails transiently and is retried was billed by Anthropic but reports no
+  usage on the failed attempt. A stream that errors mid-flight has billed the tokens
+  it streamed but reports no usage at all. Neither is recoverable from the API
+  response; both are bounded by one call.
+- Sonnet 5's introductory pricing ($2/$10 through 2026-08-31) is **not** modeled —
+  we bill the standard $3/$15. Over-estimating spend fails closed; under-estimating
+  fails open.
+
+**Still open on this ticket.** The summary call in #6 must route through
+`recordCall("summary", …)` when it lands; the `kind` column and the `SpendKind`
+type already carry the slot. Per-ticket attribution exists in the schema but has no
+reader until #14.

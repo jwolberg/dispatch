@@ -73,6 +73,28 @@ CREATE TABLE IF NOT EXISTS activity (
   occurred_at TEXT NOT NULL
 );
 
+-- NOT disposable (T1-9). Every other cache table here can be wiped for the cost
+-- of a re-fetch; this one is the sole record that money was spent. Wiping it
+-- resets DISPATCH_DAILY_BUDGET_USD to zero spent — it fails OPEN. Treat it like
+-- `tickets`, not like `http_cache`.
+--
+-- ticket_id is SET NULL, not CASCADE: deleting a ticket must not erase the
+-- spend it incurred, or the day's cap silently rises.
+CREATE TABLE IF NOT EXISTS spend (
+  id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+  occurred_at                 TEXT NOT NULL,   -- ISO 8601, always UTC
+  model                       TEXT NOT NULL,
+  kind                        TEXT NOT NULL,   -- 'chat' | 'summary'
+  ticket_id                   INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+  input_tokens                INTEGER NOT NULL,
+  output_tokens               INTEGER NOT NULL,
+  cache_creation_input_tokens INTEGER NOT NULL,
+  cache_read_input_tokens     INTEGER NOT NULL,
+  usd                         REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_spend_occurred_at ON spend(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_spend_ticket ON spend(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_activity_occurred_at ON activity(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_repo ON tickets(repo_id);
 CREATE INDEX IF NOT EXISTS idx_chats_repo ON chats(repo_id);
