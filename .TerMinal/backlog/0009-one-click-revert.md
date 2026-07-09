@@ -1,7 +1,7 @@
 ---
 id: 9
 title: "One-click revert"
-status: in-progress
+status: closed
 priority: medium
 horizon: now
 hitl: true
@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-09
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/7"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-8"
