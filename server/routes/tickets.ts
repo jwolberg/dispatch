@@ -320,3 +320,62 @@ ticketsRouter.post("/:id/merge", async (req, res) => {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err), pr_url: pr.url });
   }
 });
+
+// GET /api/tickets/:id/revert-url — one-click revert (T1-8).
+//
+// Dispatch does not perform the revert (ADR-0004). It resolves the provider's
+// own revert affordance and hands the user the link; the revert PR that results
+// is picked up by reconcile and tracked on this same card.
+//
+// The route exists rather than the client building a url because (a) GitHub's
+// revertUrl is a GraphQL field we derive rather than string-build, and (b) the
+// token stays server-side. The shipped gate is re-validated here for the same
+// reason the ship gate is: the client's disabled button is not a guarantee.
+ticketsRouter.get("/:id/revert-url", async (req, res) => {
+  const ticket = getTicket(Number(req.params.id));
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  const repo = getRepo(ticket.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+
+  const row = getStatus(ticket.id);
+  let payload: StatusPayload | null = null;
+  if (row) {
+    try {
+      payload = JSON.parse(row.payload_json) as StatusPayload;
+    } catch {
+      payload = null;
+    }
+  }
+  const pr = payload?.pr ?? null;
+
+  // Nothing shipped, nothing to undo. ADR-0003 [6] could not establish what a
+  // provider does when asked to revert an unmerged PR, and we do not intend to
+  // find out by asking — so this refuses before any network call.
+  if (!pr?.merged) {
+    res.status(409).json({ error: "This card has no merged PR to revert" });
+    return;
+  }
+
+  const ref: RepoRef = {
+    provider: repo.provider as ProviderId,
+    host: repo.host,
+    path: repo.path,
+    defaultBranch: repo.default_branch,
+  };
+
+  try {
+    const url = await getProvider(repo.provider as ProviderId, repo.host).getRevertUrl(
+      ref,
+      pr.number
+    );
+    res.json({ url });
+  } catch (err) {
+    res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err), pr_url: pr.url });
+  }
+});

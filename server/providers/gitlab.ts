@@ -1,7 +1,7 @@
 import { Gitlab } from "@gitbeaker/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
-import { findLinked } from "./linkage.js";
+import { findLinked, findRevertOfCommit } from "./linkage.js";
 import { DIFF_MAX_FILES, mapGitLabDiff, type RawGitLabDiff } from "./diff.js";
 import type {
   Check,
@@ -19,6 +19,7 @@ import type {
   RepoContext,
   RepoRef,
   RepoSummary,
+  RevertRef,
   Run,
   SpecInput,
 } from "./types.js";
@@ -222,13 +223,19 @@ export class GitLabProvider implements GitProvider {
     return issues.map((i) => ({ number: i.iid, url: i.web_url }));
   }
 
-  async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
-    const mrs = (await this.api.MergeRequests.all({
+  /** Recent MRs, newest first. Shared by findLinkedPR and findRevertPR. */
+  private async recentMRs(repo: RepoRef): Promise<Loose[]> {
+    return (await this.api.MergeRequests.all({
       projectId: repo.path,
       orderBy: "updated_at",
       perPage: 50,
     })) as Loose[];
+  }
+
+  async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
+    const mrs = await this.recentMRs(repo);
     // F4.4 — same rule as the GitHub adapter, shared via ./linkage.ts.
+    // findLinked skips reverts — see ADR-0004 [5].
     const match = findLinked(issueNumber, mrs, (mr) => ({
       body: mr.description,
       branch: mr.source_branch,
@@ -240,6 +247,50 @@ export class GitLabProvider implements GitProvider {
       headBranch: match.source_branch,
       baseBranch: match.target_branch,
     };
+  }
+
+  /**
+   * GitLab reverts a *commit*, not a merge request — `api/v4` has no MR-level
+   * revert (ADR-0003 [2]). So the revert MR never cites the original MR's iid;
+   * it cites the sha it undid. Attribution runs through that sha.
+   *
+   * `squash_commit_sha` when the project squashes on merge, else
+   * `merge_commit_sha`. Reading only the latter would silently find nothing on
+   * every squash-merging project.
+   */
+  async findRevertPR(repo: RepoRef, prNumber: number): Promise<RevertRef | null> {
+    const mr = (await this.api.MergeRequests.show(repo.path, prNumber)) as Loose;
+    const sha = (mr.squash_commit_sha ?? mr.merge_commit_sha) as string | null | undefined;
+    if (!sha) return null; // not merged, so nothing to revert
+
+    const mrs = await this.recentMRs(repo);
+    const match = findRevertOfCommit(
+      sha,
+      mrs.filter((m) => m.iid !== prNumber),
+      (m) => ({ body: m.description, branch: m.source_branch })
+    );
+    if (!match) return null;
+    return {
+      number: match.iid,
+      url: match.web_url,
+      state: match.state === "merged" ? "merged" : match.state === "closed" ? "closed" : "open",
+    };
+  }
+
+  /**
+   * GitLab has no revert *page*. `api/v4` exposes a commit-level revert endpoint
+   * that writes straight to a branch (ADR-0003 [2]), and the MR page's Revert
+   * button is a Rails action with no addressable GET route. So the honest
+   * deep-link is the MR itself, where that button lives.
+   *
+   * This is strictly worse than GitHub's dedicated revert page, and ADR-0004 [4]
+   * accepts it as the cost of Dispatch never writing to a user's repository.
+   */
+  async getRevertUrl(repo: RepoRef, prNumber: number): Promise<string> {
+    const mr = (await this.api.MergeRequests.show(repo.path, prNumber)) as Loose;
+    const url = mr.web_url as string | undefined;
+    if (!url) throw new Error(`No web url for MR !${prNumber}`);
+    return url;
   }
 
   async getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus> {

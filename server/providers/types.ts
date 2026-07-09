@@ -77,6 +77,18 @@ export interface PRRef {
   baseBranch: string;
 }
 
+/**
+ * A revert PR/MR that Dispatch did not open (ADR-0004: revert is a deep-link,
+ * so the user creates it on the provider's site and we discover it afterward).
+ * Lighter than PRStatus on purpose — the board shows it, it is not shippable
+ * through this card.
+ */
+export interface RevertRef {
+  number: number;
+  url: string;
+  state: "open" | "closed" | "merged";
+}
+
 export type CheckState = "pending" | "success" | "failure" | "neutral";
 
 export interface Check {
@@ -173,7 +185,16 @@ export interface GitProvider {
   getIssue(repo: RepoRef, issueNumber: number): Promise<Issue>;
   /** Open issues in the repo (excludes PRs/MRs) — used to adopt existing work onto the board. */
   listOpenIssues(repo: RepoRef): Promise<IssueRef[]>;
+  /** Excludes revert PRs — a revert of the ticket's PR is not the ticket's PR. */
   findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null>;
+  /** The revert of `prNumber`, if a user has opened one (T1-8). */
+  findRevertPR(repo: RepoRef, prNumber: number): Promise<RevertRef | null>;
+  /**
+   * Where to send the user to revert `prNumber` themselves. Dispatch performs
+   * no write (ADR-0004): GitHub returns its dedicated revert page, GitLab the
+   * MR page, because `api/v4` exposes no revert route.
+   */
+  getRevertUrl(repo: RepoRef, prNumber: number): Promise<string>;
   getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus>;
   /** Changed files + patches for a PR/MR. Bounded by the provider (T1-5). */
   getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff>;

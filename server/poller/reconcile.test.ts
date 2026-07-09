@@ -1,6 +1,20 @@
-import { describe, it, expect } from "vitest";
-import { deriveColumn } from "./reconcile.js";
-import type { Check, PRStatus, Run, RunState } from "../providers/types.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { deriveColumn, reconcileTicket } from "./reconcile.js";
+import { resetDb } from "../test/helpers.js";
+import { insertRepo } from "../db/repos.js";
+import { createTicket, getTicket } from "../db/tickets.js";
+import { getDb } from "../db/migrate.js";
+import { setProviderFactory } from "../providers/index.js";
+import type {
+  Check,
+  GitProvider,
+  Issue,
+  PRRef,
+  PRStatus,
+  RevertRef,
+  Run,
+  RunState,
+} from "../providers/types.js";
 
 // T0-2 — deriveColumn is the board's whole read path (PRD F4.1, ARCH §7).
 // Columns are derived every poll and never stored, so this function alone
@@ -115,5 +129,103 @@ describe("deriveColumn", () => {
   // in-flight work — the ticket is back to Queued, not stuck in Ready to test.
   it("is Queued when the PR was closed without merging and nothing is running", () => {
     expect(deriveColumn("open", pr({ state: "closed", merged: false }), [])).toBe("Queued");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T1-8 / ADR-0004 — tracking a revert PR Dispatch did not open.
+//
+// Because the revert happens on the provider's site, reconcile is the only
+// place that ever learns the revert PR exists. Two things must hold:
+//   1. the revert PR is surfaced (`revertPr`), so the card is not an orphan;
+//   2. it does NOT displace the shipping PR, and the column stays Shipped.
+// (2) is the regression guard — see ADR-0004 [5].
+
+describe("reconcileTicket — revert PR tracking", () => {
+  const merged: PRStatus = pr({ number: 7, merged: true, state: "merged" });
+  const theRevert: RevertRef = {
+    number: 8,
+    url: "https://example.test/pr/8",
+    state: "open",
+  };
+
+  function provider(over: Partial<GitProvider> = {}): GitProvider {
+    return {
+      getIssue: async (): Promise<Issue> => ({
+        number: 1,
+        title: "Do it",
+        body: "",
+        state: "closed",
+        labels: [],
+        comments: [],
+        url: "https://example.test/i/1",
+      }),
+      findLinkedPR: async (): Promise<PRRef | null> => ({
+        number: 7,
+        url: "https://example.test/pr/7",
+        headBranch: "claude/issue-1",
+        baseBranch: "main",
+      }),
+      getPRStatus: async (): Promise<PRStatus> => merged,
+      findRevertPR: async (): Promise<RevertRef | null> => theRevert,
+      getWorkflowRuns: async (): Promise<Run[]> => [],
+      ...over,
+    } as unknown as GitProvider;
+  }
+
+  function seedTicket(): number {
+    const repo = insertRepo({ provider: "github", path: "acme/widgets", merge_method: "squash" });
+    return createTicket(repo.id, 1, null, new Date().toISOString()).id;
+  }
+
+  beforeEach(() => resetDb());
+  afterEach(() => setProviderFactory(null));
+
+  it("surfaces the revert PR and keeps the shipping PR in place", async () => {
+    setProviderFactory(() => provider());
+    const id = seedTicket();
+
+    const payload = await reconcileTicket(getTicket(id)!);
+
+    expect(payload?.pr?.number).toBe(7); // the shipping PR, not the revert
+    expect(payload?.revertPr).toEqual(theRevert);
+    expect(payload?.column).toBe("Shipped");
+  });
+
+  it("does not look for a revert PR when nothing has merged", async () => {
+    const findRevertPR = vi.fn<(...a: unknown[]) => Promise<RevertRef | null>>();
+    setProviderFactory(() =>
+      provider({
+        getPRStatus: async () => pr({ number: 7, merged: false, state: "open" }),
+        getIssue: async () => ({
+          number: 1,
+          title: "Do it",
+          body: "",
+          state: "open",
+          labels: [],
+          comments: [],
+          url: "https://example.test/i/1",
+        }),
+        findRevertPR,
+      })
+    );
+    const payload = await reconcileTicket(getTicket(seedTicket())!);
+
+    expect(payload?.revertPr).toBeNull();
+    expect(findRevertPR).not.toHaveBeenCalled();
+  });
+
+  it("writes one activity row the first time the revert PR is seen, and not again", async () => {
+    setProviderFactory(() => provider());
+    const id = seedTicket();
+    const ticket = getTicket(id)!;
+
+    await reconcileTicket(ticket);
+    await reconcileTicket(ticket);
+
+    const reverts = (
+      getDb().prepare("SELECT type FROM activity").all() as { type: string }[]
+    ).filter((r) => r.type === "revert_opened");
+    expect(reverts).toHaveLength(1);
   });
 });

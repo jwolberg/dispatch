@@ -1,7 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
-import { findLinked } from "./linkage.js";
+import { findLinked, findRevert } from "./linkage.js";
 import { CondCache, type CondCacheStore } from "./cond-cache.js";
 import { DIFF_MAX_FILES, mapGitHubFile } from "./diff.js";
 import type {
@@ -17,6 +17,7 @@ import type {
   PRRef,
   PRStatus,
   RateLimit,
+  RevertRef,
   RepoContext,
   RepoRef,
   RepoSummary,
@@ -323,9 +324,9 @@ export class GitHubProvider implements GitProvider {
       .map((i) => ({ number: i.number, url: i.html_url }));
   }
 
-  async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
-    const { owner, repo: name } = splitPath(repo.path);
-    const prs = await this.cond(`pulls.list:${owner}/${name}`, (headers) =>
+  /** Recent PRs, newest first. Shared by findLinkedPR and findRevertPR (one ETag'd call). */
+  private async recentPulls(owner: string, name: string) {
+    return this.cond(`pulls.list:${owner}/${name}`, (headers) =>
       this.octokit.pulls.list({
         owner,
         repo: name,
@@ -336,8 +337,14 @@ export class GitHubProvider implements GitProvider {
         headers,
       })
     );
+  }
+
+  async findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const prs = await this.recentPulls(owner, name);
     // F4.4: linked if the PR body references #<n> or its branch name contains
     // the issue number. Rule lives in ./linkage.ts (shared with the GitLab adapter).
+    // findLinked skips reverts — see ADR-0004 [5].
     const match = findLinked(issueNumber, prs, (pr) => ({
       body: pr.body,
       branch: pr.head.ref,
@@ -349,6 +356,40 @@ export class GitHubProvider implements GitProvider {
       headBranch: match.head.ref,
       baseBranch: match.base.ref,
     };
+  }
+
+  async findRevertPR(repo: RepoRef, prNumber: number): Promise<RevertRef | null> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const prs = await this.recentPulls(owner, name);
+    const match = findRevert(prNumber, prs, (pr) => ({ body: pr.body, branch: pr.head.ref }));
+    if (!match) return null;
+    return {
+      number: match.number,
+      url: match.html_url,
+      state: match.merged_at ? "merged" : match.state === "closed" ? "closed" : "open",
+    };
+  }
+
+  /**
+   * `PullRequest.revertUrl` is a first-class GraphQL field, so the deep-link is
+   * derived rather than string-built (ADR-0004 [2]). One query, on click.
+   * `@octokit/graphql` ships with `@octokit/rest` — no new dependency.
+   */
+  async getRevertUrl(repo: RepoRef, prNumber: number): Promise<string> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const data = await this.octokit.graphql<{
+      repository: { pullRequest: { revertUrl: string } | null } | null;
+    }>(
+      `query($owner: String!, $name: String!, $number: Int!) {
+         repository(owner: $owner, name: $name) {
+           pullRequest(number: $number) { revertUrl }
+         }
+       }`,
+      { owner, name, number: prNumber }
+    );
+    const url = data.repository?.pullRequest?.revertUrl;
+    if (!url) throw new Error(`No revert url for PR #${prNumber}`);
+    return url;
   }
 
   async getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus> {

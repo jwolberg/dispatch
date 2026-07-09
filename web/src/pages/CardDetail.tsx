@@ -8,6 +8,7 @@ import type { Column } from "../lib/verdict.js";
 import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
+import { RevertButton } from "../components/RevertButton.js";
 import { ago } from "../lib/time.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
@@ -227,6 +228,16 @@ export function CardDetailPage() {
                   ready={status.column === "Ready to test"}
                   onMerged={() => void refetch()}
                 />
+                {/* Recovery, not a second way to ship: only once the PR merged (T1-8). */}
+                {status.pr.merged && (
+                  <RevertButton
+                    ticketId={ticket.id}
+                    pr={status.pr}
+                    repoPath={repo.path}
+                    provider={repo.provider}
+                    revertPr={status.revertPr}
+                  />
+                )}
               </>
             ) : (
               <p className="text-body text-gray-500">No linked PR yet.</p>
