@@ -1,6 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
+import { findLinked } from "./linkage.js";
 import type {
   Check,
   CheckState,
@@ -351,12 +352,11 @@ export class GitHubProvider implements GitProvider {
       })
     );
     // F4.4: linked if the PR body references #<n> or its branch name contains
-    // the issue number (bounded so #1 doesn't match #10 or branch "v10").
-    const bodyRef = new RegExp(`#${issueNumber}(?!\\d)`);
-    const branchRef = new RegExp(`(?<!\\d)${issueNumber}(?!\\d)`);
-    const match = prs.find(
-      (pr) => bodyRef.test(pr.body ?? "") || branchRef.test(pr.head.ref)
-    );
+    // the issue number. Rule lives in ./linkage.ts (shared with the GitLab adapter).
+    const match = findLinked(issueNumber, prs, (pr) => ({
+      body: pr.body,
+      branch: pr.head.ref,
+    }));
     if (!match) return null;
     return {
       number: match.number,
