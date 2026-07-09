@@ -33,9 +33,9 @@ function getClient(): Anthropic {
 }
 
 /** Price and persist one call's usage. Never throws into the request path. */
-function recordCall(kind: SpendKind, usage: Anthropic.Usage): void {
+function recordCall(kind: SpendKind, usage: Anthropic.Usage, ticketId?: number): void {
   try {
-    recordSpend({ model: MODEL, kind, usage: toTokenUsage(usage), at: new Date() });
+    recordSpend({ model: MODEL, kind, ticketId, usage: toTokenUsage(usage), at: new Date() });
   } catch (err) {
     // The money is already spent; losing the row understates the day's total.
     // Log loudly rather than failing a request the user has already paid for.
@@ -81,14 +81,20 @@ export function streamMessage(system: string, messages: ChatTurn[]) {
 }
 
 /**
- * Non-streaming completion (used for ticket generation). Retries once with
- * backoff on transient Anthropic errors (overloaded / 5xx / rate limit), per S4.
+ * Non-streaming completion (used for ticket generation and change summaries).
+ * Retries once with backoff on transient Anthropic errors (overloaded / 5xx /
+ * rate limit), per S4.
+ *
+ * `ticketId` attributes the spend to one ticket when the call is made on its
+ * behalf (T1-5's summaries; read by #14). Attribution is best-effort — see
+ * recordSpend — and its absence never blocks the call.
  */
 export async function createMessage(
   system: string,
   messages: ChatTurn[],
   maxTokens: number = MAX_TOKENS,
-  kind: SpendKind = "chat"
+  kind: SpendKind = "chat",
+  ticketId?: number
 ): Promise<string> {
   assertWithinBudget(new Date());
 
@@ -109,7 +115,7 @@ export async function createMessage(
 
   // Only the successful attempt reports usage. A retried transient failure was
   // billed by Anthropic but is invisible to us — we under-count by that attempt.
-  recordCall(kind, res.usage);
+  recordCall(kind, res.usage, ticketId);
 
   return res.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

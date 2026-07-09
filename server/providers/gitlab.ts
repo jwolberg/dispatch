@@ -2,6 +2,7 @@ import { Gitlab } from "@gitbeaker/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
 import { findLinked } from "./linkage.js";
+import { DIFF_MAX_FILES, mapGitLabDiff, type RawGitLabDiff } from "./diff.js";
 import type {
   Check,
   CheckState,
@@ -11,6 +12,7 @@ import type {
   IssueRef,
   MergeMethod,
   MergeResult,
+  PRDiff,
   PRRef,
   PRStatus,
   RateLimit,
@@ -252,6 +254,9 @@ export class GitLabProvider implements GitProvider {
       mergeable: mr.merge_status ? mr.merge_status === "can_be_merged" : null,
       draft: Boolean(mr.draft ?? mr.work_in_progress),
       headBranch: mr.source_branch,
+      // `diff_refs.head_sha` is the commit the current diff is against; `sha` is
+      // GitLab's older name for the same thing and is always present.
+      headSha: mr.diff_refs?.head_sha ?? mr.sha ?? "",
       baseBranch: mr.target_branch,
       url: mr.web_url,
       checks,
@@ -259,6 +264,26 @@ export class GitLabProvider implements GitProvider {
       deletions: null,
       changedFiles: null,
       previewUrl: null,
+    };
+  }
+
+  /**
+   * Changed files + patches for one MR (T1-5). One page, same reasoning as the
+   * GitHub adapter: a full page means "there may be more", not "that was all".
+   *
+   * GitLab reports no per-file line counts, so `mapGitLabDiff` derives them from
+   * the unified diff text. The GitHub adapter gets them for free — both arrive
+   * at the same PRFileDiff, which is what diff.test.ts pins down.
+   */
+  async getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff> {
+    const diffs = (await this.api.MergeRequests.allDiffs(repo.path, prNumber, {
+      perPage: DIFF_MAX_FILES,
+      maxPages: 1,
+    })) as RawGitLabDiff[];
+
+    return {
+      files: diffs.map(mapGitLabDiff),
+      truncated: diffs.length >= DIFF_MAX_FILES,
     };
   }
 

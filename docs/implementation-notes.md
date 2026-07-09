@@ -650,3 +650,106 @@ ledger is not.** Two tests hold this.
 `recordCall("summary", …)` when it lands; the `kind` column and the `SpendKind`
 type already carry the slot. Per-ticket attribution exists in the schema but has no
 reader until #14.
+
+---
+
+## 2026-07-09 — T1-5 (#6): plain-language change summary
+
+**The ticket needed a diff and the interface had no way to fetch one.** `getPRDiff()`
+was pulled forward from #11 into this PR and implemented in both adapters; #11 shrank
+to the in-app diff *view* and now `depends_on: [6]`. Both decisions were approved by
+the human before implementation and are recorded in the two ticket bodies.
+
+**Design decisions taken here.**
+
+- **`summary_cache`, not `status_cache`.** The ticket originally named
+  `status_cache`, but the poller is that table's only writer (ARCH §8) and it has
+  no SHA column — so it could not satisfy this ticket's own "a new SHA invalidates
+  the cached summary". The new table is disposable and `ON DELETE CASCADE`: unlike
+  `spend`, it records no money, only prose.
+- **Lazy, on first card open.** The poller runs every 5 minutes across every
+  tracked ticket; summarizing there bills for cards nobody opens, and #10's daily
+  cap takes that money straight out of the user's chat budget.
+- **Coalescing is what makes "exactly one call per (ticket, head SHA)" true.**
+  The card polls every 10s and React strict mode double-mounts, so two requests
+  reach the route before either writes the cache. An in-flight promise map keyed
+  `${ticketId}:${headSha}` collapses them. A mutation test (disabling the map)
+  was run to confirm the test actually catches its removal.
+- **The web fetches the summary once per (ticket, head SHA), not on the card's
+  poll.** A summary the model failed to produce is *not* cached, so polling would
+  re-bill that failure every ten seconds for as long as the card stayed open.
+- **`assertWithinBudget` runs before the diff fetch**, not just inside
+  `createMessage`. Being over budget should not also cost a provider request to
+  discover.
+- **The file list is never truncated; only patches are.** Paths and line counts
+  are cheap and carry most of the signal ("it touched the auth middleware").
+  Dropping a file would let the model describe a change while blind to the file
+  that mattered. Budget: 24 KB of patch text (~6k tokens).
+- **Truncation is stated in the prompt, and ties to the risk flag.** A partial
+  diff presented as whole is worse than no diff: the model writes "low risk" about
+  code it never saw. The system prompt tells it to prefer `review-this` when what
+  it cannot see could matter.
+- **`parseSummary` rejects rather than coerces.** A risk flag outside
+  `low | review-this` coerced to `low` is a claim the user cannot check; no summary
+  is at least honest. Only the three known fields survive into the cache.
+
+**Tradeoffs accepted.**
+
+- **A failed summary re-bills on the next card open.** Failures are deliberately
+  not cached — a transient Anthropic 500 must not suppress the summary for that SHA
+  forever. The cost is bounded by human action (the web does not poll this route),
+  and each retry is a real chance of success. A negative cache with a TTL was
+  considered and judged not worth the machinery yet.
+- **`truncated` over-reports.** Both adapters fetch one page of `DIFF_MAX_FILES`
+  (100) files and report `truncated: true` when the page is full — a PR with
+  *exactly* 100 files is reported as truncated. Conservative: it can only make the
+  model more cautious, never less.
+- **GitLab derives per-file line counts from the diff text** because its API does
+  not supply them; GitHub gets them for free. `providers/diff.test.ts` pins both
+  adapters to the same table so the seam is a real seam.
+- **Existing `status_cache` rows predate `headSha`**, so a card opened before its
+  next poll shows no summary. Self-heals within one 5-minute poll cycle.
+
+**Still open.** The `review-this` chip has no consumer until #7 renders it. Per-ticket
+spend attribution now has its first writer (`kind: "summary"`, `ticket_id` set) but
+still no reader until #14.
+
+---
+
+## 2026-07-09 — T1-6 (#7): preview-first card, single verdict chip
+
+**One source of truth for "are we green".** The chip is a pure function of the
+derived `column` — `web/src/lib/verdict.ts` — and never reads `pr.checks`. Reading
+the checks here would be a second implementation of the precedence table T0-2
+established server-side, and the two would drift precisely when they disagree most.
+`nextHint()` still consults runs and the plan comment, but only to pick a *sentence*;
+it no longer decides a color.
+
+**Pending is a first-class third state.** `Building` means a check is still running;
+rendering that as green tells the user to ship. An unrecognized column also degrades
+to pending, never to pass — a column added server-side before the web catches up must
+fail safe. Both are pinned by tests, including one that asserts the *complete* set of
+pass-columns is exactly `["Ready to test", "Shipped"]`.
+
+**The header `StatusChip` was removed from the card.** Two colored chips saying the
+same thing is the noise this ticket exists to remove. `StatusChip` still labels the
+Board columns, which is its real job.
+
+**vitest now includes web pure-logic tests.** No DOM, so `environment: node` still
+holds and no jsdom / testing-library dependency was added. Components stay verified
+by typecheck and by eye.
+
+**Verified by actually looking at it,** not by reading CSS: a throwaway seeded DB
+(`data/ui-check.db`, since deleted) plus the real server and Vite, driven at a
+390x844 viewport. Confirmed the green / pending / red states render distinctly
+(`Building` computes to `rgb(245,158,11)` — amber, not green), the check list is
+`<details>` with zero `[open]`, and the summary leads the card.
+
+**One bug found and NOT fixed here.** At 390px the page has
+`scrollWidth: 483` against `clientWidth: 390`. The overflow is the app shell's
+`<nav class="flex gap-1">`, not the card — nothing inside the card overflows. It is
+pre-existing and unrelated, so it was filed as **#18** rather than smuggled into this
+ticket. The card itself meets the "legible at phone width" criterion.
+
+**Scoped out, per the ticket:** preview screenshots. "Hero preview" in this tier
+means the summary block, not a rendered screenshot.

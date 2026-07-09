@@ -11,6 +11,7 @@ import { discoverRouter } from "./routes/discover.js";
 import { reposRouter } from "./routes/repos.js";
 import { chatRouter } from "./routes/chat.js";
 import { ticketsRouter } from "./routes/tickets.js";
+import { summaryRouter } from "./routes/summary.js";
 import { startPoller } from "./poller/scheduler.js";
 import { boardRouter } from "./routes/board.js";
 import { safeMessage } from "./lib/redaction.js";
@@ -46,6 +47,7 @@ api.use("/discover", discoverRouter);
 api.use("/repos", reposRouter);
 api.use("/chat", chatRouter);
 api.use("/tickets", ticketsRouter);
+api.use("/tickets", summaryRouter); // T1-5: GET /tickets/:id/summary
 api.use("/board", boardRouter);
 api.use("/activity", activityRouter);
 app.use("/api", api);

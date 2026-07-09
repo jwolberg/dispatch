@@ -19,6 +19,7 @@ export interface PRStatus {
   mergeable: boolean | null;
   draft: boolean;
   headBranch: string;
+  headSha: string;
   baseBranch: string;
   url: string;
   checks: Check[];
@@ -26,6 +27,21 @@ export interface PRStatus {
   deletions: number | null;
   changedFiles: number | null;
   previewUrl: string | null;
+}
+
+/** T1-5 — the plain-language summary above the fold. `risk` is a closed set (#7). */
+export interface ChangeSummary {
+  whatChanged: string;
+  howToTest: string;
+  risk: "low" | "review-this";
+}
+
+/** Why there is no summary. The route degrades rather than erroring. */
+export type SummaryUnavailable = "no-pr" | "budget" | "error";
+
+export interface SummaryResponse {
+  summary: ChangeSummary | null;
+  unavailable: SummaryUnavailable | null;
 }
 export interface Run {
   id: string;
@@ -60,6 +76,9 @@ export interface TicketDetail {
 
 export const ticketsApi = {
   get: (id: number) => api.get<TicketDetail>(`/tickets/${id}`),
+  // Generated lazily on first call and cached server-side per head SHA. Do NOT
+  // poll this: a summary the model failed to produce would re-bill every tick.
+  summary: (id: number) => api.get<SummaryResponse>(`/tickets/${id}/summary`),
   comment: (id: number, body: { body: string; target: "issue" | "pr" }) =>
     api.post<{ ok: boolean }>(`/tickets/${id}/comment`, body),
   skill: (

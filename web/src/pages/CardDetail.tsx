@@ -1,8 +1,10 @@
 import { useParams } from "react-router-dom";
 import { Page } from "../components/Page.js";
-import { StatusChip } from "../components/StatusChip.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { ticketsApi, type Check, type TicketDetail } from "../api/tickets.js";
+import { ChangeSummaryCard } from "../components/ChangeSummaryCard.js";
+import { VerdictChip } from "../components/VerdictChip.js";
+import type { Column } from "../lib/verdict.js";
 import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
@@ -31,38 +33,28 @@ const RUN_CLS: Record<string, string> = {
 
 type Status = NonNullable<TicketDetail["status"]>;
 
-// "Where are we / what's next" — interpret the derived column (plus PR/run/plan
-// signals) into a one-line state and the recommended next action.
-function nextStep(s: Status): { label: string; hint: string; cls: string } {
+// What to do next, in one sentence. The VERDICT (green/red/pending) is not
+// decided here — `VerdictChip` derives it from the column alone, so there is
+// exactly one implementation of "are we green" (T1-6). This only picks the
+// sentence, which may legitimately consult runs and the plan comment.
+function nextHint(s: Status): string {
   const running = s.runs.some((r) => r.state === "queued" || r.state === "in_progress");
-  const ok = "border-status-ok/40 bg-status-ok/10 text-status-ok";
-  const wait = "border-status-wait/40 bg-status-wait/10 text-status-wait";
-  const fail = "border-status-fail/40 bg-status-fail/10 text-status-fail";
-  const info = "border-status-info/40 bg-status-info/10 text-status-info";
   switch (s.column) {
     case "Shipped":
-      return { label: "Shipped", hint: "Merged and closed — nothing left to do.", cls: ok };
+      return "Merged and closed — nothing left to do.";
     case "Ready to test":
-      return { label: "Ready to test", hint: "Checks are green. Preview the PR, then Ship.", cls: ok };
+      return "Checks are green. Preview the PR, then Ship.";
     case "Blocked":
-      return { label: "Blocked", hint: "A check or run failed. Click Debug to push a fix.", cls: fail };
+      return "A check or run failed. Click Debug to push a fix.";
     case "Building":
-      return {
-        label: "Building",
-        hint: s.pr
-          ? "Claude opened a PR — checks are running. Wait for them to finish."
-          : "Claude is working — a run is in progress.",
-        cls: wait,
-      };
+      return s.pr
+        ? "Claude opened a PR — checks are running. Wait for them to finish."
+        : "Claude is working — a run is in progress.";
     default: // Queued / Spec
-      if (running) return { label: "Working", hint: "A run is in progress…", cls: wait };
+      if (running) return "A run is in progress…";
       if (s.progressComment)
-        return {
-          label: "Plan ready",
-          hint: "Claude posted a plan below. Review it, then click Implement to build.",
-          cls: info,
-        };
-      return { label: "Queued", hint: "Not started. Click Implement to build — or Plan first.", cls: info };
+        return "Claude posted a plan below. Review it, then click Implement to build.";
+      return "Not started. Click Implement to build — or Plan first.";
   }
 }
 
@@ -120,7 +112,9 @@ export function CardDetailPage() {
   return (
     <Page title={`#${ticket.issue_number}${status ? ` · ${status.issue.title}` : ""}`}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        {status && <StatusChip column={status.column} />}
+        {/* No status chip here: the hero's VerdictChip is the card's single
+            verdict (T1-6). Two colored chips saying the same thing is the noise
+            this ticket removes. StatusChip still labels the Board columns. */}
         <span className="text-label text-gray-500">{repo.path}</span>
         {status && (
           <a className="text-label text-status-info underline" href={status.issue.url} target="_blank" rel="noreferrer">
@@ -143,15 +137,17 @@ export function CardDetailPage() {
         <p className="text-body text-gray-500">Syncing with provider…</p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {(() => {
-            const step = nextStep(status);
-            return (
-              <div className={`lg:col-span-2 rounded-lg border px-3 py-2 ${step.cls}`}>
-                <span className="text-body font-semibold">Next: {step.label}</span>
-                <span className="ml-2 text-label opacity-90">{step.hint}</span>
-              </div>
-            );
-          })()}
+          {/* The hero (T1-6): one verdict and the plain-language summary, above
+              the fold. The reader cannot read a diff, and a list of check names
+              tells them nothing. Everything else on this card is detail. */}
+          <section className="lg:col-span-2 rounded-lg border border-border bg-surface p-4">
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <VerdictChip column={status.column as Column} />
+              <span className="text-label text-gray-400">{nextHint(status)}</span>
+            </div>
+            <ChangeSummaryCard ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
+          </section>
+
           <section className="rounded-lg border border-border bg-surface p-4">
             <h2 className="mb-2 text-body font-semibold text-gray-200">Issue</h2>
             <div className="whitespace-pre-wrap text-body text-gray-300">{status.issue.body}</div>
@@ -196,23 +192,33 @@ export function CardDetailPage() {
                     </a>
                   );
                 })()}
-                <ul className="mt-2 flex flex-col gap-1">
-                  {status.pr.checks.map((c, i) => (
-                    <li key={i} className="flex items-center gap-2 text-label">
-                      <span className={CHECK_CLS[c.state]}>{CHECK_ICON[c.state]}</span>
-                      {c.url ? (
-                        <a className="underline" href={c.url} target="_blank" rel="noreferrer">
-                          {c.name}
-                        </a>
-                      ) : (
-                        <span>{c.name}</span>
-                      )}
-                    </li>
-                  ))}
-                  {status.pr.checks.length === 0 && (
-                    <li className="text-label text-gray-500">No checks reported.</li>
-                  )}
-                </ul>
+                {/* Demoted behind a disclosure (T1-6). The verdict chip above
+                    already answers "can I ship this"; seven check names answer a
+                    question the reader did not ask. Collapsed by default. */}
+                {status.pr.checks.length > 0 ? (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-label text-gray-500 hover:text-gray-300">
+                      Show {status.pr.checks.length} check
+                      {status.pr.checks.length === 1 ? "" : "s"}
+                    </summary>
+                    <ul className="mt-1.5 flex flex-col gap-1">
+                      {status.pr.checks.map((c, i) => (
+                        <li key={i} className="flex items-center gap-2 text-label">
+                          <span className={CHECK_CLS[c.state]}>{CHECK_ICON[c.state]}</span>
+                          {c.url ? (
+                            <a className="underline" href={c.url} target="_blank" rel="noreferrer">
+                              {c.name}
+                            </a>
+                          ) : (
+                            <span>{c.name}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : (
+                  <p className="mt-2 text-label text-gray-500">No checks reported.</p>
+                )}
                 <ShipButton
                   ticketId={ticket.id}
                   pr={status.pr}

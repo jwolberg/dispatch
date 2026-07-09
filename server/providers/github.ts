@@ -3,6 +3,7 @@ import { httpStatus, isNotFound } from "../lib/errors.js";
 import { autoCloseKeyword } from "./types.js";
 import { findLinked } from "./linkage.js";
 import { CondCache, type CondCacheStore } from "./cond-cache.js";
+import { DIFF_MAX_FILES, mapGitHubFile } from "./diff.js";
 import type {
   Check,
   CheckState,
@@ -12,6 +13,7 @@ import type {
   IssueRef,
   MergeMethod,
   MergeResult,
+  PRDiff,
   PRRef,
   PRStatus,
   RateLimit,
@@ -367,6 +369,7 @@ export class GitHubProvider implements GitProvider {
       mergeable: pr.mergeable,
       draft: Boolean(pr.draft),
       headBranch: pr.head.ref,
+      headSha: pr.head.sha,
       baseBranch: pr.base.ref,
       url: pr.html_url,
       checks,
@@ -374,6 +377,34 @@ export class GitHubProvider implements GitProvider {
       deletions: pr.deletions ?? null,
       changedFiles: pr.changed_files ?? null,
       previewUrl,
+    };
+  }
+
+  /**
+   * Changed files + patches for one PR (T1-5).
+   *
+   * A single page, deliberately. GitHub caps a page at 100 files and the whole
+   * endpoint at 3000; paginating a 400-file PR would spend rate-limit quota to
+   * fetch patches the caller is about to truncate anyway. A full page means
+   * "there may be more", which is what `truncated` says.
+   *
+   * Goes through the conditional-request cache, so re-reading an unchanged PR's
+   * diff costs no quota.
+   */
+  async getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const files = await this.cond(`prfiles:${owner}/${name}#${prNumber}`, (headers) =>
+      this.octokit.pulls.listFiles({
+        owner,
+        repo: name,
+        pull_number: prNumber,
+        per_page: DIFF_MAX_FILES,
+        headers,
+      })
+    );
+    return {
+      files: files.map(mapGitHubFile),
+      truncated: files.length >= DIFF_MAX_FILES,
     };
   }
 

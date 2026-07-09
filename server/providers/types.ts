@@ -93,6 +93,8 @@ export interface PRStatus {
   mergeable: boolean | null;
   draft: boolean;
   headBranch: string;
+  /** Head commit sha. Both adapters already fetch it to collect checks (T1-5). */
+  headSha: string;
   baseBranch: string;
   url: string;
   checks: Check[];
@@ -100,6 +102,27 @@ export interface PRStatus {
   deletions: number | null;
   changedFiles: number | null;
   previewUrl: string | null; // from deployments/statuses/bot comments (F5.2)
+}
+
+export type FileChangeStatus = "added" | "modified" | "removed" | "renamed";
+
+/** One changed file in a PR/MR diff. `patch` is null for binary/oversized files. */
+export interface PRFileDiff {
+  path: string;
+  status: FileChangeStatus;
+  additions: number;
+  deletions: number;
+  patch: string | null;
+}
+
+/**
+ * A PR's changed files (T1-5; the view lands in T2-1). `truncated` is true when
+ * the provider itself capped the file list — GitHub returns at most 3000 files
+ * and omits patches on very large ones. Never present a partial diff as whole.
+ */
+export interface PRDiff {
+  files: PRFileDiff[];
+  truncated: boolean;
 }
 
 export type RunState = "queued" | "in_progress" | "success" | "failure" | "neutral";
@@ -152,6 +175,8 @@ export interface GitProvider {
   listOpenIssues(repo: RepoRef): Promise<IssueRef[]>;
   findLinkedPR(repo: RepoRef, issueNumber: number): Promise<PRRef | null>;
   getPRStatus(repo: RepoRef, prNumber: number): Promise<PRStatus>;
+  /** Changed files + patches for a PR/MR. Bounded by the provider (T1-5). */
+  getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff>;
   getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]>;
   mergePR(repo: RepoRef, prNumber: number, method: MergeMethod): Promise<MergeResult>;
 }
