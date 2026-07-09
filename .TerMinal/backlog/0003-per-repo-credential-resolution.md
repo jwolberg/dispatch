@@ -95,7 +95,8 @@ at boot from `server/index.ts`, so `providers/` never imports the db layer
 `getProvider(provider)` with no repo — account-level rate limit and repo listing.
 Under an App there is no account-level token; `discoverRepos()` would enumerate an
 *installation's* repos. Out of scope here: they keep resolving to the env token.
-Shape the seam so #2 can revisit them.
+Tracked as **#21**, which has real product surface (what Discover shows, what the
+rate-limit banner means) and is not a mechanical rewire.
 
 ### The redactor must be inverted here, not in #2
 
