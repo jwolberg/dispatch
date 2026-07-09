@@ -5,7 +5,7 @@ anchor: ADR-0003
 status: accepted
 date: 2026-07-09
 supersedes:
-superseded-by:
+superseded-by: 0004 (supersedes [7]'s recommendation only; all findings stand)
 ---
 
 Spike T1-7 (ticket #8), gating #9 (T1-8, one-click revert).

@@ -1,7 +1,7 @@
 ---
 id: 9
 title: "One-click revert"
-status: open
+status: in-progress
 priority: medium
 horizon: now
 hitl: true
@@ -15,17 +15,16 @@ refs:
   - "T1-8"
 depends_on: [8]
 acceptance:
-  - "A shipped card exposes a single revert affordance"
-  - "GitProvider gains revertPR(ref, prNumber) -> { number, url }, implemented for both providers per ADR-0003"
-  - "GitHub uses the revertPullRequest GraphQL mutation; GitLab synthesizes an MR (dry-run precheck, create branch, revert onto it, open MR) and never commits to the default branch"
-  - "GitLab reads squash_commit_sha ?? merge_commit_sha; a test covers the squash-merge case"
-  - "Revert produces an open PR/MR that a human merges through the existing Ship gate; Dispatch never pushes to a default branch"
-  - "The Git Data API tree-snapshot approach is not used (ADR-0003 [4])"
-  - "When the provider refuses the call for permissions, the UI degrades to the deep-link from PullRequest.revertUrl rather than showing an error"
-  - "The resulting revert PR appears on the board linked to the original ticket, not as an orphan card"
-  - "Revert is not offered on a card that has not shipped — guarded in the UI and re-validated server-side, not relying on the API to reject it"
-  - "Nothing in this ticket requires a local checkout or local git"
-  - "Tests cover: revert PR detection, linkage to the original ticket, the not-shipped guard, and the GitLab squash-merge SHA selection"
+  - "A shipped card exposes a single revert affordance; it deep-links to the provider and Dispatch performs no write (ADR-0004)"
+  - "GitProvider gains getRevertUrl(ref, prNumber) -> string. GitHub derives it from the PullRequest.revertUrl GraphQL field, not by string-building. GitLab returns the MR web url, because api/v4 exposes no revert page"
+  - "Dispatch never calls revertPullRequest, never creates a branch/commit/MR, and never writes to a default branch"
+  - "GitProvider gains findRevertPR(ref, prNumber). A revert PR is detected by branch (revert-<n>-*) or body (Reverts ... #<n>), matched against the ORIGINAL PR number"
+  - "findLinkedPR excludes revert PRs, so a newly opened revert PR cannot displace the original PR in StatusPayload.pr (the list is sorted updated-desc, so it otherwise would)"
+  - "StatusPayload gains revertPr; a shipped card whose revert PR is open shows both, and the column stays Shipped"
+  - "An activity row is written when a revert PR is first detected"
+  - "The revert affordance is not offered on a card that has not shipped - guarded in the UI and re-validated server-side (409)"
+  - "Nothing in this ticket requires a local checkout or local git. The Git Data API tree-snapshot approach is not used (ADR-0003 [4])"
+  - "Tests cover: revert PR detection by branch and by body, findLinkedPR NOT returning a revert PR, revertPr surfacing on a shipped payload, and the not-shipped 409 guard"
 agent_id: 1000x-ai-engineer
 agent_scope: global
 agent_kind: classic
@@ -41,47 +40,54 @@ The mechanism is decided by #8. Do not start until it has landed.
 
 ## Acceptance criteria
 
-- One revert affordance on a shipped card.
-- Mechanism per ADR-0003: call the provider API. Both providers yield an open
-  PR/MR that a human merges. Deep-link is the permission-denied fallback only.
-- Revert PR shows on the board, linked to the original ticket.
-- No revert affordance on a card that has not shipped (UI + server guard).
-- No local checkout, no local git. No Git Data API.
-- Tests: detection, linkage, not-shipped guard, GitLab squash-merge SHA.
+- One revert affordance on a shipped card, deep-linking out. Dispatch writes
+  nothing to the user's repository.
+- `getRevertUrl` derived from `PullRequest.revertUrl` (GitHub) / MR web url
+  (GitLab).
+- `findRevertPR` detects the revert PR; `findLinkedPR` excludes revert PRs.
+- `StatusPayload.revertPr` surfaces it; column stays `Shipped`.
+- Activity row on first detection.
+- Not offered unless shipped (UI + server 409).
+- No local checkout, no local git, no Git Data API.
+- Tests: detection by branch and by body, `findLinkedPR` not returning a revert
+  PR, `revertPr` on a shipped payload, the 409 guard.
 
 ## Design notes
 
-**#8 landed: `docs/decisions/0003-revert-mechanism-per-provider.md` (ADR-0003).**
-The plan's assumed fallback is not needed. Both providers expose a public API,
-but they are asymmetric — GitHub's `revertPullRequest` opens a PR, while
-GitLab's REST revert commits *directly to the branch you name*. GitLab therefore
-has to synthesize the MR (ADR-0003 §[3]); a naive `branch: "main"` revert pushes
-an unreviewed commit to a user's default branch and will usually 403 on a
-protected branch anyway.
+**Mechanism decided by the owner in ADR-0004, overriding ADR-0003 [7].** Both
+providers do expose a public revert API (ADR-0003), but Dispatch will not call
+it. It deep-links instead, so nothing is ever written to a user's repository and
+the undocumented permission questions in ADR-0003 [6] stop mattering. Read
+ADR-0004 for the reasoning and what it costs.
 
-Read ADR-0003 §[4] before reaching for the Git Data API. It is easy to build and
-silently destroys intervening work.
+**The load-bearing hazard, and the real work of this ticket.** `findLinkedPR`
+lists PRs sorted `updated`-descending and returns the *first* linkage match
+(`server/providers/linkage.ts:34`, `server/providers/github.ts:328-344`). The
+branch rule is deliberately loose: it matches the issue number anywhere in the
+branch name. GitHub names a revert branch `revert-<prNumber>-<originalBranch>`,
+so reverting a PR from branch `claude/issue-1` yields `revert-7-claude/issue-1`
+— which still contains `1`, still links to issue #1, and is *newer* than the
+original PR. It would therefore displace the shipping PR in `StatusPayload.pr`
+the moment the user creates it.
 
-No new dependencies: `octokit.graphql` and gitbeaker's `Commits.revert` /
-`Branches.create` / `MergeRequests.create` already exist (verified in ADR-0003
-§[5]).
+This is why "detect and track the revert PR" is not a nicety here: without it,
+the deep-link introduces a regression on the card it is launched from. Hence
+`findLinkedPR` must exclude revert PRs, and `findRevertPR` must match against
+the **original PR number** (not the issue number).
 
-Linkage reuse: T0-3 already extracted the PR-linkage rule into
-`providers/linkage.ts` and tested it. A revert PR body referencing the original
-should resolve through that same path rather than a new regex — but GitHub's
-generated body text is not contractual, so assert it.
+Do not rely on the PR *body*. GitHub's generated text is not contractual — match
+branch first, body as a secondary signal, and test both.
+
+Linkage reuse: T0-3 extracted the rule into `providers/linkage.ts`. The new
+predicates belong beside it, not inline in two adapters.
 
 ## Action needed
 
-**Human, before execution:** creating revert PRs in a user's repository is an
-escalating-cost, outward-facing action, flagged in `docs/BUILD_PLAN-v2.md §4` for
-explicit approval. Confirm the mechanism (ADR-0003) and approve before executing.
-Do not run against a real user repo during development.
+**Human, before execution:** resolved. ADR-0004 records the owner's decision to
+deep-link, which removes the outward-facing write that `docs/BUILD_PLAN-v2.md §4`
+flagged for approval. Dispatch performs no write against a user repository in
+this ticket, so the T1-8 approval gate no longer blocks it.
 
-Two things ADR-0003 §[6] could not establish from documentation, to resolve
-against a throwaway repo as part of that same approval step:
-
-1. Which permissions `revertPullRequest` needs, and whether a GitHub App
-   installation token can call it at all (couples to #3).
-2. What the mutation does when the PR is not merged — do not rely on it
-   erroring; keep the server-side guard.
+ADR-0003 [6]'s two undocumented questions (permissions for `revertPullRequest`,
+its behavior on an unmerged PR) are now moot for this ticket — we never call the
+mutation. They stay recorded in case a future ticket revisits the API path.
