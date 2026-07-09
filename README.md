@@ -56,6 +56,7 @@ see [`DEPLOY.md`](DEPLOY.md).
 |---|---|---|
 | `ANTHROPIC_API_KEY` | for spec chat | Anthropic Messages API (spec refinement + ticket JSON) |
 | `ANTHROPIC_MODEL` | optional | Override the model (default `claude-sonnet-4-6`) |
+| `DISPATCH_DAILY_BUDGET_USD` | optional | Cap Anthropic spend per UTC day. Unset = no cap. Once the day's spend reaches the cap, chat and ticket generation return `429` until 00:00 UTC. Requires `ANTHROPIC_MODEL` to be priced in `server/anthropic/pricing.ts`. |
 | `GITHUB_TOKEN` | for GitHub repos | Fine-grained PAT (scopes below) |
 | `GITLAB_TOKEN` | for GitLab repos | PAT with `api` scope |
 | `GITLAB_HOST` | self-hosted GitLab | Base URL (defaults to `https://gitlab.com`) |

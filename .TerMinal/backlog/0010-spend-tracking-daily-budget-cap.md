@@ -1,7 +1,7 @@
 ---
 id: 10
 title: "Spend tracking + daily budget cap"
-status: open
+status: in-progress
 priority: high
 horizon: now
 hitl: false

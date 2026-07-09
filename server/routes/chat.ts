@@ -8,6 +8,7 @@ import {
   type InjectableContext,
 } from "../anthropic/prompts.js";
 import { streamMessage, createMessage } from "../anthropic/client.js";
+import { assertWithinBudget, BudgetExceededError } from "../anthropic/budget.js";
 import { safeMessage } from "../lib/redaction.js";
 import { tryParseTicket } from "../lib/ticket-json.js";
 
@@ -43,6 +44,20 @@ chatRouter.post("/", async (req, res) => {
   if (!repo) {
     res.status(404).json({ error: "Repo not found" });
     return;
+  }
+
+  // T1-9: refuse before we create a chat, persist the message, or flush SSE
+  // headers. Once the event-stream headers are out we can no longer answer with
+  // a status code, and the S4 contract needs a 4xx for the client to redisplay
+  // what the user typed. Refusing here leaves no half-written transcript.
+  try {
+    assertWithinBudget(new Date());
+  } catch (err) {
+    if (err instanceof BudgetExceededError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 
   let chat = body.chat_id != null ? getChat(Number(body.chat_id)) : undefined;
@@ -133,6 +148,12 @@ chatRouter.post("/:id/generate-ticket", async (req, res) => {
     }
     res.json({ ticket });
   } catch (err) {
+    // A budget refusal is not an upstream failure. 502 would read as "Anthropic
+    // is broken" and, per S4, the client would not preserve the draft.
+    if (err instanceof BudgetExceededError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
     res.status(502).json({ error: safeMessage(err) });
   }
 });
