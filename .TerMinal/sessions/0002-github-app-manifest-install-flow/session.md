@@ -270,12 +270,63 @@ ADR's claims about an external format were wrong, and all three would have compi
 
 ## [6] Outcomes
 
-*(filled by /session-end)*
+Branch `feat/2-github-app-manifest-install-flow`, eight commits.
+
+| Commit | What landed |
+|---|---|
+| `3aa5e58` | `lib/crypto.ts` — AES-256-GCM envelope, `DISPATCH_ENCRYPTION_KEY` |
+| `42a519a` | `db/installations.ts` — `SqliteInstallationStore`, the first confidential table |
+| `20f4025` | ADR-0006 [5] corrected — no `?org=`, nullable `webhook_secret`, code not single-use |
+| `50f3e55` | `routes/github-app.ts` — manifest + one-shot conversion callback |
+| `2d2ca1d` | install callback + `setInstallationStore()` at boot |
+| `a68a45f` | `GitHubAppSetup` — register/install UI |
+| `99aa574` | `DEPLOY.md` §1.1 + §4.1; stale `#2` comment → `#21` |
+
+433 tests pass (from 348 at session start), typecheck and seam guard clean, SPA
+builds. Load-bearing behavior was mutation-checked, not just asserted: dropping the
+selection guard, the `registerSecret` call, any of the three `onChange` sites, the
+state consumption, or the `?org=` guard each turns the suite red.
+
+Verified live, beyond the suite:
+
+- All four boot paths driven against the real server — local-dev boots; registration
+  is refused without a key; App + key boots and names the app; App without its key
+  exits 1 with no PEM in the log.
+- All three UI states driven in a real browser (`agent-browser`).
+
+11 of 13 acceptance criteria met. The two that are not are AC 6 and AC 13, which
+need an App on a real account — moved to **#22**, not quietly dropped.
 
 ## [7] Follow-ups
 
-*(filled by /session-end)*
+- **#22 (filed, `hitl: true`, blocks nothing but matters most)** — live-verify the
+  App path. ADR-0006 [8]'s central claim, that a PR opened with an App installation
+  token triggers `pull_request` runs without approval, is still **inferred, not
+  observed**. #4 and #5 are shaped around it. #2 registers the first App; the check
+  is fifteen minutes once one exists.
+- **`GITHUB_TOKEN` is still required even with an App installed.** The rate-limit
+  probe, the health route, and `discoverRepos()` are account-level calls with no
+  installation to resolve against. That is **#21**, and `DEPLOY.md` §3.5 now says so
+  plainly rather than implying onboarding is PAT-free today.
+- **`repos_json` goes stale** when the operator edits the repo selection on
+  github.com. Those repos silently keep using the env token until the install flow
+  re-runs. #17's webhooks are the real fix; see [5.2].
+- **Webhook declared but `active: false`.** Nothing verifies signatures until #17.
+- A `selected` installation beyond 1000 repos is not fully enumerated; it warns.
 
 ## [8] Documentation
 
-*(filled by /session-end)*
+- `docs/decisions/0006-…md` — dated correction appended to [5]: the `?org=`
+  parameter does not exist, `webhook_secret` is nullable, the manifest code is not
+  documented single-use. Original claim left standing, not rewritten.
+- `DEPLOY.md` — new §1.1 (`DISPATCH_ENCRYPTION_KEY`, and why losing it stops the
+  boot) and §4.1 (lifecycle rule expiring noncurrent object versions, AC 10). §3.5
+  rewritten to lead with the App and to state the `GITHUB_TOKEN` caveat.
+- `docs/implementation-notes.md` — dated entry: the three wrong format claims and
+  how they were caught, the leak the mutation pass surfaced, and the two deliberate
+  fallback decisions.
+- `server/db/schema.sql` — the design comment gains a third axis. It reasoned about
+  disposable vs irreplaceable; `github_app` and `installations` are the first tables
+  that are **confidential**.
+
+**Still to document:** nothing blocking. ADR-0006 [8] gets its evidence from #22.

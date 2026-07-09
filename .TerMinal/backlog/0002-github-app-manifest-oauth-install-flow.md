@@ -23,14 +23,14 @@ acceptance:
   - "An operator can install that App on one or more repos and land back in Dispatch with the installation recorded"
   - "Installation records (app id, installation id, account, repo selection) persist in SQLite and survive a container restart"
   - "server/index.ts calls setInstallationStore() with a SQLite-backed InstallationStore at boot — without this the seam #3 landed stays dead code and AppTokenSource is never constructed in production"
-  - "An end-to-end check proves a tracked repo under an installation polls using a minted installation token, not GITHUB_TOKEN — the App path is verified live, not only by unit tests"
+  - "An end-to-end check proves a tracked repo under an installation polls using a minted installation token, not GITHUB_TOKEN — the App path is verified live, not only by unit tests (MOVED to #22: needs an App on a real account, which only the operator can register)"
   - "The App private key is persisted in SQLite (not env, not Secret Manager) and encrypted at rest under a key supplied via env; the ciphertext is what reaches the GCS snapshot"
   - "redaction.ts is inverted to value-registration: a secret registers its value with the redactor when loaded, so safeMessage() redacts secrets that live in SQLite and never in process.env"
   - "A test asserts that a private key stored in SQLite does not appear in the output of safeMessage() for an error that embeds it"
   - "DEPLOY.md documents a lifecycle rule expiring noncurrent object versions, because bucket versioning otherwise preserves a rotated key indefinitely"
   - "GITHUB_TOKEN continues to work as the local-development path with no App installed"
   - "Integration test covers the callback handler: valid code, replayed code, and mismatched state each behave correctly"
-  - "Once the App exists, a PR is opened with its installation token in a scratch repo and the resulting workflow_run is recorded in ADR-0006 [8], closing the inference flagged there and in ADR-0002 [5]"
+  - "Once the App exists, a PR is opened with its installation token in a scratch repo and the resulting workflow_run is recorded in ADR-0006 [8], closing the inference flagged there and in ADR-0002 [5] (MOVED to #22)"
 agent_id: 1000x-ai-engineer
 agent_scope: global
 agent_kind: classic
