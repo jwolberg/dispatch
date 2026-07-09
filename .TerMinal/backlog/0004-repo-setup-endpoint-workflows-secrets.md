@@ -16,7 +16,7 @@ refs:
   - "scripts/install-claude-action.sh"
   - "ADR-0002"
   - "ADR-0006"
-depends_on: [3]
+depends_on: [2, 3]
 acceptance:
   - "One POST commits .github/workflows/claude.yml, a stack-aware ci.yml from scripts/repo-ci/, and the plan/implement/debug skills from scripts/repo-skills/ into the target repo"
   - "The claude.yml template drops the `gh pr create` post-step and the GH_PAT secret entirely; claude-code-action pushes a branch under the default GITHUB_TOKEN and nothing else"
