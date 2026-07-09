@@ -3,7 +3,7 @@ import { type TicketRow } from "../db/tickets.js";
 import { getStatus, upsertStatus } from "../db/status.js";
 import { insertActivity } from "../db/activity.js";
 import { getProvider } from "../providers/index.js";
-import type { Issue, PRStatus, ProviderId, RepoRef, Run } from "../providers/index.js";
+import type { Issue, PRStatus, ProviderId, RepoRef, RevertRef, Run } from "../providers/index.js";
 import { safeMessage } from "../lib/redaction.js";
 import { markRateLimited, retryAfter } from "../lib/ratelimit.js";
 
@@ -14,6 +14,12 @@ export interface StatusPayload {
   issue: { number: number; title: string; state: "open" | "closed"; url: string; body: string };
   progressComment: { author: string | null; body: string; url: string | null } | null;
   pr: PRStatus | null;
+  /**
+   * A revert of `pr`, opened by the user on the provider's site (ADR-0004).
+   * Separate from `pr` on purpose: it must never displace the shipping PR, and
+   * a card with an open revert is still Shipped.
+   */
+  revertPr: RevertRef | null;
   runs: Run[];
 }
 
@@ -78,6 +84,17 @@ function diffActivity(ticketId: number, prev: StatusPayload | null, next: Status
       occurred_at: now,
     });
   }
+  // Dispatch did not open this one — the user did, on the provider's site. The
+  // board finding out is the whole point of tracking it (T1-8, ADR-0004).
+  if (!prev?.revertPr && next.revertPr) {
+    insertActivity({
+      ticket_id: ticketId,
+      type: "revert_opened",
+      summary: `${issueRef} revert PR #${next.revertPr.number} opened`,
+      url: next.revertPr.url,
+      occurred_at: now,
+    });
+  }
 }
 
 /**
@@ -101,6 +118,11 @@ export async function reconcileTicket(ticket: TicketRow): Promise<StatusPayload 
   const prRef = await provider.findLinkedPR(ref, ticket.issue_number);
   const pr = prRef ? await provider.getPRStatus(ref, prRef.number) : null;
 
+  // Only a merged PR can have been reverted. Skipping the lookup otherwise keeps
+  // the common path at its current call count (the adapters reuse the ETag'd PR
+  // list, so this costs a 304 rather than a fresh page).
+  const revertPr = pr?.merged ? await provider.findRevertPR(ref, pr.number) : null;
+
   // Run context (F6.3):
   //  - shipped (merged/closed): default branch → the production deploy run
   //  - PR exists: the PR head branch → build/check runs
@@ -122,6 +144,7 @@ export async function reconcileTicket(ticket: TicketRow): Promise<StatusPayload 
     },
     progressComment: pickProgressComment(issue),
     pr,
+    revertPr,
     runs,
   };
 

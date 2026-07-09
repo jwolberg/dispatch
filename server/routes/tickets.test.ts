@@ -45,10 +45,11 @@ function prStatus(over: Partial<PRStatus> = {}): PRStatus {
 
 function payload(pr: PRStatus | null): StatusPayload {
   return {
-    column: pr ? "Ready to test" : "Queued",
+    column: pr?.merged ? "Shipped" : pr ? "Ready to test" : "Queued",
     issue: { number: 1, title: "Do it", state: "open", url: "https://example.test/i/1", body: "" },
     progressComment: null,
     pr,
+    revertPr: null,
     runs: [],
   };
 }
@@ -62,11 +63,14 @@ function seed(pr: PRStatus | null, mergeMethod = "squash"): number {
 }
 
 const mergePR = vi.fn<(...a: unknown[]) => Promise<MergeResult>>();
+const getRevertUrl = vi.fn<(...a: unknown[]) => Promise<string>>();
 
 /** A fake provider: mergePR is the assertion target; the rest feeds safeReconcile. */
 function fakeProvider(mergedAfter = true): GitProvider {
   return {
     mergePR,
+    getRevertUrl,
+    findRevertPR: async (): Promise<null> => null,
     getIssue: async (): Promise<Issue> => ({
       number: 1,
       title: "Do it",
@@ -108,6 +112,13 @@ async function merge(ticketId: number, body?: unknown) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body ?? {}),
     });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  });
+}
+
+async function revertUrl(ticketId: number) {
+  return withServer(app(), async (base) => {
+    const res = await fetch(`${base}/api/tickets/${ticketId}/revert-url`);
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   });
 }
@@ -226,5 +237,55 @@ describe("POST /api/tickets/:id/merge — the ship gate", () => {
       expect(status).toBe(502);
       expect(body.pr_url).toBe("https://example.test/pr/7");
     });
+  });
+});
+
+// T1-8 / ADR-0004 — Dispatch does not perform the revert. It hands the user a
+// deep-link to the provider's own revert affordance. The route exists to derive
+// that url server-side (the token never reaches the browser) and to re-validate
+// the shipped gate, exactly as the ship route re-validates its own.
+describe("GET /api/tickets/:id/revert-url — the deep-link", () => {
+  beforeEach(() => {
+    resetDb();
+    getRevertUrl.mockReset();
+    getRevertUrl.mockResolvedValue("https://example.test/pr/7/revert");
+    setProviderFactory(() => fakeProvider());
+  });
+
+  afterEach(() => setProviderFactory(null));
+
+  it("returns the provider-derived revert url for a merged PR", async () => {
+    const { status, body } = await revertUrl(seed(prStatus({ merged: true, state: "merged" })));
+    expect(status).toBe(200);
+    expect(body.url).toBe("https://example.test/pr/7/revert");
+    expect(getRevertUrl).toHaveBeenCalledWith(expect.objectContaining({ path: "acme/widgets" }), 7);
+  });
+
+  // The guard is load-bearing: ADR-0003 [6] could not establish what the
+  // provider does when asked to revert something that never merged, and we
+  // never want to find out by asking it.
+  it("409s when the PR has not merged, without calling the provider", async () => {
+    const { status, body } = await revertUrl(seed(prStatus({ merged: false, state: "open" })));
+    expect(status).toBe(409);
+    expect(body.error).toMatch(/merged/i);
+    expect(getRevertUrl).not.toHaveBeenCalled();
+  });
+
+  it("409s when the ticket has no PR at all", async () => {
+    const { status } = await revertUrl(seed(null));
+    expect(status).toBe(409);
+    expect(getRevertUrl).not.toHaveBeenCalled();
+  });
+
+  it("404s for an unknown ticket", async () => {
+    const { status } = await revertUrl(9999);
+    expect(status).toBe(404);
+  });
+
+  it("surfaces a provider failure with the PR url, redacted", async () => {
+    getRevertUrl.mockRejectedValue(new Error("upstream exploded"));
+    const { status, body } = await revertUrl(seed(prStatus({ merged: true, state: "merged" })));
+    expect(status).toBe(502);
+    expect(body.pr_url).toBe("https://example.test/pr/7");
   });
 });

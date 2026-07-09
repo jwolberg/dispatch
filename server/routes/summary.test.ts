@@ -72,6 +72,7 @@ function seed(pr: PRStatus | null): number {
     issue: { number: 1, title: "Do it", state: "open", url: "https://example.test/i/1", body: "" },
     progressComment: null,
     pr,
+    revertPr: null,
     runs: [],
   };
   upsertStatus(ticket.id, payload, new Date().toISOString());
@@ -203,6 +204,7 @@ describe("a new head SHA is a new summary", () => {
           issue: { number: 1, title: "Do it", state: "open", url: "u", body: "" },
           progressComment: null,
           pr: prStatus({ headSha: SHA_B }),
+          revertPr: null,
           runs: [],
         } satisfies StatusPayload,
         new Date().toISOString(),

@@ -804,3 +804,70 @@ through with a correction entry per the T0-7 style rather than rewritten.
 already exposes `Commits.revert` / `Branches.create` / `MergeRequests.create`.
 
 **No production code changed**, per the ticket.
+
+---
+
+## 2026-07-09 — #9 (T1-8): one-click revert, as a deep-link
+
+**The owner chose deep-link over the API path ADR-0003 recommended.** Recorded
+as `docs/decisions/0004-revert-ships-as-a-deep-link.md`, which supersedes only
+ADR-0003 §[7]; every finding in ADR-0003 still stands. Dispatch writes nothing to
+a user's repository, and ADR-0003 §[6]'s two undocumented questions (permissions
+for `revertPullRequest`, its behavior on an unmerged PR) stop mattering because
+we never call it. The cost is stated in ADR-0004 §[4]: "one click" now means one
+click to the provider, and GitLab has no revert page to link to, only its MR.
+
+**Deep-link is not the cheap option, and that was the surprise.** Because
+Dispatch no longer opens the revert PR, it does not know its number — so it has
+to recognize one. `findLinkedPR` lists PRs `updated`-descending and returns the
+first linkage match, and the branch rule matches the issue number *anywhere* in
+the branch. GitHub names a revert branch `revert-<prNumber>-<originalBranch>`, so
+reverting the PR on `claude/issue-1` yields `revert-7-claude/issue-1`, which
+still contains `1` and is newer. **The revert PR would have taken over the very
+card its button lives on.** `findLinked` now skips reverts; `findRevertPR` finds
+them deliberately. That exclusion is a bug fix independent of revert — any newer
+PR whose branch happened to contain the issue number could already displace the
+real one.
+
+**Checked the detection rules against real reverts, and it caught a false
+positive I had shipped.** Sampling revert PRs in `vercel/next.js` via the API:
+
+- `revert-90948-hl/revert-ppr-removal` / `Reverts vercel/next.js#90948` — the
+  generated shape, as assumed.
+- `revert-84628-canary` — **body rewritten in Spanish**, losing the `Reverts`
+  prefix. The branch survived. This is ADR-0003's "the body is not contractual,"
+  observed in the wild. Match branch first.
+- `sokra/cell-not-found` / `This reverts commit 7cb95fc…` — a hand-made revert.
+  Only git's boilerplate identifies it, and nothing attributes it to a PR number.
+- `revert-antialiasing` — **not a revert at all.** A human branch on a PR arguing
+  *for* antialiasing. My original `/^revert-/` rule classified it as one, which
+  would have erased a legitimate PR from its ticket (because `findLinked` skips
+  reverts). Tightened to `/^revert-\d+-/`. Each of these is now a named test.
+
+**GitLab needed a different attribution key, or it would have been dead code.**
+`api/v4` has no MR-level revert, so a GitLab revert MR cites the *commit* it
+undid, never the original MR's iid — matching on PR number would silently never
+fire. `findRevertPR` on GitLab resolves `squash_commit_sha ?? merge_commit_sha`
+and matches `This reverts commit <sha>` (prefix-compared, since git abbreviates).
+ADR-0003 flagged that squash field as a footgun for *performing* a revert; it
+turns out to matter for *detecting* one too.
+
+**Verified against the real GitHub API, read-only.** `getRevertUrl` returns
+`https://github.com/jwolberg/dispatch/pull/5/revert` — the GraphQL query is
+well-formed and the field name is right, which fakes cannot prove. `findRevertPR`
+returns null for a PR with no revert, and `findLinkedPR` still resolves PR #6 for
+issue #8. The second call came back `304`, confirming both share one ETag'd list
+rather than doubling the poll's request count.
+
+**Verified the UI by looking at it**, on a seeded throwaway DB (deleted): shipped
+card shows Ship disabled + Revert enabled; with a tracked revert it shows
+`#9 open ↗` and no button; not-shipped shows no revert affordance at all, and
+`GET /revert-url` 409s on that same state — the guard is enforced in both places,
+per the ticket.
+
+**Not covered, deliberately.** A hand-made revert on GitHub (normal branch name,
+only `This reverts commit <sha>` in the body) is recognized as *a* revert and so
+excluded from issue linkage, but is not attributed to the PR it reverts —
+`PRStatus` carries no merge-commit sha to match on. GitLab does this correctly
+because it must. If GitHub users start hand-reverting, the fix is to carry the
+merge sha on `PRStatus` and reuse `revertsCommit`.

@@ -29,6 +29,13 @@ export interface PRStatus {
   previewUrl: string | null;
 }
 
+/** A revert of the shipped PR, opened by the user on the provider (T1-8). */
+export interface RevertRef {
+  number: number;
+  url: string;
+  state: "open" | "closed" | "merged";
+}
+
 /** T1-5 — the plain-language summary above the fold. `risk` is a closed set (#7). */
 export interface ChangeSummary {
   whatChanged: string;
@@ -69,6 +76,8 @@ export interface TicketDetail {
     issue: { number: number; title: string; state: string; url: string; body: string };
     progressComment: { author: string | null; body: string; url: string | null } | null;
     pr: PRStatus | null;
+    /** A revert of `pr` the user opened on the provider's site (T1-8). */
+    revertPr: RevertRef | null;
     runs: Run[];
   } | null;
   updated_at: string | null;
@@ -87,6 +96,9 @@ export const ticketsApi = {
   ) => api.post<{ ok: boolean }>(`/tickets/${id}/skill`, body),
   merge: (id: number, method?: string) =>
     api.post<{ merged: boolean; sha: string | null }>(`/tickets/${id}/merge`, { method }),
+  // Dispatch does not revert (ADR-0004) — it resolves the provider's own revert
+  // page and the user finishes there.
+  revertUrl: (id: number) => api.get<{ url: string }>(`/tickets/${id}/revert-url`),
   file: (body: {
     repo_id: number;
     chat_id: number | null;
