@@ -7,9 +7,11 @@ status: active
 started: 2026-07-09T21:15:00Z
 ended: null
 goal: "Land the per-repo credential seam (#3): memoize getProvider on installation, mint/refresh tokens behind providers/, env token still flowing through"
-tickets: [3]
-branches: []
-prs: []
+tickets: [3, 21]
+branches:
+  - "feat/3-per-repo-credential-seam"
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/10"
 related_research: []
 related_docs:
   - "docs/decisions/0002-github-app-tokens-and-the-anti-recursion-rule.md"
@@ -220,7 +222,17 @@ _pending_
 
 ## [7] Follow-ups
 
-_pending_
+- **#21 — account-level provider calls have no credential under an App.** Filed
+  this session. `scheduler.ts`, `health.ts` and `routes/discover.ts` still use the
+  env token; `discoverRepos()` has no direct translation under an App because an
+  installation token enumerates only its installation's repos. Real product
+  surface, not a mechanical rewire.
+- **#2 — a memoized `AppTokenSource` outlives a rotated private key.** Noted in the
+  ticket. The installation store is the only thing that knows; `resetProviderCache()`
+  on any write to the installations table is probably enough.
+- **ADR-0006 [8]'s open inference.** The moment #2 registers an App, open a PR with
+  its installation token in a scratch repo and record the `workflow_run`. Until
+  then the App-token arm rests on documentation, not measurement.
 
 ## [8] Notes
 
