@@ -125,21 +125,26 @@ Branch `docs/adr-0006-app-registration-and-pr-authorship`, one commit ahead of
 
 ## [3] Checklist
 
-- [ ] 0003 — correct `depends_on` and fold the redactor prerequisite into the ticket ([2.2], [2.5])
-- [ ] 0003 — branch off `main` for the seam work
-- [ ] 0003 — write failing test: `safeMessage()` redacts a registered secret value that is absent from `process.env`
-- [ ] 0003 — implement value-registration in `redaction.ts`; keep the env-scan path working
-- [ ] 0003 — write failing test: `getProvider` returns the same instance for the same installation (ETag cache survives)
-- [ ] 0003 — write failing test: `getProvider` returns a *different* instance for a different installation
-- [ ] 0003 — write failing test: a repo with no installation resolves to the `GITHUB_TOKEN` adapter, and GitLab is untouched
-- [ ] 0003 — write failing test: an expired installation token is refreshed before use
-- [ ] 0003 — implement `InstallationStore` + `TokenSource` behind the seam; rekey the memo on `(provider, host, installationId)`
-- [ ] 0003 — verify no call site outside `server/providers/` mentions an installation (`npm run check:seam` + grep)
-- [ ] 0003 — `npm run verify` green (280 tests + seam guard)
-- [ ] 0003 — open PR + link PR url into ticket 0003 `prs:`
+- [x] 0003 — correct `depends_on` and fold the redactor prerequisite into the ticket ([2.2], [2.5])
+- [x] 0003 — branch off `main` for the seam work
+- [x] 0003 — write failing test: `safeMessage()` redacts a registered secret value that is absent from `process.env`
+- [x] 0003 — implement value-registration in `redaction.ts`; keep the env-scan path working
+- [x] 0003 — write failing test: `getProvider` returns the same instance for the same installation (ETag cache survives)
+- [x] 0003 — write failing test: `getProvider` returns a *different* instance for a different installation
+- [x] 0003 — write failing test: a repo with no installation resolves to the `GITHUB_TOKEN` adapter, and GitLab is untouched
+- [x] 0003 — write failing test: an expired installation token is refreshed before use
+- [x] 0003 — implement `InstallationStore` + `TokenSource` behind the seam; rekey the memo on `(provider, host, installationId)`
+- [x] 0003 — verify no call site outside `server/providers/` mentions an installation (`npm run check:seam` + grep)
+- [x] 0003 — `npm run verify` green (327 tests + seam guard)
+- [x] 0003 — open PR + link PR url into ticket 0003 `prs:`
 
 Deferred to Follow-ups: rewiring `discoverRepos`/rate-limit to installations
-([2.4]) — that is #2's swap, not the seam.
+([2.4]) — filed as **#21**. It is neither #2's nor #3's: registration and the seam
+are both mechanical, and this one changes what the Repos page's Discover section
+means.
+
+Added mid-session, not planned: single-flight minting and `invalidate(staleToken)`,
+both found by adversarial review ([5.1]).
 
 ## [4] Log
 
