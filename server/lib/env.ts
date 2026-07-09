@@ -1,4 +1,6 @@
 import dotenv from "dotenv";
+import { statSync } from "node:fs";
+import { dirname } from "node:path";
 
 dotenv.config();
 
@@ -33,4 +35,57 @@ export function loadConfig(): AppConfig {
   }
 
   return { port, host };
+}
+
+/**
+ * True when `dir` is a filesystem mount point — its device id differs from its
+ * parent's. This is how we tell a mounted volume (durable) from a path on the
+ * container's own writable layer (wiped on redeploy).
+ */
+export function isMountPoint(dir: string): boolean {
+  const parent = dirname(dir);
+  if (parent === dir) return true; // "/" is a mount point
+  try {
+    return statSync(dir).dev !== statSync(parent).dev;
+  } catch {
+    return false; // can't stat → assume not mounted, and warn
+  }
+}
+
+export interface EphemeralDbProbe {
+  allowNonLocal: boolean;
+  isMountPoint: (dir: string) => boolean;
+}
+
+/**
+ * Warn when the SQLite file lives on storage that will not survive a redeploy
+ * (T0-10, DEPLOY.md §4).
+ *
+ * Only fires in container mode (ALLOW_NONLOCAL=1). Locally, `data/` on the
+ * developer's disk is exactly right and needs no warning. In a container, the
+ * DB directory must be a mounted volume or the repo registry and filed tickets
+ * are lost on the next revision — a failure mode worth announcing at boot
+ * rather than discovering afterwards.
+ *
+ * Returns the warning text, or null when the path is durable.
+ */
+export function ephemeralDbWarning(dbPath: string, probe: EphemeralDbProbe): string | null {
+  if (!probe.allowNonLocal) return null;
+  const dir = dirname(dbPath);
+  if (probe.isMountPoint(dir)) return null;
+  return (
+    `[dispatch] WARNING: ${dbPath} is not on a mounted volume. ` +
+    `In a container this file is lost on redeploy or instance recycle, taking ` +
+    `the repo registry and filed tickets with it. Derived state rebuilds from ` +
+    `the provider, but tracked repos do not. Mount a volume at ${dir} — see DEPLOY.md §4.`
+  );
+}
+
+/** Emit the ephemeral-DB warning to stderr, if applicable. */
+export function warnIfEphemeralDb(dbPath: string): void {
+  const warning = ephemeralDbWarning(dbPath, {
+    allowNonLocal: process.env.ALLOW_NONLOCAL === "1",
+    isMountPoint,
+  });
+  if (warning) console.warn(warning);
 }
