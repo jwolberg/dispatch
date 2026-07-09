@@ -362,6 +362,34 @@ export function createGithubAppRouter(deps: Partial<GithubAppDeps> = {}): Router
 
   const router = Router();
 
+  // What the setup screen renders. Deliberately a hand-built projection, not a
+  // filtered AppRecord: adding a field here has to be a decision, so a future
+  // credential added to AppRecord cannot leak by being spread into a response.
+  router.get("/app", (_req, res) => {
+    const installations = store();
+    if (!installations) {
+      res.json({ registered: false, encryptionKeyConfigured: false, installations: [] });
+      return;
+    }
+
+    const app = installations.getApp();
+    res.json({
+      registered: !!app,
+      encryptionKeyConfigured: true,
+      app: app
+        ? { appId: app.appId, slug: app.slug, name: app.name, htmlUrl: app.htmlUrl ?? null }
+        : null,
+      installUrl: app ? `${GITHUB_WEB}/apps/${encodeURIComponent(app.slug)}/installations/new` : null,
+      installations: installations.listInstallations().map((i) => ({
+        installationId: i.installationId,
+        accountLogin: i.accountLogin,
+        accountType: i.accountType,
+        repositorySelection: i.repositorySelection,
+        repoCount: i.repos.length,
+      })),
+    });
+  });
+
   // Step 1. Hand the browser a manifest and the action URL to POST it to. The
   // operator's click on GitHub's own page is the escalating-cost action, and it
   // never leaves their hands (ADR-0006 [5]).

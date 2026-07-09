@@ -303,3 +303,96 @@ describe("GET /api/github/installed", () => {
     expect(store().listInstallations()).toEqual([]);
   });
 });
+
+describe("GET /api/github/app — what the setup screen reads", () => {
+  beforeEach(() => {
+    resetDb();
+    __resetRegisteredSecrets();
+  });
+  afterEach(() => __resetRegisteredSecrets());
+
+  function app(over: Parameters<typeof createGithubAppRouter>[0] = {}) {
+    const a = express();
+    a.use(express.json());
+    a.use("/api/github", createGithubAppRouter({ store: () => store(), baseUrl: () => "https://d.test", ...over }));
+    return a;
+  }
+
+  it("reports an unregistered deployment", async () => {
+    await withServer(app(), async (base) => {
+      const body = await (await fetch(`${base}/api/github/app`)).json();
+      expect(body).toMatchObject({ registered: false, encryptionKeyConfigured: true, installations: [] });
+    });
+  });
+
+  it("reports a missing encryption key so the screen can tell the operator", async () => {
+    await withServer(app({ store: () => null }), async (base) => {
+      const body = await (await fetch(`${base}/api/github/app`)).json();
+      expect(body).toMatchObject({ registered: false, encryptionKeyConfigured: false });
+    });
+  });
+
+  it("describes the App and its install url", async () => {
+    store().saveApp(APP);
+    await withServer(app(), async (base) => {
+      const body = (await (await fetch(`${base}/api/github/app`)).json()) as Record<string, unknown>;
+      expect(body.registered).toBe(true);
+      expect(body.app).toEqual({
+        appId: 987654,
+        slug: "dispatch-acme",
+        name: "Dispatch (acme)",
+        htmlUrl: "https://github.com/apps/dispatch-acme",
+      });
+      expect(body.installUrl).toBe("https://github.com/apps/dispatch-acme/installations/new");
+    });
+  });
+
+  it("NEVER serves the private key, client secret, or webhook secret", async () => {
+    // The single most important assertion in this file. This endpoint is behind
+    // the same shared-password gate as everything else, which is not much of a
+    // gate, and its response is the easiest place for a credential to escape.
+    store().saveApp(APP);
+    store().saveInstallation({
+      installationId: 42,
+      accountLogin: "acme",
+      accountType: "Organization",
+      repositorySelection: "selected",
+      repos: ["acme/widgets"],
+    });
+
+    await withServer(app(), async (base) => {
+      const raw = await (await fetch(`${base}/api/github/app`)).text();
+      expect(raw).not.toContain("PRIVATE KEY");
+      expect(raw).not.toContain(privateKey);
+      expect(raw).not.toContain(APP.clientSecret);
+      expect(raw).not.toContain(APP.webhookSecret as string);
+      expect(raw).not.toContain(APP.clientId);
+    });
+  });
+
+  it("summarizes installations by count, not by listing every repo", async () => {
+    store().saveApp(APP);
+    store().saveInstallation({
+      installationId: 42,
+      accountLogin: "acme",
+      accountType: "Organization",
+      repositorySelection: "selected",
+      repos: ["acme/a", "acme/b"],
+    });
+
+    await withServer(app(), async (base) => {
+      const body = (await (await fetch(`${base}/api/github/app`)).json()) as {
+        installations: Array<Record<string, unknown>>;
+      };
+      expect(body.installations).toEqual([
+        {
+          installationId: 42,
+          accountLogin: "acme",
+          accountType: "Organization",
+          repositorySelection: "selected",
+          repoCount: 2,
+        },
+      ]);
+    });
+  });
+});
