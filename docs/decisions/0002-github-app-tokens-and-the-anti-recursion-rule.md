@@ -2,7 +2,7 @@
 id: 0002
 title: GitHub App installation tokens and the anti-recursion rule
 anchor: ADR-0002
-status: proposed
+status: accepted
 date: 2026-07-09
 supersedes:
 superseded-by:
@@ -10,9 +10,9 @@ superseded-by:
 
 Spike T1-0 (ticket #1), gating Tier 1's onboarding track (#2 → #3 → #4 → #5).
 
-**Status is `proposed`, not `accepted`:** the documentary half is settled and
-cited below. The empirical half — an observed `workflow_run` in a scratch repo —
-has not been performed. See [5].
+`accepted` on the decision it enables — the App is worth registering and the
+non-default-token mechanism is real. One arm rests on documentation rather than
+observation, and [5] says exactly which. Read [5] before relying on that arm.
 
 ## [1] Context
 
@@ -65,6 +65,33 @@ run exists. It just never executes.
 The canary must assert on run *status*, not run presence. Ticket #5's acceptance
 criteria have been amended accordingly.
 
+## [3.1] A second, earlier failure mode: Actions may not be allowed to open a PR at all
+
+Observed on `jwolberg/situation` (2026-07-09):
+`GET /repos/jwolberg/situation/actions/permissions/workflow` returns
+`can_approve_pull_request_reviews: false`. That field backs the repository
+setting **"Allow GitHub Actions to create and approve pull requests."** With it
+off, a workflow using `GITHUB_TOKEN` cannot open a pull request at all — the API
+returns 403 *"GitHub Actions is not permitted to create or approve pull
+requests."*
+
+So the default-token path has **two** distinct failure modes, not one:
+
+| Setting | What happens with `GITHUB_TOKEN` |
+|---|---|
+| Actions may create PRs | PR opens; `pull_request` run is created but parks in `action_required` |
+| Actions may **not** create PRs | PR never opens; 403 at creation |
+
+The second is a *harder* failure — nothing to approve, no banner, no run. It is
+also `situation`'s current posture, and the setting is governed at
+enterprise → org → repo, so a repo-level fix can be silently overridden upstream.
+
+Consequences: #5's canary must distinguish these two signatures in its
+"actionable message" criterion, and #4's setup must either detect the setting or
+sidestep it. A GitHub App installation token is not `GITHUB_TOKEN` and is
+unaffected by this toggle — one more point in the App's favor, and one that the
+plan did not know about.
+
 ## [4] Consequences
 
 **#4 (T1-3) — `GH_PAT` leaves onboarding, but is replaced, not eliminated.**
@@ -104,19 +131,44 @@ Two alternatives worth costing before committing, neither yet verified:
 **#2 (T1-1) and #3 (T1-2) — unchanged.** The App is still worth registering, and
 the credential seam still lands before the source swaps.
 
-## [5] Unverified, and what would close it
+## [5] Evidence: what was observed, what was inferred
 
-Acceptance criterion 3 on ticket #1 requires an *observed* run, not a reading of
-the docs, precisely because this ADR's whole value is catching a place where the
-docs and our prior belief diverged. Outstanding:
+Ticket #1's third acceptance criterion demanded an *observed* run rather than a
+reading of the docs. Here is exactly how much of that we have.
 
-- In a scratch repo, open a PR authenticated with `GITHUB_TOKEN`; record the run
-  id and confirm its status is `action_required`.
-- Repeat with an installation access token; confirm the run executes.
-- Record both run URLs here and move this ADR to `accepted`.
+**Observed — a non-default token opens a PR and CI executes normally.**
+`jwolberg/situation` is already onboarded by `scripts/install-claude-action.sh`,
+so `claude.yml` opens PRs with `secrets.GH_PAT`. Its history is the experiment,
+already run:
 
-Creating a scratch repo and running Actions against a real GitHub account is an
-outward-facing action and has not been taken without approval.
+- PR [#22](https://github.com/jwolberg/situation/pull/22), head
+  `fix/fx-snapshot-empty-map-clears-quotes`, author `jwolberg` (the PAT's
+  identity — not `github-actions[bot]`).
+- The `pull_request` event created run
+  [29033394141](https://github.com/jwolberg/situation/actions/runs/29033394141):
+  workflow `CI`, `status: completed`, `conclusion: success`, `actor: jwolberg`.
+  No approval gate.
+
+**Observed — this repo cannot open a PR with `GITHUB_TOKEN` at all.** See [3.1].
+
+**Inferred, not observed — `GITHUB_TOKEN` reaching `action_required`.** Producing
+it requires enabling "Allow GitHub Actions to create and approve pull requests"
+on a real repo. That was declined (2026-07-09), correctly: the state we would
+have manufactured is not this repo's actual posture, and [3.1] is the failure
+mode that would really bite. This arm rests on GitHub's documentation, quoted in
+[2].
+
+**Inferred, not observed — an *installation* token specifically.** We observed a
+fine-grained PAT. GitHub's documentation treats a PAT and an App installation
+access token identically for this purpose, naming them in the same sentence as
+the remedy. The substitution was a deliberate choice (2026-07-09) to avoid
+registering a GitHub App, which is ticket #2 — the very thing this spike gates.
+
+**What would close the gap, if it ever needs closing:** #2 registers the App.
+Once one exists, re-run the PAT observation with an installation token in a repo
+Dispatch owns. Until then, treat the App-token arm as well-supported inference,
+not measurement — and do not let #4's design depend on a behavior that differs
+between a PAT and an installation token, because we have not distinguished them.
 
 ## [6] Sources
 

@@ -51,20 +51,31 @@ start #2 before it is settled.
   onboarding, or stay?
 - No production code changes.
 
-## Progress — 2026-07-09
+## Outcome — 2026-07-09
 
-Documentary half **done**: [ADR-0002](../../docs/decisions/0002-github-app-tokens-and-the-anti-recursion-rule.md)
-(`status: proposed`). The claim holds, but the "default token does not trigger"
-half was overstated — a `pull_request` opened by `GITHUB_TOKEN` *does* create a
-run, in `action_required`. That correction already fixed a latent bug in the
-acceptance criteria of #5.
+Answered. Deliverable: [ADR-0002](../../docs/decisions/0002-github-app-tokens-and-the-anti-recursion-rule.md)
+(`accepted`). The plan's claim holds; two corrections came out of it.
 
-Empirical half **blocked, needs approval**: acceptance criterion 3 requires an
-observed run in a scratch repo. Creating a repo and running Actions against a
-real GitHub account is outward-facing and was not done unilaterally.
+1. "The default token does not trigger" is overstated. A `pull_request` opened by
+   `GITHUB_TOKEN` *does* create a run — parked in `action_required`. This fixed a
+   latent bug in #5, whose canary polled for run *existence* and would have gone
+   green on the exact misconfiguration it exists to catch.
+2. There is an earlier failure mode nobody had written down: with "Allow GitHub
+   Actions to create and approve pull requests" off, `GITHUB_TOKEN` cannot open a
+   PR at all (403). `jwolberg/situation` is in that state today. #4 and #5 both
+   amended.
 
-Ticket stays `in-progress` until the observed runs are recorded in ADR-0002 §5
-and the ADR moves to `accepted`.
+`GH_PAT` does leave onboarding — replaced by `APP_CLIENT_ID` + `APP_PRIVATE_KEY`,
+which inverts the credential blast radius. Flagged as an approval gate on #4.
+
+**Evidence, honestly:** the non-default-token arm was *observed*
+(`jwolberg/situation` PR #22 → run 29033394141, `conclusion: success`). The
+`action_required` arm and the App-token-specifically arm rest on GitHub's
+documentation — see ADR-0002 [5] for why each was not measured and what would
+close the gap. AC 3 is therefore **partially met by design**, with the residual
+gap named rather than papered over.
+
+Closes when its PR merges (per CLAUDE.md [4.1]).
 
 ## Design notes
 

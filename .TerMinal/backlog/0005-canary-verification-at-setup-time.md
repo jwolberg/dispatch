@@ -23,6 +23,7 @@ acceptance:
   - "A test asserts the canary fails against a fixture whose run status is action_required"
   - "On completion it closes the throwaway issue and deletes any branch the run created, on both the pass and fail paths"
   - "Pass/fail and the timestamp are persisted and rendered on the repo card"
+  - "A failed canary distinguishes the two default-token failure modes by message: a 403 at PR creation (Actions not permitted to create PRs) versus a run parked in action_required (Actions may create PRs but the run needs approval). See ADR-0002 [3.1]."
   - "A failed canary produces an actionable message naming the likely cause, not a generic error"
   - "The cleanup path is covered by a test that asserts no throwaway artifacts survive a failed canary"
 agent_id: 1000x-ai-engineer

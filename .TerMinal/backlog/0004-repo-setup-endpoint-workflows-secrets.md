@@ -14,6 +14,7 @@ refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-3"
   - "scripts/install-claude-action.sh"
+  - "ADR-0002"
 depends_on: [3]
 acceptance:
   - "One POST commits .github/workflows/claude.yml, a stack-aware ci.yml from scripts/repo-ci/, and the plan/implement/debug skills from scripts/repo-skills/ into the target repo"
@@ -57,6 +58,21 @@ secret.
 
 The sealed-box encryption is the one genuinely fiddly part; everything else is a
 transliteration of the bash.
+
+**Credential shape changed by ADR-0002.** `GH_PAT` leaves onboarding, but it is
+replaced by `APP_CLIENT_ID` (a repo variable) + `APP_PRIVATE_KEY` (a repo
+secret), which `actions/create-github-app-token` uses to mint an installation
+token inside the workflow. Before implementing, settle the tradeoff recorded in
+ADR-0002 [4]: an App private key mints tokens for *every* installation of the
+App, so writing it into each user repo inverts the blast radius versus a
+per-repo fine-grained PAT. Two alternatives are costed there and neither has
+been chosen. **This is an approval gate, not an implementation detail.**
+
+**Also from ADR-0002 [3.1]:** setup should detect
+`can_approve_pull_request_reviews` on the target repo. With it off, a
+`GITHUB_TOKEN`-authored PR 403s at creation. An App installation token is
+unaffected by that toggle, so the App path sidesteps it — but the canary (#5)
+must still report the condition clearly if a repo lands in that state.
 
 The `ANTHROPIC_API_KEY` deletion is not a nicety. Per `docs/implementation-notes.md`
 (2026-06-12): the API key outranks the OAuth token in Claude's auth precedence,
