@@ -1,7 +1,7 @@
 ---
 id: 7
 title: "Preview-first card: hero preview + single verdict chip"
-status: open
+status: in-progress
 priority: medium
 horizon: now
 hitl: false

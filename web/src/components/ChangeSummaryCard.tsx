@@ -65,28 +65,20 @@ export function ChangeSummaryCard({ ticketId, headSha }: { ticketId: number; hea
     };
   }, [ticketId, headSha]);
 
-  if (loading) {
-    return (
-      <section className="rounded-lg border border-border bg-surface p-4">
-        <p className="text-body text-gray-500">Summarizing the change…</p>
-      </section>
-    );
-  }
+  // The card chrome belongs to the hero block that wraps this (T1-6); rendering
+  // a second bordered box inside it would compete with the verdict chip.
+  if (loading) return <p className="text-body text-gray-500">Summarizing the change…</p>;
 
   if (!summary) {
-    // "No PR yet" is the normal early state of every ticket; it does not deserve
-    // a section header of its own.
+    // "No PR yet" is the normal early state of every ticket; the verdict chip
+    // above already says so, and a second line saying it would be noise.
     if (!unavailable || unavailable === "no-pr") return null;
-    return (
-      <section className="rounded-lg border border-border bg-surface p-4">
-        <p className="text-label text-gray-500">{UNAVAILABLE_TEXT[unavailable]}</p>
-      </section>
-    );
+    return <p className="text-label text-gray-500">{UNAVAILABLE_TEXT[unavailable]}</p>;
   }
 
   return (
-    <section className="rounded-lg border border-border bg-surface p-4">
-      <div className="mb-2 flex items-center gap-2">
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-body font-semibold text-gray-200">What changed</h2>
         <span className={`rounded-full border px-2 py-0.5 text-label ${RISK_CLS[summary.risk]}`}>
           {RISK_LABEL[summary.risk]}
@@ -99,6 +91,6 @@ export function ChangeSummaryCard({ ticketId, headSha }: { ticketId: number; hea
         How to test it
       </h3>
       <p className="text-body text-gray-300">{summary.howToTest}</p>
-    </section>
+    </div>
   );
 }

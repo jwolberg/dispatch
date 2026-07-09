@@ -713,3 +713,43 @@ the human before implementation and are recorded in the two ticket bodies.
 **Still open.** The `review-this` chip has no consumer until #7 renders it. Per-ticket
 spend attribution now has its first writer (`kind: "summary"`, `ticket_id` set) but
 still no reader until #14.
+
+---
+
+## 2026-07-09 — T1-6 (#7): preview-first card, single verdict chip
+
+**One source of truth for "are we green".** The chip is a pure function of the
+derived `column` — `web/src/lib/verdict.ts` — and never reads `pr.checks`. Reading
+the checks here would be a second implementation of the precedence table T0-2
+established server-side, and the two would drift precisely when they disagree most.
+`nextHint()` still consults runs and the plan comment, but only to pick a *sentence*;
+it no longer decides a color.
+
+**Pending is a first-class third state.** `Building` means a check is still running;
+rendering that as green tells the user to ship. An unrecognized column also degrades
+to pending, never to pass — a column added server-side before the web catches up must
+fail safe. Both are pinned by tests, including one that asserts the *complete* set of
+pass-columns is exactly `["Ready to test", "Shipped"]`.
+
+**The header `StatusChip` was removed from the card.** Two colored chips saying the
+same thing is the noise this ticket exists to remove. `StatusChip` still labels the
+Board columns, which is its real job.
+
+**vitest now includes web pure-logic tests.** No DOM, so `environment: node` still
+holds and no jsdom / testing-library dependency was added. Components stay verified
+by typecheck and by eye.
+
+**Verified by actually looking at it,** not by reading CSS: a throwaway seeded DB
+(`data/ui-check.db`, since deleted) plus the real server and Vite, driven at a
+390x844 viewport. Confirmed the green / pending / red states render distinctly
+(`Building` computes to `rgb(245,158,11)` — amber, not green), the check list is
+`<details>` with zero `[open]`, and the summary leads the card.
+
+**One bug found and NOT fixed here.** At 390px the page has
+`scrollWidth: 483` against `clientWidth: 390`. The overflow is the app shell's
+`<nav class="flex gap-1">`, not the card — nothing inside the card overflows. It is
+pre-existing and unrelated, so it was filed as **#18** rather than smuggled into this
+ticket. The card itself meets the "legible at phone width" criterion.
+
+**Scoped out, per the ticket:** preview screenshots. "Hero preview" in this tier
+means the summary block, not a rendered screenshot.
