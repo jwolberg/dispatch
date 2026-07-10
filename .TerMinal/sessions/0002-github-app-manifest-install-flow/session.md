@@ -3,9 +3,9 @@ id: 2
 slug: github-app-manifest-install-flow
 anchor: SES-0002
 title: "GitHub App (#2) — manifest registration, install flow, encrypted key at rest"
-status: active
+status: closed
 started: 2026-07-09T22:11:01Z
-ended: null
+ended: 2026-07-10T18:40:00Z
 goal: "Land ticket #2 (T1-1): GitHub App manifest registration + OAuth install flow — per-deployment App registration, SQLite-backed InstallationStore wired at boot, encrypted private key at rest, value-registration redactor"
 tickets: [2]
 branches:
@@ -217,6 +217,37 @@ ticket text, both recorded in [2.2] and [2.4]: the redactor inversion is already
 done (only the SQLite-key registration and its test remain), and the account-level
 `getProvider()` rewiring is ticket #21, not this one. Checklist reflects both.
 
+### [4.2] 2026-07-09 — the ADR was wrong about GitHub's format
+
+Before writing the manifest builder, checked the format against GitHub's OpenAPI
+description and the live `permissions` object of three real Apps. Three of
+ADR-0006 [5]'s claims were false, and all three would have compiled. See [5.4].
+Cost about fifteen minutes; would otherwise have cost a wrong-owner App.
+
+### [4.3] 2026-07-09 — a leak the tests did not catch
+
+Mutating `safeMessage(err)` to `String(err)` on the 502 path left the suite green.
+The weak test was hiding a real gap: `convertManifestCode()` held the plaintext PEM
+from the moment GitHub returned it until `saveApp()` encrypted it, and never told
+the redactor. Anything throwing in that window would have logged the private key.
+Now registered on the success *and* failure paths; two tests pin it.
+
+### [4.4] 2026-07-10 — /session-end found a durability bug in merged code
+
+The cleanup pass asked "what makes this new write path durable?" and the answer was
+"nothing." `db/installations.ts` never called `markDirty()`, and both write paths
+are **GET** requests (GitHub's own redirects), which `snapshotMiddleware`
+short-circuits on purpose so that a board poll never costs an upload.
+
+Net effect on Cloud Run: register an App, redeploy, and the registration is gone.
+Dispatch boots clean — no `github_app` row, so the boot gate stays silent — and
+falls back to `GITHUB_TOKEN`. Exactly the failure [5.3] was written to prevent,
+through a door [5.3] does not watch.
+
+Fixed in `a3494b1`, mutation-checked, captured as
+[[oauth-callbacks-are-gets-that-write]]. This is the argument for exercising the
+App path locally before deploying it — see [7].
+
 ## [5] Decisions
 
 ### [5.1] AES-256-GCM envelope, `v1.iv.tag.ciphertext`, keyed by `DISPATCH_ENCRYPTION_KEY`
@@ -242,6 +273,16 @@ Not "warn and fall back." A registered App whose private key cannot be decrypted
 silently reverting to `GITHUB_TOKEN`, is precisely the failure mode this ticket
 exists to prevent. `openInstallationStore()` throws. No App and no key is still a
 clean boot — that is the documented local path.
+
+### [5.5] A redirect target must flush its own snapshot
+
+`snapshotMiddleware` skips `GET`/`HEAD` so a board poll never costs an upload. That
+guard encodes "GETs do not write irreplaceable state" — true of every route until
+this one. GitHub's `redirect_url` and `setup_url` are GETs *it* chooses, and they
+write the private key. The routes flush for themselves; a failed upload logs and
+redirects anyway, because the row is committed locally and stays dirty for the next
+mutating request to retry. Failing an operator's install over a transient GCS error
+is worse than a stale snapshot.
 
 ### [5.4] ADR-0006 [5] was factually wrong about `?org=` — corrected
 
@@ -315,6 +356,10 @@ need an App on a real account — moved to **#22**, not quietly dropped.
   re-runs. #17's webhooks are the real fix; see [5.2].
 - **Webhook declared but `active: false`.** Nothing verifies signatures until #17.
 - A `selected` installation beyond 1000 repos is not fully enumerated; it warns.
+- **`snapshotMiddleware`'s method guard is a latent trap.** Fixed at the two call
+  sites this session introduced ([5.5]); the *class* of bug survives for the next
+  redirect-target route. Candidate ticket — see [[oauth-callbacks-are-gets-that-write]].
+- **The App path has never been exercised end to end against real GitHub.** #22.
 
 ## [8] Documentation
 
@@ -330,5 +375,17 @@ need an App on a real account — moved to **#22**, not quietly dropped.
 - `server/db/schema.sql` — the design comment gains a third axis. It reasoned about
   disposable vs irreplaceable; `github_app` and `installations` are the first tables
   that are **confidential**.
+
+- `docs/learnings/verify-external-formats-before-encoding-them.md` (LRN) — the three
+  wrong ADR claims, how each was caught, and the rule: an ADR is authoritative about
+  *why we chose this*, never about someone else's wire format.
+- `docs/learnings/oauth-callbacks-are-gets-that-write.md` (LRN) — the durability bug
+  in [4.4], and the general question to ask of any new write path.
+- `docs/ARCHITECTURE.md` — §5 no longer claims the App path is unwired; §6 gains the
+  confidential axis (and sheds pre-existing drift: `etag_map_json` was dropped by
+  T0-9, `http_cache`/`summary_cache`/`spend` were missing); §11 documents the four
+  `/api/github` routes; §14 no longer says "env-only secrets."
+- `docs/BUILD_PLAN-v2.md` — Tier 1 status refreshed (8/10), #22 inserted ahead of
+  T1-3 in the sequencing graph, T1-0's spike recorded as *half*-settled.
 
 **Still to document:** nothing blocking. ADR-0006 [8] gets its evidence from #22.
