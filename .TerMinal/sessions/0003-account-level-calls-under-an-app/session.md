@@ -139,42 +139,42 @@ which PR #12 edits only in a comment.
 
 ### [3.1] The seam — one adapter per credential
 
-- [ ] write failing test: `getAccountProviders("github")` returns the env adapter
+- [x] write failing test: `getAccountProviders("github")` returns the env adapter
       when no store is injected, and the same instance `getProvider()` hands back
-- [ ] write failing test: with two installations it returns two distinct adapters,
+- [x] write failing test: with two installations it returns two distinct adapters,
       and neither is the env adapter
-- [ ] write failing test: `getAccountProviders("gitlab")` ignores the store entirely
-- [ ] write failing test: with an App and **no** `GITHUB_TOKEN` it returns the
+- [x] write failing test: `getAccountProviders("gitlab")` ignores the store entirely
+- [x] write failing test: with an App and **no** `GITHUB_TOKEN` it returns the
       installation adapters and does **not** throw `requireEnv`
-- [ ] implement `getAccountProviders()` + `InstallationStore.list()` behind the seam
-- [ ] implement scope-aware `discoverRepos()` (`/user/repos` vs
+- [x] implement `getAccountProviders()` + `InstallationStore.list()` behind the seam
+- [x] implement scope-aware `discoverRepos()` (`/user/repos` vs
       `/installation/repositories`), with a failing test per branch first
 
 ### [3.2] Discover
 
-- [ ] write failing test: `GET /api/discover` merges repos across two installations
-- [ ] write failing test: it returns 200 (not 502) with no `GITHUB_TOKEN`
-- [ ] write failing test: one installation failing does not lose the other's repos
-- [ ] implement `discover.ts` fan-out
+- [x] write failing test: `GET /api/discover` merges repos across two installations
+- [x] write failing test: it returns 200 (not 502) with no `GITHUB_TOKEN`
+- [x] write failing test: one installation failing does not lose the other's repos
+- [x] implement `discover.ts` fan-out
 
 ### [3.3] Health + rate limit
 
-- [ ] write failing test: health reports `configured: true` when an App is registered
+- [x] write failing test: health reports `configured: true` when an App is registered
       and no env token is set — the current silent lie
-- [ ] write failing test: health returns one entry per installation
-- [ ] write failing test: the banner's reduction is the **minimum** remaining
-- [ ] implement `health.ts` + `scheduler.ts` (drop the `!process.env.GITHUB_TOKEN`
+- [x] write failing test: health returns one entry per installation
+- [x] write failing test: the banner's reduction is the **minimum** remaining
+- [x] implement `health.ts` + `scheduler.ts` (drop the `!process.env.GITHUB_TOKEN`
       early return)
 
 ### [3.4] Retire `getProvider()`
 
-- [ ] write failing test: no GitHub caller reaches the env-only account factory
-- [ ] remove it, or document it env-token-only with no remaining GitHub caller
-- [ ] update `ARCHITECTURE.md` §5's "three call sites have no repo" paragraph
+- [x] write failing test: no GitHub caller reaches the env-only account factory
+- [x] remove it, or document it env-token-only with no remaining GitHub caller
+- [x] update `ARCHITECTURE.md` §5's "three call sites have no repo" paragraph
 
 ### [3.5] Prove the exit criterion
 
-- [ ] boot with `GITHUB_TOKEN` unset + an App: `/api/health` honest, `/api/discover`
+- [x] boot with `GITHUB_TOKEN` unset + an App: `/api/health` honest, `/api/discover`
       200, `/api/board` 200 — driven against the real server, from a cwd with no `.env`
 - [ ] `npm run verify` green; open PR + link into ticket #21
 
