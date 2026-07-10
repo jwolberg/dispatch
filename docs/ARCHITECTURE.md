@@ -211,8 +211,15 @@ oversight.
 > otherwise mint against dead credentials forever — a 401 re-mints exactly once, with the same
 > stale key.
 >
-> `GITHUB_TOKEN` is **still required**, because of the three account-level call sites above. It is
-> also still the whole GitLab story and the documented local-development path.
+> **What the env token is still for** (measured 2026-07-10 by booting with `GITHUB_TOKEN` unset and
+> an App registered, not inferred): the process boots, names the App, and serves the board — no code
+> path demands it. But `GET /api/discover` returns **502**, because an installation token enumerates
+> only *its* repos and never an account's; `GET /api/health` reports GitHub `configured: false`
+> even though an App is registered; and the rate-limit gauge is never fed. Ticket **#21** owns all
+> three. `GITHUB_TOKEN` also remains the whole GitLab story and the documented local path.
+>
+> Not yet observed: that a repo under an installation *polls green* with no env token. The
+> credential resolves without it; the round trip needs a real App (ticket **#22**).
 
 ---
 

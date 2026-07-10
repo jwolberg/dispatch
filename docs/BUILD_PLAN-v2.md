@@ -197,7 +197,7 @@ first ship, for a user who cannot read a diff and has never minted a PAT.
 
 | Ticket | Title | Why it exists |
 |---|---|---|
-| #21 | Account-level provider calls under an App | T1-2 could not resolve the rate-limit probe, health route, or `discoverRepos()` — they have no repo, so no installation. `GITHUB_TOKEN` is **still required** even with an App installed, and onboarding is not PAT-free until this lands. |
+| #21 | Account-level provider calls under an App | T1-2 could not resolve the rate-limit probe, health route, or `discoverRepos()` — they have no repo, so no installation. Measured 2026-07-10: with an App and no `GITHUB_TOKEN`, Dispatch **boots and serves the board**, but `/api/discover` 502s and `/api/health` reports GitHub `configured: false` while an App is registered. Onboarding is not PAT-free until this lands. |
 | #22 | Live-verify the App path | T1-1's AC 6 and AC 13 need an App on a real account. Closes ADR-0006 [8]'s open inference. `hitl` — only the operator can register an App. |
 
 **T1-0 — Spike, and it gates the whole tier.**
@@ -255,11 +255,13 @@ seam first, with the env token still flowing through it, then swap the source.
 >   lives in SQLite, AES-256-GCM encrypted under `DISPATCH_ENCRYPTION_KEY`, because
 >   `snapshot.ts` uploads the whole database to a versioned bucket. `DEPLOY.md` §1.1
 >   and §4.1. Boot **refuses to start** when an App is registered and the key is gone.
-> - **`GITHUB_TOKEN` did not go away, and will not until #21.** The memo-key change
->   landed, but the rate-limit probe, the health route, and `discoverRepos()` are
->   account-level calls with no repo and therefore no installation to resolve
->   against. The plan says "`GITHUB_TOKEN` must keep working"; what it did not say is
->   that it stays *required*.
+> - **`GITHUB_TOKEN` did not go away, and will not until #21** — but it is narrower
+>   than it first looked. Measured, not inferred: with an App registered and no env
+>   token, the process boots and the board serves; nothing on the per-repo credential
+>   path demands it. What breaks is `/api/discover` (502 — an installation token
+>   enumerates only its own repos) and `/api/health` (reports `configured: false`
+>   while an App is registered). The plan said "`GITHUB_TOKEN` must keep working"; it
+>   did not anticipate that its *absence* would make the health check lie.
 > - **Three of ADR-0006's claims about GitHub's manifest format were wrong**, and all
 >   three would have compiled: there is no `?org=` parameter (ownership is chosen by
 >   the path), `webhook_secret` is nullable, and the manifest code is documented to
@@ -432,10 +434,14 @@ which is why it depends on T2-6 landing first.
 3. **T2-6 — OIDC provider.** GitHub as the identity provider is the obvious
    default given every user already has an account and we are already asking for
    an App installation. Recommend it; confirm before building.
-4. **New (T1-1) — is `GITHUB_TOKEN` allowed to remain required?** #21 retires it
-   from the three account-level call sites. Until then, "no PAT" is true of the
-   *repo* path and false of the *deployment*. Decide whether #21 blocks the Tier 1
-   exit criteria or merely precedes the public claim.
+4. **New (T1-1) — what should Discover *show* when an App is installed?** This is the
+   open product decision inside #21, and it must be answered before that ticket is
+   built. An installation token cannot enumerate an account's repos, so either
+   Dispatch fans out over `GET /app/installations` → `GET /installation/repositories`
+   and merges, or it drops server-side discovery on the App path and lets GitHub's
+   own installation picker be the discovery UI. The second is less code and matches
+   where the operator already chose repos in #2's flow — but it changes what the
+   Repos page's **Discover** section means.
 
 **Escalating-cost items flagged for explicit approval before execution**, per the
 decision protocol: ~~T1-1 (registers an external GitHub App)~~ — *dissolved by
@@ -474,8 +480,9 @@ remains is the onboarding track, and it is strictly serial. **#22 is inserted ah
 of T1-3 on purpose:** T1-3 and T1-4 are both built on ADR-0006 [8]'s unobserved
 arm, so verifying it costs fifteen minutes and de-risks two L/M tickets.
 
-#21 is off the critical path but gates the *claim*. Until it lands, "no PAT" is
-true of onboarding a repo and false of standing up a deployment.
+#21 is off the critical path but gates the *claim*. Until it lands, "no PAT" is true
+of onboarding a repo and false of **Discover**, which is how a repo gets onboarded in
+the first place.
 
 Tier 2 should not start before Tier 1's onboarding track lands, because T2-5
 depends on Dispatch owning the workflow it needs to modify.

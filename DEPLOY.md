@@ -147,10 +147,20 @@ minted installation token instead of `GITHUB_TOKEN`.
 There is no central Dispatch App: this repo is deployed by anyone, for themselves,
 so each deployment registers its own (ADR-0006 §5).
 
-`GITHUB_TOKEN` is still required even with an App installed — three account-level
-calls (the rate-limit probe, the health check, and repo discovery) have no
-installation to resolve against, and retiring them is ticket #21. Repos outside any
-installation also continue to use it.
+**What still needs `GITHUB_TOKEN` when an App is installed** (measured 2026-07-10,
+not inferred — ticket #21 closes the gap):
+
+| | With an App and no `GITHUB_TOKEN` |
+|---|---|
+| Boot | works; the log names the App |
+| The board, and any repo under an installation | no code path demands the env token |
+| `GET /api/discover` (Repo Config → Discover) | **502** — an installation token cannot enumerate an account's repos |
+| `GET /api/health` | reports GitHub `configured: false`, which is **wrong**: an App *is* registered |
+| Rate-limit banner | absent — the gauge is only fed when the env token exists |
+
+So the env token is not *required to run*; it is required for **repo discovery**, and
+its absence makes the health check quietly misreport. Repos outside any installation
+also continue to use it, as does all of GitLab.
 
 The rest of this section is the `GITHUB_TOKEN` path, which remains fully supported
 and is the whole GitLab story. Connecting a repo that way works exactly as it does
