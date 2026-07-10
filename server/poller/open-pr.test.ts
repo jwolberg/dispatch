@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { isClaudeAuthored } from "./claude-branch.js";
-import { openPRForClaudeBranch } from "./reconcile.js";
+import { openPRForClaudeBranch, CANARY_LABEL } from "./reconcile.js";
 import type { BranchRef, CommitIdentity, GitProvider, Issue, RepoRef } from "../providers/types.js";
 
 // #4 stage 3 — the poller opens the PR for Claude's branch, and NEVER for a
@@ -144,6 +144,24 @@ describe("openPRForClaudeBranch", () => {
     );
 
     await expect(openPRForClaudeBranch(p, REPO, OPEN_ISSUE)).resolves.toBeNull();
+  });
+
+  it("never opens a PR for a canary issue, even when its branch IS Claude-authored (#5)", async () => {
+    // Same shape as the happy path above — a Claude-authored branch that links to
+    // the issue — so the CANARY_LABEL is the ONLY thing preventing the PR. A canary
+    // must exercise `@claude` end to end without leaving a pull request behind in a
+    // user's repo (#5, amended after #4 shipped the auto-open poller).
+    const { p, createPullRequest } = provider(
+      [
+        { name: "main", sha: "m1" },
+        { name: "claude/issue-7-20260710-0438", sha: "c1" },
+      ],
+      { m1: HUMAN, c1: CLAUDE }
+    );
+    const canary: Issue = { ...OPEN_ISSUE, labels: [...OPEN_ISSUE.labels, CANARY_LABEL] };
+
+    expect(await openPRForClaudeBranch(p, REPO, canary)).toBeNull();
+    expect(createPullRequest).not.toHaveBeenCalled();
   });
 
   it("costs one identity lookup per linking branch, not per branch", async () => {

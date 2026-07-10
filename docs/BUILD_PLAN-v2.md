@@ -1,11 +1,11 @@
 # Build Plan v2 — Tiers 0–2
 
-**Status:** Tier 0 **complete** (10/10). Tier 1 **8/10** — only the onboarding
-track remains (T1-3 in progress, T1-4 blocked on it). Tier 2 not started.
+**Status:** Tier 0 **complete** (10/10). Tier 1 **9/10** — T1-3 landed
+(PRs #22 + #24); **only T1-4 (canary) remains**. Tier 2 not started.
 **Supersedes:** nothing. `docs/BUILD_PLAN.md` covers v1 (Phases 1–6, complete).
 **Source:** assessment of 2026-07-09 (Dispatch vs. TerMinal vs. the 2026 orchestrator market).
 **Last updated:** 2026-07-10 — Tier 0 run in `docs/implementation.md`; Tier 1 run
-in `docs/implementation-notes.md`.
+in `docs/implementation-notes.md`. Reconciled against merged PRs 2026-07-10.
 
 **The gate on T1-3 is cleared.** ADR-0006 [8]'s central claim — that a pull request
 opened with a GitHub App *installation token* triggers `pull_request` runs without
@@ -204,8 +204,8 @@ first ship, for a user who cannot read a diff and has never minted a PAT.
 | T1-0 | #1 | **Spike:** GitHub App installation tokens and the anti-recursion rule | S | — | Complete (ADR-0002) |
 | T1-1 | #2 | GitHub App: manifest registration + OAuth install flow | L | T1-0 | Complete (PR #11) |
 | T1-2 | #3 | Per-repo credential resolution (replaces the global env token) | M | — (see below) | Complete (PR #10) |
-| T1-3 | #4 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 | **In progress** — stages 1–2 on PR #22 |
-| T1-4 | #5 | Canary verification: prove the build triggers, at setup time | M | T1-3 | Open |
+| T1-3 | #4 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 | **Complete** (PRs #22, #24) |
+| T1-4 | #5 | Canary verification: prove the build triggers, at setup time | M | T1-3 | ◆ **Next** — unblocked |
 | T1-5 | #6 | Plain-language change summary on the card | M | T0-1 | Complete |
 | T1-6 | #7 | Preview-first card: hero preview + single verdict chip | S | T1-5 | Complete |
 | T1-7 | #8 | **Spike:** revert mechanism per provider | S | — | Complete (ADR-0003) |
@@ -306,18 +306,18 @@ delete any existing `ANTHROPIC_API_KEY` repo secret**, because the API key
 outranks the OAuth token in Claude's auth precedence and would keep billing the
 metered API.
 
-> **In progress, staged (2026-07-10).** Six stages, plan in the ticket. Stages 1–2
-> are on PR #22.
+> **Complete (2026-07-10).** Six stages, plan in the ticket. Stages 1–2 landed on
+> PR #22; stages 3–6 on PR #24.
 >
 > | # | Stage | State |
 > |---|---|---|
 > | 1 | Sample the branch discriminator (AC 9) | done |
 > | 1a | Stop the issue body telling Claude to open the PR | done |
 > | 2 | Seam: `listBranches`, `getCommitIdentity`, `createPullRequest` | done |
-> | 3 | Poller opens the PR for Claude's branch, never a human's | next |
-> | 4 | `POST /api/repos/:id/setup` + sealed-box secrets | |
-> | 5 | Templates embedded at build time | |
-> | 6 | UI affordance + docs | |
+> | 3 | Poller opens the PR for Claude's branch, never a human's | done — `reconcile.ts:159`, `open-pr.test.ts` |
+> | 4 | `POST /api/repos/:id/setup` + sealed-box secrets | done — `routes/repos.ts:204` |
+> | 5 | Templates embedded at build time | done — `server/setup/embedded.ts`, `check:templates` |
+> | 6 | UI affordance + docs | done — "Set up automation" on the repo card |
 >
 > **AC 9 is the load-bearing criterion, and it earned its keep.** It forbids
 > inferring the human-vs-Claude discriminator, because opening a PR from somebody's
@@ -519,9 +519,9 @@ workflow files and secrets into user repos), T1-8 (creates revert PRs), T2-6
 ```
 T0 (all) ✔ ─────────────────────────────────► gate: verify green in CI
    │
-   ├─ T1-0 ✔ spike ─► T1-1 ✔ ─┬─► ◆#22 ─► T1-3 ─► T1-4   (browser onboarding)
-   │                  T1-2 ✔ ─┘     ▲                     (seam; landed independently)
-   │                                └── observes ADR-0006 [8]; if false, T1-3 changes
+   ├─ T1-0 ✔ spike ─► T1-1 ✔ ─┬─► #22 ✔ ─► T1-3 ✔ ─► ◆T1-4  (browser onboarding)
+   │                  T1-2 ✔ ─┘     ▲                        (seam; landed independently)
+   │                                └── observed ADR-0006 [8]; it holds
    ├─ T1-5 ✔ ─► T1-6 ✔                                    (legible card)
    ├─ T1-7 ✔ spike ─► T1-8 ✔                              (revert)
    ├─ T1-9 ✔                                              (spend cap)
@@ -534,10 +534,11 @@ T0 (all) ✔ ──────────────────────�
         └─ T2-6 ─► T2-7                               (auth, then webhooks)
 ```
 
-Tier 1's four tracks were independent and ran in parallel; three are done. What
-remains is the onboarding track, and it is strictly serial. **#22 is inserted ahead
-of T1-3 on purpose:** T1-3 and T1-4 are both built on ADR-0006 [8]'s unobserved
-arm, so verifying it costs fifteen minutes and de-risks two L/M tickets.
+Tier 1's four tracks were independent and ran in parallel; three are done. The
+onboarding track is strictly serial, and **T1-3 has now landed** — what remains of
+Tier 1 is T1-4 alone. **#22 was inserted ahead of T1-3 on purpose:** T1-3 and T1-4
+are both built on ADR-0006 [8]'s unobserved arm, so verifying it cost fifteen
+minutes and de-risked two L/M tickets. It held.
 
 #21 landed (PR #13), so "no PAT" is now true of Discover too — which is how a repo
 gets onboarded in the first place.
