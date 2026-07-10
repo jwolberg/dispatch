@@ -45,11 +45,25 @@ callbacks. The webhook is the only inbound hop, and it is the only thing dropped
 ## [2] Prerequisites
 
 Add an encryption key to `.env` — the App's private key is written to SQLite and
-must be encrypted before it can ever reach a snapshot:
+must be encrypted before it can ever reach a snapshot. **Append only if absent:**
 
 ```bash
-echo "DISPATCH_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+grep -q '^DISPATCH_ENCRYPTION_KEY=' .env \
+  || echo "DISPATCH_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
 ```
+
+> **Corrected 2026-07-10, from a live registration.** This runbook first gave the
+> bare `>>` form. Run it twice and `.env` holds *two* `DISPATCH_ENCRYPTION_KEY`
+> lines. `dotenv` takes the **last**, so the first becomes dead weight that
+> decrypts nothing — and if anything later reorders or removes the last line,
+> Dispatch refuses to boot and the App must be re-registered. Check with:
+>
+> ```bash
+> grep -c '^DISPATCH_ENCRYPTION_KEY=' .env   # must print 1
+> ```
+>
+> Any local copy of `.env` (`.env.bak`, `.env.old`) is a copy of its secrets.
+> `.gitignore` covers `.env.*`, re-admitting only `.env.example`.
 
 Keep it. If you lose it while an App is registered, Dispatch **refuses to boot**
 rather than silently reverting to `GITHUB_TOKEN`. To start over, delete the row:
@@ -92,13 +106,28 @@ GITHUB_TOKEN=ghp_deliberately_invalid npm run dev:server
 
 | Surface | Expected | Why |
 |---|---|---|
-| `GET /api/health` | `providers[0].valid: false`, "Bad credentials" | uses `getProvider()` → env token |
-| A tracked repo **under the installation** | board still updates, PR/checks resolve | uses `getProviderForRepo()` → minted installation token |
+| `GET /api/health`, the `env:GITHUB_TOKEN` account | `valid: false`, "Bad credentials" | `getAccountProviders()` → env token |
+| `GET /api/health`, the `app:<login>` account | `valid: true`, limit **6950** (not 5000) | `getAccountProviders()` → installation token |
+| A tracked repo **under the installation** | board still updates, PR/checks resolve | `getProviderForRepo()` → minted installation token |
 | A tracked repo **outside** it | fails | falls back to the bad env token, correctly |
 
 A green card on a repo whose account owns the installation, while `/api/health`
 reports bad credentials, is the proof. Nothing but an installation token could have
-fetched it.
+fetched it. The rate-limit ceiling is corroborating evidence: a PAT is capped at
+5000/hr, an installation token gets a computed limit (6950 here).
+
+`getProvider(provider, host)` no longer exists — #21 replaced it with
+`getAccountProviders()`, which returns one adapter per credential, because under an
+App there is no single account-level credential.
+
+**Reproduce without touching a running server** — `scripts/verify-app-token.ts`
+corrupts `GITHUB_TOKEN` in its own process, wires the real store, and asserts
+inside-OK / outside-FAIL. It deliberately skips the conditional-request cache: a
+replayed ETag would serve a cached 200 and fake the result.
+
+```bash
+npx tsx scripts/verify-app-token.ts
+```
 
 ## [5] Close the inference (#22 AC 13 → ADR-0006 [8])
 
@@ -131,6 +160,21 @@ gh api /repos/<owner>/<scratch>/actions/runs --jq \
 
 Either way, write down what you saw — including the `actor` / `triggering_actor`,
 which is the field that distinguishes an App installation from a PAT.
+
+> **Done 2026-07-10 — the arm holds.** App `dispatch-jay`, installation 145573719,
+> scratch repo `jwolberg/cohort-bot`: run
+> [`29065952153`](https://github.com/jwolberg/cohort-bot/actions/runs/29065952153)
+> — `event: pull_request`, `status: completed`, `conclusion: success`, no approval
+> gate, `actor` = `triggering_actor` = `dispatch-jay[bot]`. ADR-0006 [8] and
+> ADR-0002 [5] now record this as observed. There is nothing left to re-run here.
+
+Automated, including cleanup (the workflow is committed to the PR head branch only,
+so the scratch repo's `main` is never touched):
+
+```bash
+npx tsx scripts/verify-app-pr-triggers-run.ts <owner>/<scratch>
+npx tsx scripts/verify-app-pr-triggers-run.ts <owner>/<scratch> --cleanup
+```
 
 ## [6] Cleanup
 

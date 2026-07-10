@@ -1102,3 +1102,50 @@ the only casualty, and it was already inert until #17.
 tells you what a field *is*, never what the server will *do* with it. Three earlier
 format errors were caught by reading GitHub's OpenAPI description. This one could
 only be caught by a real registration attempt.
+
+## 2026-07-10 — #22: the App path, observed end to end
+
+Both criteria that #2 could not satisfy against fakes are now measured, against a
+real App (`dispatch-jay`, installation 145573719 on `jwolberg`).
+
+- **AC 6** (`scripts/verify-app-token.ts`) — a repo under the installation polls
+  with a minted installation token. Proof runs in its own process with a corrupted
+  `GITHUB_TOKEN`, so the developer's dev server is never disturbed. It deliberately
+  does **not** wire the conditional-request cache: a replayed ETag would serve a
+  cached 200 and fake a pass. Corroborating signal: the App account's rate-limit
+  ceiling is 6950, not a PAT's 5000.
+- **AC 13** (`scripts/verify-app-pr-triggers-run.ts`) — ADR-0006 [8]'s central
+  inference **holds**. A PR opened by the installation token triggered a
+  `pull_request` run with no approval gate, `actor` = `triggering_actor` =
+  `dispatch-jay[bot]`. #4 and #5 keep their shape; `GH_PAT` stays deleted.
+
+**Deviation from the runbook.** It said to open the PR in a *scratch* repo. No
+scratch repo existed, and the human chose `jwolberg/cohort-bot` (a real repo with
+zero open issues) over creating one. To keep that safe, the trivial workflow is
+committed to the **PR head branch only** — for `pull_request`, GitHub reads the
+workflow from the head — so the repo's `main` was never modified. `--cleanup`
+closes the PR and deletes the branch. The Actions run is left in place as the
+linked evidence.
+
+**Also: `getProvider()` is gone.** The runbook's §4 table still named it; #21
+replaced it with `getAccountProviders()`. Corrected.
+
+### Two defects found in the process (not in the ticket's scope, fixed anyway)
+
+1. **Duplicate encryption key.** The runbook's `echo "DISPATCH_ENCRYPTION_KEY=…"
+   >> .env` is not idempotent. Run twice, `.env` carries two definitions; `dotenv`
+   takes the **last**, so the first silently decrypts nothing. Confirmed against
+   the live DB: all three encrypted columns (`private_key_enc`, `client_secret_enc`,
+   `webhook_secret_enc`) decrypt under the second key only. Pruned the dead line
+   after verifying the survivor yields a valid PEM. Had anything reordered those
+   lines, Dispatch would have refused to boot and the App would need re-registering.
+   The runbook now guards with `grep -q`; `.env.example` documents the variable,
+   which it never did.
+2. **`.env` backups were committable.** `.gitignore` listed `.env`, `.env.local`,
+   `.env.*.local` — but not `.env.bak*`. A backup of `.env` is a copy of its
+   secrets. Now ignores `.env.*` and re-admits `.env.example`.
+
+**Not a bug:** "⚠ No Claude automation detected" on a tracked repo means exactly
+what it says — `detectAutomation()` found no `claude-code-action` workflow. Of the
+tracked repos only `situation` has one. Tracking itself works; `POST /api/repos`
+returns 201 and the repo appears in `GET /api/repos`.

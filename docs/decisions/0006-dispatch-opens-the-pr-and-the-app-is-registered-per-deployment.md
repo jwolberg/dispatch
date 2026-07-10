@@ -236,13 +236,35 @@ does, under `GH_PAT` (`scripts/install-claude-action.sh:41–43,136–151`).
 `snapshot.ts` uploads the unencrypted DB; `DEPLOY.md:126` enables versioning;
 `redaction.ts` reads only `process.env`. `github.ts` exposes no PR-creation method.
 
-**Inferred, not observed.** That a pull request opened by an *App installation
-token* triggers `pull_request` runs without approval. ADR-0002 [5] flagged this
-exact gap: what was observed was a fine-grained PAT, and GitHub's documentation
-treats the two identically for this purpose. This decision rests on that inference
-and does not narrow it. **#2 registers the first App; the moment one exists, open a
-PR with its installation token in a scratch repo and record the run.** Until then
-the arm is well-supported inference.
+**Observed 2026-07-10 (was inferred).** That a pull request opened by an *App
+installation token* triggers `pull_request` runs without approval. Closed by #22
+via `scripts/verify-app-pr-triggers-run.ts`, against App `dispatch-jay`
+(installation 145573719) on `jwolberg/cohort-bot`:
+
+| Field | Value |
+|---|---|
+| `status` | `completed` (never `action_required`) |
+| `conclusion` | `success` |
+| `event` | `pull_request` |
+| `actor` / `triggering_actor` | `dispatch-jay[bot]` |
+| run | [`29065952153`](https://github.com/jwolberg/cohort-bot/actions/runs/29065952153) |
+
+The run queued within ~3s of the PR opening, with no approval gate. `actor` and
+`triggering_actor` both resolve to the App's bot identity, which is the field that
+distinguishes an installation from a PAT — so this observes the App arm directly
+rather than re-observing ADR-0002 [5]'s fine-grained PAT. [2]'s deletion of the
+`gh pr create` post-step stands, `GH_PAT` stays deleted, and #4 proceeds as written.
+
+The workflow lived only on the PR head branch (`pull_request` reads the workflow
+from the head), so the scratch repo's `main` was never modified; the branch and PR
+were removed afterward.
+
+**Observed 2026-07-10.** That a repo under an installation polls with a *minted
+installation token*, not `GITHUB_TOKEN` (#22 AC 6, `scripts/verify-app-token.ts`).
+With `GITHUB_TOKEN` deliberately corrupted, `jwolberg/situation` fetched 16 workflow
+runs at a rate-limit ceiling of **6950** — an installation-scoped limit, not a PAT's
+5000 — while `octocat/Hello-World` (outside every installation) and the
+`env:GITHUB_TOKEN` account both failed with `Bad credentials`.
 
 **Inferred, not observed.** That the branch tip's committer identity distinguishes
 Claude's branch from a human's. See [4] — sample it before encoding it.
