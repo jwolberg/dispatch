@@ -19,6 +19,20 @@ export interface DiscoverError {
   error: string;
 }
 
+/** What `POST /repos/:id/setup` did. Secret NAMES only — never a value (#4 AC 13). */
+export interface SetupResult {
+  repo: TrackedRepo;
+  stack: "node" | "python" | "unknown";
+  files: { path: string; committed: boolean; commitUrl: string | null }[];
+  secrets: { set: string[]; deleted: string[] };
+}
+
+export interface SetupBody {
+  /** Claude auth token. Sent once, never stored client-side. */
+  token: string;
+  mode: "oauth" | "apikey";
+}
+
 export const reposApi = {
   discover: (provider: "github" | "gitlab") =>
     api.get<{ provider: string; repos: RepoSummary[]; errors: DiscoverError[] }>(
@@ -28,4 +42,5 @@ export const reposApi = {
   track: (body: TrackBody) => api.post<{ repo: TrackedRepo }>("/repos", body),
   untrack: (id: number) => api.del<{ ok: boolean }>(`/repos/${id}`),
   refresh: (id: number) => api.post<{ repo: TrackedRepo }>(`/repos/${id}/refresh-context?force=1`),
+  setup: (id: number, body: SetupBody) => api.post<SetupResult>(`/repos/${id}/setup`, body),
 };

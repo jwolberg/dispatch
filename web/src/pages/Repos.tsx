@@ -7,6 +7,7 @@ import { installBannerFor } from "../lib/installBanner.js";
 import { reposApi } from "../api/repos.js";
 import { ApiError } from "../api/client.js";
 import type { RepoSummary, TrackedRepo } from "../api/types.js";
+import { SetupAutomationModal } from "../components/SetupAutomationModal.js";
 import type { DiscoverError } from "../api/repos.js";
 
 type Provider = "github" | "gitlab";
@@ -24,6 +25,7 @@ export function ReposPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmUntrack, setConfirmUntrack] = useState<TrackedRepo | null>(null);
+  const [setupRepo, setSetupRepo] = useState<TrackedRepo | null>(null);
 
   const trackedPaths = useMemo(
     () => new Set(tracked.map((r) => `${r.provider}:${r.path}`)),
@@ -141,6 +143,7 @@ export function ReposPage() {
               busy={busyId === `t:${repo.id}`}
               onRefresh={() => refresh(repo)}
               onUntrack={() => setConfirmUntrack(repo)}
+              onSetup={() => setSetupRepo(repo)}
             />
           ))}
         </div>
@@ -263,6 +266,18 @@ export function ReposPage() {
         Stop tracking <span className="font-medium text-white">{confirmUntrack?.path}</span>? Its
         tickets and chats are removed locally; nothing on the provider changes.
       </ConfirmModal>
+
+      {setupRepo && (
+        <SetupAutomationModal
+          repo={setupRepo}
+          onClose={() => setSetupRepo(null)}
+          onDone={(updated) =>
+            // The card's ⚠ flag reads `automation_detected`, which setup just made
+            // true — swap the row in rather than making the operator hit Refresh.
+            setTracked((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+          }
+        />
+      )}
     </Page>
   );
 }

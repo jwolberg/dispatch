@@ -1255,3 +1255,49 @@ against reality; the first (ADR-0006 [8]'s pull_request arm, #22) held, this one
 
 Also: for `issues` / `issue_comment` events GitHub reads the workflow from the
 **default branch**, never from a PR head — so this fix is untestable until it merges.
+
+## 2026-07-10 — #4 stages 3–6: the loop closes
+
+**Stage 3 — the poller opens the PR.** Discriminator from stage 1's sample:
+`author.type === "Bot" && commit.author.name === "claude[bot]"`. Neither half alone:
+`Bot` matches Dependabot, and `author.login` reports `github-actions[bot]` because
+GitHub resolves a commit's author by email. Opening a PR from a human's branch is not
+recoverable, so every guard has a test.
+
+The suite went green *before* the integration was tested. `reconcile.test.ts`'s
+fixtures carry no `default_branch`, so `openPRForClaudeBranch` returned early and the
+new code was never reached — a broken wiring would have passed. Added three tests
+against `reconcileTicket` itself. Lesson: when a guard clause reads a field the old
+fixtures never set, the old fixtures cannot test the new path.
+
+**Stage 4 — sealed-box secrets.** GitHub's Secrets API takes only libsodium
+`crypto_box_seal`. Node's crypto cannot produce it: X25519 yes, XSalsa20 no, 24-byte
+Blake2b no. Hence `libsodium-wrappers` (pure WASM; no native build in the image).
+The tests **decrypt** rather than pattern-match — `expect(x).toMatch(/base64/)` would
+pass for `Buffer.from(value).toString('base64')`, which GitHub accepts the write of and
+then fails to decrypt silently at workflow runtime.
+
+`automationSetup()` returns `RepoAutomationSetup | null`; GitLab returns `null`, so
+"no claude-code-action here" is a type, answered as 501, not an exception from the
+bottom of a stack.
+
+`claude.yml` moved to `scripts/repo-ci/claude.yml`. The installer read it from a
+heredoc and the route would have carried a second copy — exactly how the issue prompt
+drifted before stage 1a.
+
+**Stage 5 — embedding.** `npm run check:templates` regenerates in memory and fails if
+the committed `server/setup/embedded.ts` differs. It runs inside `npm run verify`, so
+CI catches a template edited without regeneration. Verified by mutating `ci-node.yml`
+and watching `--check` exit 1 — an unexercised guard is not a guard.
+
+**Stage 6 — the UI, and a bug it exposed.** The route returned `presentRepo()` from the
+cached row, whose `automation_detected` was still `0`. A successful setup would have
+left the ⚠ warning on screen with no way to tell it had worked. The route now re-reads
+context after committing. Found by writing the frontend, not by reading the backend.
+
+The card's warning is also reworded. "No Claude automation detected" reads like a
+tracking failure; it now says **"Tracked, but not onboarded"**, which is what it means.
+The button is GitHub-only, because the server would 501 on GitLab.
+
+**Still unproven.** AC 12 — end-to-end from the browser — is implemented but has never
+run against a real repo. #22 refused to close AC 13 on a fake; this deserves the same.

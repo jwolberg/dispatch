@@ -14,6 +14,17 @@ const TOKEN = "sk-ant-oat-hunter2-do-not-leak";
 
 function harness(opts: { automation?: boolean } = {}) {
   const putFile = vi.fn(async (input: PutFileInput) => ({ committed: true, commitUrl: null }));
+  // Setup re-reads context so the card's warning clears; detection now finds the
+  // workflow it just committed.
+  const getRepoContext = vi.fn(async () => ({
+    description: null,
+    defaultBranch: "main",
+    language: "TypeScript",
+    claudeMd: null,
+    readmeExcerpt: null,
+    fileTree: ["package.json"],
+    automationDetected: true,
+  }));
   // Declare the parameters: `vi.fn(async () => …)` infers a zero-arg signature and
   // `mock.calls` then types as `[]`, so the assertions stop typechecking.
   const setSecret = vi.fn(async (_name: string, _value: string) => {});
@@ -21,10 +32,11 @@ function harness(opts: { automation?: boolean } = {}) {
 
   const provider = {
     automationSetup: () => (opts.automation === false ? null : { putFile, setSecret, deleteSecret }),
+    getRepoContext,
   } as unknown as GitProvider;
 
   setProviderFactory(() => provider);
-  return { putFile, setSecret, deleteSecret };
+  return { putFile, setSecret, deleteSecret, getRepoContext };
 }
 
 function app() {
@@ -157,6 +169,18 @@ describe("POST /api/repos/:id/setup", () => {
       expect(res.status).toBe(501);
       expect(String(res.body.error)).toMatch(/gitlab|not supported|claude-code-action/i);
     });
+  });
+
+  it("clears the card warning: re-reads context so automation_detected flips to 1", async () => {
+    // Without this the operator clicks "Set up automation", it succeeds, and the
+    // "not onboarded" warning stays on screen because the row is still cached.
+    const { getRepoContext } = harness();
+    const id = seedRepo();
+    await withServer(app(), async (url) => {
+      const res = await post(url, id, { token: TOKEN, mode: "oauth" });
+      expect(res.body.repo.automation_detected).toBe(1);
+    });
+    expect(getRepoContext).toHaveBeenCalledOnce();
   });
 
   it("reports which files changed, so a re-run reads as a no-op (AC 10)", async () => {

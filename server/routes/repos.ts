@@ -250,6 +250,22 @@ reposRouter.post("/:id/setup", async (req, res) => {
       deleted.push("ANTHROPIC_API_KEY");
     }
 
+    // The card's ⚠ flag reads `automation_detected`, which is still the value cached
+    // when the repo was tracked. Setup just committed `claude.yml`, so re-read the
+    // context — otherwise a successful setup leaves the warning on screen and the
+    // operator has no way to know it worked.
+    const ctx = await getProviderForRepo(ref).getRepoContext(ref, repo.claude_md_path);
+    updateRepoContext(repo.id, {
+      description: ctx.description,
+      default_branch: ctx.defaultBranch,
+      language: ctx.language,
+      claude_md_cache: ctx.claudeMd,
+      readme_excerpt_cache: ctx.readmeExcerpt,
+      file_tree_cache: JSON.stringify(ctx.fileTree),
+      automation_detected: ctx.automationDetected ? 1 : 0,
+      context_refreshed_at: new Date().toISOString(),
+    });
+
     res.json({
       repo: presentRepo(getRepo(repo.id)!),
       stack,
