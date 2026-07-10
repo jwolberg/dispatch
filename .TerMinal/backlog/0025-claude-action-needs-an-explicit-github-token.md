@@ -9,7 +9,8 @@ type: bug
 source: "observed while sampling for #4 AC 9"
 created: 2026-07-10
 updated: 2026-07-10
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/21"
 refs:
   - ".github/workflows/claude.yml"
   - "scripts/install-claude-action.sh"
