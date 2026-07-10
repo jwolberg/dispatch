@@ -9,7 +9,8 @@ type: chore
 source: "operator asked why the Tracked card warns 'No Claude automation detected'"
 created: 2026-07-10
 updated: 2026-07-10
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/18"
 refs:
   - "scripts/install-claude-action.sh"
   - ".github/workflows/claude.yml"
