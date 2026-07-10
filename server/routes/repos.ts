@@ -11,8 +11,9 @@ import {
 import { getProviderForRepo } from "../providers/index.js";
 import type { ProviderId, RepoRef } from "../providers/index.js";
 import { discoverTickets } from "../poller/discover.js";
-import { safeMessage } from "../lib/redaction.js";
+import { safeMessage, registerSecret, unregisterSecret } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
+import { detectStack, templatesFor, SECRET_NAME, type AuthMode } from "../setup/templates.js";
 
 export const reposRouter = Router();
 
@@ -185,6 +186,97 @@ reposRouter.post("/", async (req, res) => {
     res.status(existing ? 200 : 201).json({ repo: presentRepo(getRepo(row.id)!) });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
+  }
+});
+
+/**
+ * POST /api/repos/:id/setup — onboard a repo from the browser (#4, T1-3).
+ *
+ * Commits `claude.yml`, a stack-aware `ci.yml`, and the three skills, then writes
+ * **exactly one secret**: the Claude auth token. No GitHub credential of any kind is
+ * written into the target repo — not a `GH_PAT`, not the App's private key. That is
+ * ADR-0006 [2]'s whole point: an App credential in every onboarded repo would invert
+ * the blast radius.
+ *
+ * The token arrives in the request body, is registered with the redactor for the
+ * duration of the call, and is never logged or echoed back (AC 13).
+ */
+reposRouter.post("/:id/setup", async (req, res) => {
+  const repo = getRepo(Number(req.params.id));
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found." });
+    return;
+  }
+
+  const body = req.body ?? {};
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  if (!token) {
+    res.status(400).json({ error: "A Claude auth token is required." });
+    return;
+  }
+  const mode: AuthMode = body.mode === "apikey" ? "apikey" : "oauth";
+
+  const ref = refToRow(repo);
+  const setup = getProviderForRepo(ref).automationSetup(ref);
+  if (!setup) {
+    // GitLab. `claude-code-action` is GitHub-only; its automation is a job in
+    // `.gitlab-ci.yml` that Dispatch does not write.
+    res.status(501).json({ error: `Automation setup is not supported on ${ref.provider}.` });
+    return;
+  }
+
+  registerSecret(token);
+  try {
+    const stack = detectStack(JSON.parse(repo.file_tree_cache ?? "[]") as string[]);
+    const files: { path: string; committed: boolean; commitUrl: string | null }[] = [];
+    // Serial, not parallel: each write is a commit on the same branch, and
+    // concurrent createOrUpdateFileContents calls race on the branch tip and 409.
+    for (const t of templatesFor(mode, stack)) {
+      const result = await setup.putFile({
+        path: t.path,
+        content: t.content,
+        message: t.message,
+        createOnly: t.createOnly,
+      });
+      files.push({ path: t.path, committed: result.committed, commitUrl: result.commitUrl });
+    }
+
+    await setup.setSecret(SECRET_NAME[mode], token);
+
+    // The API key outranks the OAuth token in Claude's auth precedence, so a
+    // leftover one silently keeps billing the metered API (AC 5).
+    const deleted: string[] = [];
+    if (mode === "oauth" && (await setup.deleteSecret("ANTHROPIC_API_KEY"))) {
+      deleted.push("ANTHROPIC_API_KEY");
+    }
+
+    // The card's ⚠ flag reads `automation_detected`, which is still the value cached
+    // when the repo was tracked. Setup just committed `claude.yml`, so re-read the
+    // context — otherwise a successful setup leaves the warning on screen and the
+    // operator has no way to know it worked.
+    const ctx = await getProviderForRepo(ref).getRepoContext(ref, repo.claude_md_path);
+    updateRepoContext(repo.id, {
+      description: ctx.description,
+      default_branch: ctx.defaultBranch,
+      language: ctx.language,
+      claude_md_cache: ctx.claudeMd,
+      readme_excerpt_cache: ctx.readmeExcerpt,
+      file_tree_cache: JSON.stringify(ctx.fileTree),
+      automation_detected: ctx.automationDetected ? 1 : 0,
+      context_refreshed_at: new Date().toISOString(),
+    });
+
+    res.json({
+      repo: presentRepo(getRepo(repo.id)!),
+      stack,
+      files,
+      // Names only. Never a value.
+      secrets: { set: [SECRET_NAME[mode]], deleted },
+    });
+  } catch (err) {
+    res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
+  } finally {
+    unregisterSecret(token);
   }
 });
 

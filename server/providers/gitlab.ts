@@ -4,6 +4,7 @@ import { findLinked, findRevertOfCommit } from "./linkage.js";
 import { DIFF_MAX_FILES, mapGitLabDiff, type RawGitLabDiff } from "./diff.js";
 import { issueBody } from "./prompt.js";
 import type {
+  RepoAutomationSetup,
   NewPullRequest,
   CommitIdentity,
   BranchRef,
@@ -417,5 +418,15 @@ export class GitLabProvider implements GitProvider {
       headBranch: mr.source_branch,
       baseBranch: mr.target_branch,
     };
+  }
+
+  /**
+   * GitLab has no `claude-code-action` to install — its automation is a job in
+   * `.gitlab-ci.yml`, which Dispatch does not write. Returning `null` states that
+   * in the type, so the route renders "not supported" rather than catching an
+   * exception thrown from the bottom of a call stack (#4).
+   */
+  automationSetup(_repo: RepoRef): RepoAutomationSetup | null {
+    return null;
   }
 }

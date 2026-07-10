@@ -17,13 +17,18 @@ export function RepoCard({
   busy,
   onRefresh,
   onUntrack,
+  onSetup,
 }: {
   repo: TrackedRepo;
   busy: boolean;
   onRefresh: () => void;
   onUntrack: () => void;
+  onSetup: () => void;
 }) {
   const noAutomation = repo.automation_detected === 0;
+  // `claude-code-action` is GitHub-only; the setup route answers 501 for GitLab, so
+  // do not offer a button that cannot work. The warning still tells the truth.
+  const canSetUp = repo.provider === "github";
   return (
     <div className="rounded-lg border border-border bg-surface p-4">
       <div className="mb-1 flex items-center gap-2">
@@ -53,16 +58,29 @@ export function RepoCard({
       </div>
 
       {noAutomation && (
-        <div className="mb-3 rounded border border-status-wait/40 bg-status-wait/10 px-2.5 py-1.5 text-label text-status-wait">
-          ⚠ No Claude automation detected.{" "}
-          <a
-            className="underline"
-            href="https://github.com/anthropics/claude-code-action#readme"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Setup guide
-          </a>
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-status-wait/40 bg-status-wait/10 px-2.5 py-1.5 text-label text-status-wait">
+          <span>
+            ⚠ Tracked, but not onboarded — no Claude workflow in this repo, so{" "}
+            <code>@claude</code> will not build anything.
+          </span>
+          {canSetUp ? (
+            <button
+              className="rounded bg-status-wait/20 px-2 py-0.5 font-medium text-status-wait hover:bg-status-wait/30 disabled:opacity-50"
+              onClick={onSetup}
+              disabled={busy}
+            >
+              Set up automation
+            </button>
+          ) : (
+            <a
+              className="underline"
+              href="https://github.com/anthropics/claude-code-action#readme"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Setup guide
+            </a>
+          )}
         </div>
       )}
 
