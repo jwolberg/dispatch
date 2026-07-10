@@ -1,7 +1,7 @@
 ---
 id: 4
 title: "POST /api/repos/:id/setup — write workflows + secrets via API"
-status: open
+status: in-progress
 priority: high
 horizon: now
 hitl: false
@@ -35,6 +35,38 @@ agent_id: 1000x-ai-engineer
 agent_scope: global
 agent_kind: classic
 ---
+
+## Staged plan — 2026-07-10
+
+Too large for one PR. Each stage is independently verifiable; stages 2–6 are pure
+code, TDD-first. There is a human gate at stage 1 only.
+
+| # | Stage | Verified by | External? |
+|---|---|---|---|
+| 1 | **Sample the discriminator.** Trigger one real `claude-code-action` run under the *new* workflow; read the branch and its tip commit off the API; commit the raw response as a fixture. | the fixture exists and names an identity | **yes — HUMAN GATE** |
+| 2 | **Provider seam.** `createPullRequest` + branch listing on `GitProvider`, GitHub + GitLab. | `npm run check:seam` green; adapter tests | no |
+| 3 | **Poller opens the PR.** Claude's branch → PR under the App token; a human's branch → never. Discriminator read from stage 1's fixture. | RED test: `fix-7` (human) vs `claude/issue-7` | no |
+| 4 | **`POST /api/repos/:id/setup`.** Commit workflows + skills; write the Claude secret via the Secrets API (libsodium sealed box); delete `ANTHROPIC_API_KEY` in OAuth mode; idempotent re-run. | route tests against fakes | no |
+| 5 | **Templates embedded at build time.** `scripts/repo-ci/` + `scripts/repo-skills/` stay the single source. | test asserts embedded == on-disk | no |
+| 6 | **UI + docs.** Repo card's "Setup guide" link becomes a Set-up-automation action; runbook records that the poller is now load-bearing. | `npm run verify` + by eye | no |
+
+### Why stage 1 comes first, and why `situation` cannot supply it
+
+AC 9 forbids inferring the discriminator from documentation. It must be sampled.
+
+`jwolberg/situation`'s existing runs are **inadmissible**: they ran the *old*
+workflow, which passed `github_token: ${{ secrets.GH_PAT }}` to
+`claude-code-action`, so the branch tip's committer is `jwolberg` — a human
+identity. Under the post-#24 workflow the action falls back to the default
+`GITHUB_TOKEN`, which should produce a bot identity. Sampling the old runs would
+encode exactly the wrong discriminator and ship a poller that opens pull requests
+from humans' work-in-progress branches. Only a run under the new workflow counts.
+
+### Correction to the design notes below
+
+`linksToIssue()` lives in **`server/providers/linkage.ts`**, not `poller/linkage.ts`.
+Confirmed the hazard is real, not theoretical:
+`linksToIssue(7, { branch: "fix-7" })` → `true`.
 
 ## Description
 
