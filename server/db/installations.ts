@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { getDb } from "./migrate.js";
 import { ENCRYPTION_KEY_ENV, decryptSecret, encryptSecret, loadEncryptionKey } from "../lib/crypto.js";
 import { registerSecret } from "../lib/redaction.js";
+import { markDirty } from "./snapshot.js";
 import type { Installation, InstallationStore, RepoKey } from "../providers/index.js";
 
 // Durable backing for GitHub App registration and installation lookup (#2).
@@ -115,6 +116,7 @@ export class SqliteInstallationStore implements InstallationStore {
         created_at: new Date().toISOString(),
       });
 
+    markDirty(); // the private key exists nowhere else — never rebuildable (#20)
     this.onChange();
   }
 
@@ -173,11 +175,13 @@ export class SqliteInstallationStore implements InstallationStore {
         now,
       });
 
+    markDirty(); // re-derivable only by re-running the install flow (#20)
     this.onChange();
   }
 
   deleteInstallation(installationId: number): void {
     this.db.prepare("DELETE FROM installations WHERE installation_id = ?").run(installationId);
+    markDirty();
     this.onChange();
   }
 

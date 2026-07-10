@@ -7,6 +7,7 @@ import {
   type SqliteInstallationStore,
 } from "../db/installations.js";
 import { resetProviderCache } from "../providers/index.js";
+import { flush } from "../db/snapshot.js";
 import { AppTokenSource, signAppJwt } from "../providers/token-source.js";
 import { ENCRYPTION_KEY_ENV } from "../lib/crypto.js";
 import { registerSecret, safeMessage, unregisterSecret } from "../lib/redaction.js";
@@ -345,6 +346,29 @@ export interface GithubAppDeps {
   fetchImpl: typeof fetch;
   baseUrl: (req: Request) => string;
   pending: PendingRegistrations;
+  /** See {@link persist}. Injected so tests can observe it without a bucket. */
+  flushSnapshot: () => Promise<void>;
+}
+
+/**
+ * Upload a snapshot now, rather than waiting for `snapshotMiddleware`.
+ *
+ * Both write paths in this router are **GET** requests — GitHub redirects the
+ * operator's browser to `redirect_url` and `setup_url` — and the middleware
+ * short-circuits on GET/HEAD, because a board poll must not cost an upload. So
+ * nothing would ever persist a registration: the next Cloud Run redeploy restores
+ * a snapshot that has never heard of the App, Dispatch boots clean, and silently
+ * falls back to `GITHUB_TOKEN`.
+ *
+ * A failed upload must not fail the operator's install. The row is committed
+ * locally either way and stays dirty, so the next mutating request retries.
+ */
+async function persist(flushSnapshot: () => Promise<void>): Promise<void> {
+  try {
+    await flushSnapshot();
+  } catch (err) {
+    console.warn(`[dispatch] snapshot upload failed: ${safeMessage(err)}`);
+  }
 }
 
 /** The deployment's own public origin, which the manifest's URLs must point at. */
@@ -359,6 +383,7 @@ export function createGithubAppRouter(deps: Partial<GithubAppDeps> = {}): Router
   const fetchImpl = deps.fetchImpl ?? fetch;
   const baseUrl = deps.baseUrl ?? defaultBaseUrl;
   const pending = deps.pending ?? new PendingRegistrations();
+  const flushSnapshot = deps.flushSnapshot ?? flush;
 
   const router = Router();
 
@@ -446,7 +471,8 @@ export function createGithubAppRouter(deps: Partial<GithubAppDeps> = {}): Router
 
     try {
       const app = await convertManifestCode(code, { fetchImpl });
-      installations.saveApp(app); // fires onChange → resetProviderCache()
+      installations.saveApp(app); // fires onChange → resetProviderCache(), markDirty()
+      await persist(flushSnapshot);
       res.redirect(302, `${GITHUB_WEB}/apps/${encodeURIComponent(app.slug)}/installations/new`);
     } catch (err) {
       // safeMessage, not the raw error: the conversion body carries the private key.
@@ -485,7 +511,8 @@ export function createGithubAppRouter(deps: Partial<GithubAppDeps> = {}): Router
 
     try {
       const record = await fetchInstallationRecord(app, installationId, { fetchImpl });
-      installations.saveInstallation(record); // fires onChange → resetProviderCache()
+      installations.saveInstallation(record); // fires onChange → resetProviderCache(), markDirty()
+      await persist(flushSnapshot);
       res.redirect(302, `/repos?installed=${installationId}`);
     } catch (err) {
       res.status(502).json({ error: safeMessage(err) });
