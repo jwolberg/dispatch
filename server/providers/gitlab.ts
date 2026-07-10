@@ -4,6 +4,9 @@ import { findLinked, findRevertOfCommit } from "./linkage.js";
 import { DIFF_MAX_FILES, mapGitLabDiff, type RawGitLabDiff } from "./diff.js";
 import { issueBody } from "./prompt.js";
 import type {
+  NewPullRequest,
+  CommitIdentity,
+  BranchRef,
   Check,
   CheckState,
   CommentTarget,
@@ -382,5 +385,37 @@ export class GitLabProvider implements GitProvider {
       }
       throw err;
     }
+  }
+
+  async listBranches(repo: RepoRef): Promise<BranchRef[]> {
+    const branches = (await this.api.Branches.all(repo.path)) as Loose[];
+    return branches.map((b) => ({ name: b.name, sha: b.commit?.id }));
+  }
+
+  /**
+   * GitLab's commit payload names an author but does not resolve it to an account,
+   * and has no bot/user distinction. `authorLogin` and `authorType` are therefore
+   * **null**, not guessed.
+   *
+   * That is deliberate. `claude-code-action` is GitHub-only, so there is no GitLab
+   * identity to sample, and #4 AC 9 forbids inferring one from documentation. A
+   * poller that treated `authorType: null` as "not a human" would open merge
+   * requests from people's work-in-progress branches.
+   */
+  async getCommitIdentity(repo: RepoRef, sha: string): Promise<CommitIdentity> {
+    const commit = (await this.api.Commits.show(repo.path, sha)) as Loose;
+    return { authorName: commit.author_name ?? null, authorLogin: null, authorType: null };
+  }
+
+  async createPullRequest(repo: RepoRef, input: NewPullRequest): Promise<PRRef> {
+    const mr = (await this.api.MergeRequests.create(repo.path, input.head, input.base, input.title, {
+      description: input.body,
+    })) as Loose;
+    return {
+      number: mr.iid,
+      url: mr.web_url,
+      headBranch: mr.source_branch,
+      baseBranch: mr.target_branch,
+    };
   }
 }

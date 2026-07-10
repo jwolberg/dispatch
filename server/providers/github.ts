@@ -6,6 +6,9 @@ import type { TokenSource } from "./token-source.js";
 import { DIFF_MAX_FILES, mapGitHubFile } from "./diff.js";
 import { issueBody } from "./prompt.js";
 import type {
+  NewPullRequest,
+  CommitIdentity,
+  BranchRef,
   Check,
   CheckState,
   CommentTarget,
@@ -615,5 +618,50 @@ export class GitHubProvider implements GitProvider {
       merge_method: method,
     });
     return { merged: Boolean(data.merged), message: data.message ?? null, sha: data.sha ?? null };
+  }
+
+  async listBranches(repo: RepoRef): Promise<BranchRef[]> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const branches = await this.octokit.paginate("GET /repos/{owner}/{repo}/branches", {
+      owner,
+      repo: name,
+      per_page: 100,
+    });
+    return branches.map((b) => ({ name: b.name, sha: b.commit.sha }));
+  }
+
+  /**
+   * `author` is the account GitHub resolved from the commit's *email*, and is null
+   * when no account matches. `commit.author.name` is whatever the git client wrote.
+   * They disagree for Claude — see `poller/__fixtures__/README.md` — so both are
+   * returned and neither is collapsed into the other.
+   */
+  async getCommitIdentity(repo: RepoRef, sha: string): Promise<CommitIdentity> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const { data } = await this.octokit.repos.getCommit({ owner, repo: name, ref: sha });
+    const type = data.author?.type;
+    return {
+      authorName: data.commit.author?.name ?? null,
+      authorLogin: data.author?.login ?? null,
+      authorType: type === "Bot" || type === "User" ? type : null,
+    };
+  }
+
+  async createPullRequest(repo: RepoRef, input: NewPullRequest): Promise<PRRef> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const { data } = await this.octokit.pulls.create({
+      owner,
+      repo: name,
+      head: input.head,
+      base: input.base,
+      title: input.title,
+      body: input.body,
+    });
+    return {
+      number: data.number,
+      url: data.html_url,
+      headBranch: data.head.ref,
+      baseBranch: data.base.ref,
+    };
   }
 }
