@@ -135,12 +135,23 @@ function diffActivity(ticketId: number, prev: StatusPayload | null, next: Status
  *
  * Exported for tests. Returns the new PR, or null when nothing should be opened.
  */
+/**
+ * Label that marks an issue as a setup-time canary (#5). The canary files an
+ * `@claude` issue purely to prove a build triggers, so it must NOT grow a pull
+ * request the way a real ticket does — otherwise it leaves an artifact behind in
+ * a user's repo, and racing the cleanup against this poller could orphan it. The
+ * canary applies this label; the guard below is what makes the PR impossible
+ * rather than merely cleaned up after the fact.
+ */
+export const CANARY_LABEL = "dispatch-canary";
+
 export async function openPRForClaudeBranch(
   provider: GitProvider,
   ref: RepoRef,
   issue: Issue
 ): Promise<PRRef | null> {
   if (issue.state !== "open") return null;
+  if (issue.labels.includes(CANARY_LABEL)) return null;
 
   const base = ref.defaultBranch;
   if (!base) return null;
