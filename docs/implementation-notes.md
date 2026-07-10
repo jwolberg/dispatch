@@ -1179,3 +1179,44 @@ truthfully reporting that a tracked repo has no `claude-code-action` workflow.
 `jwolberg/dispatch` has only `ci.yml`. The banner renders on a card in the
 *Tracked* list, so it can only appear once tracking succeeded — it reads like a
 failure. Worth a copy change; not filed.
+
+## 2026-07-10 — #24: onboard dispatch with a compliant claude.yml
+
+The Tracked card's "⚠ No Claude automation detected" was correct: `jwolberg/dispatch`
+had only `ci.yml`. `automation_detected` has exactly one consumer (the banner);
+nothing functional reads it. So the fix is to make the warning false, not to hide it.
+
+What was stale is the remedy it pointed at. `scripts/install-claude-action.sh` still
+committed a `gh pr create` post-step under a `GH_PAT` secret — exactly what
+ADR-0006 [2] deleted. Running it today would have re-introduced `GH_PAT`.
+
+**Three credentials, easily conflated.** Writing them down because this cost time:
+
+1. *Dispatch server → GitHub.* Was the env `GITHUB_TOKEN` (a PAT). Now a per-repo
+   App installation token (#2, #3, #21). This is what ADR-0006 changed.
+2. *The repo's workflow → GitHub.* Was `GH_PAT` (push branch, comment, open PR).
+   Now the default `GITHUB_TOKEN`, and it only pushes a branch. Dispatch opens the
+   PR. This is also what ADR-0006 changed.
+3. *The repo's workflow → Anthropic.* `CLAUDE_CODE_OAUTH_TOKEN` (preferred, bills the
+   subscription) or `ANTHROPIC_API_KEY` (metered fallback). **ADR-0006 did not touch
+   this**, and it is per-repo, not global.
+
+**Tracking a repo in Dispatch writes nothing to that repo.** `POST /api/repos` only
+reads (`getRepoContext`) and imports issues. A tracked repo is not an onboarded one:
+onboarding is what commits `claude.yml` and sets the Claude secret. That distinction
+is the entire reason the banner exists, and `jwolberg/dispatch` had zero repo secrets
+while being tracked.
+
+**Sequencing.** #4 owns the full job — compliant template, `createPullRequest` seam,
+poller. But its AC 9 demands the branch discriminator be *sampled from a real
+claude-code-action run, never inferred from documentation*, and you cannot sample a
+run without the workflow installed. Installing `claude.yml` is therefore a
+prerequisite of #4, not a consequence.
+
+**Accepted gap.** Dispatch cannot open a PR yet (no `pulls.create` in `server/`).
+So Claude will push a branch and nothing will open a PR for it until #4 lands. That
+is strictly better than closing the loop by handing every onboarded repo a `GH_PAT`.
+Do not "fix" it by restoring the post-step.
+
+Also corrected ADR-0006 [8], whose *Observed* line cited the post-step by file and
+line number; those lines no longer exist.

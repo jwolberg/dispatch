@@ -1,0 +1,52 @@
+name: Claude Code
+
+# ADR-0006 [2]: this workflow does NOT open pull requests.
+#
+# `claude-code-action` pushes a branch under the default GITHUB_TOKEN and stops
+# there. Dispatch's server notices the branch and opens the PR itself, using its
+# GitHub App installation token — a PR opened that way triggers `on: pull_request`
+# CI without an approval gate, which #22 observed directly rather than inferring
+# (ADR-0006 [8]).
+#
+# The `gh pr create` post-step under a `GH_PAT` secret that used to live here is
+# deleted on purpose. Do not restore it: it hands every onboarded repo a token
+# that can write to every repo the PAT can reach. Until #4 ships the poller's
+# PR-opening half, a branch pushed here simply has no PR yet.
+#
+# The only secret this needs is Claude auth. No GH_PAT, no APP_PRIVATE_KEY.
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@claude')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Push Claude's branch. The PR is opened by Dispatch, not here, so
+      # `pull-requests: write` is deliberately absent.
+      contents: write
+      issues: write # the tracking comment claude-code-action posts
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        id: claude
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # `github_token` is intentionally unset: the action falls back to the
+          # default GITHUB_TOKEN. ADR-0006 [2] — the branch push is all this needs.
+          #
+          # Do NOT set `prompt:` here. A static prompt forces automation mode, which
+          # IGNORES the @claude comment. Omitting it enables interactive (mention)
+          # mode: Claude reads the comment, runs it (incl. project skills under
+          # .claude/skills/), posts a tracking comment, and pushes a branch.
+          claude_args: |
+            --append-system-prompt "Implement the change on a branch and commit it; Dispatch opens the pull request from your branch. Reference the issue with 'Fixes #<n>'."
