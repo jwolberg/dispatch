@@ -28,9 +28,62 @@ export function getDb(): Database.Database {
   const schema = readFileSync(resolve(__dirname, "schema.sql"), "utf8");
   conn.exec(schema);
   dropLegacyEtagColumn(conn);
+  migrateRepoIdentity(conn);
 
   db = conn;
   return db;
+}
+
+/**
+ * #23: `repos` declares `UNIQUE (provider, host, path)`, but SQLite treats every
+ * NULL as distinct inside a UNIQUE index — and GitHub repos always carry
+ * `host = NULL`. The constraint therefore never fired for them, and each click of
+ * Track appended another row. GitLab repos (non-null host) were always deduped,
+ * which is why this hid.
+ *
+ * `COALESCE(host, '')` folds NULL into a comparable value. The table constraint
+ * stays (SQLite has no DROP CONSTRAINT, and it still guards GitLab); this index
+ * is what actually enforces identity.
+ *
+ * Duplicates already on disk must be collapsed before the index can be created,
+ * so this runs on every boot and is idempotent. Exported for the test that
+ * manufactures a pre-#23 database.
+ */
+export function migrateRepoIdentity(conn: Database.Database): void {
+  conn.transaction(() => {
+    const dupes = conn
+      .prepare(
+        `SELECT provider, COALESCE(host, '') AS host_key, path, MIN(id) AS keep
+           FROM repos
+          GROUP BY provider, COALESCE(host, ''), path
+         HAVING COUNT(*) > 1`
+      )
+      .all() as { provider: string; host_key: string; path: string; keep: number }[];
+
+    const losers = conn.prepare(
+      `SELECT id FROM repos
+        WHERE provider = ? AND COALESCE(host, '') = ? AND path = ? AND id <> ?`
+    );
+    // `tickets` is UNIQUE (repo_id, issue_number): if the survivor already holds
+    // that issue, the loser's row cannot move. OR IGNORE leaves it behind, and
+    // the cascade below deletes it — the survivor's copy is the one we want.
+    const moveTickets = conn.prepare("UPDATE OR IGNORE tickets SET repo_id = ? WHERE repo_id = ?");
+    const moveChats = conn.prepare("UPDATE chats SET repo_id = ? WHERE repo_id = ?");
+    const dropRepo = conn.prepare("DELETE FROM repos WHERE id = ?");
+
+    for (const d of dupes) {
+      for (const { id } of losers.all(d.provider, d.host_key, d.path, d.keep) as { id: number }[]) {
+        moveTickets.run(d.keep, id);
+        moveChats.run(d.keep, id);
+        dropRepo.run(id); // ON DELETE CASCADE sweeps anything that could not move
+      }
+    }
+
+    conn.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_repos_identity
+         ON repos (provider, COALESCE(host, ''), path)`
+    );
+  })();
 }
 
 /**

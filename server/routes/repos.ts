@@ -5,6 +5,7 @@ import {
   insertRepo,
   deleteRepo,
   updateRepoContext,
+  findRepoByIdentity,
   type RepoRow,
 } from "../db/repos.js";
 import { getProviderForRepo } from "../providers/index.js";
@@ -134,18 +135,36 @@ reposRouter.post("/", async (req, res) => {
     const ref: RepoRef = { provider, host, path, defaultBranch: body.default_branch ?? null };
     const ctx = await getProviderForRepo(ref).getRepoContext(ref, body.claude_md_path ?? null);
 
-    const row = insertRepo({
-      provider,
-      host,
-      path,
-      description: ctx.description,
-      default_branch: ctx.defaultBranch ?? body.default_branch ?? null,
-      language: ctx.language,
-      preview_url_pattern: body.preview_url_pattern ?? null,
-      merge_method: body.merge_method ?? "squash",
-      claude_md_path: body.claude_md_path ?? null,
-      web_url: body.web_url ?? null,
-    });
+    // Tracking an already-tracked repo is a no-op, not a second row (#23). The
+    // recheck after a constraint failure closes the race between two submits
+    // that both miss the first lookup.
+    let existing = findRepoByIdentity(provider, host, path);
+    let row: RepoRow;
+    if (existing) {
+      row = existing;
+    } else {
+      try {
+        row = insertRepo({
+          provider,
+          host,
+          path,
+          description: ctx.description,
+          default_branch: ctx.defaultBranch ?? body.default_branch ?? null,
+          language: ctx.language,
+          preview_url_pattern: body.preview_url_pattern ?? null,
+          merge_method: body.merge_method ?? "squash",
+          claude_md_path: body.claude_md_path ?? null,
+          web_url: body.web_url ?? null,
+        });
+      } catch (err) {
+        existing = findRepoByIdentity(provider, host, path);
+        if (!existing) throw err; // a real failure, not the identity index
+        row = existing;
+      }
+    }
+
+    // Refresh the cache on both paths — a re-track is how an operator asks for
+    // fresh context, and we have just paid for it.
     updateRepoContext(row.id, {
       description: ctx.description,
       default_branch: ctx.defaultBranch,
@@ -163,7 +182,7 @@ reposRouter.post("/", async (req, res) => {
     } catch (err) {
       console.warn(`[repos] issue import failed for ${path}: ${safeMessage(err)}`);
     }
-    res.status(201).json({ repo: presentRepo(getRepo(row.id)!) });
+    res.status(existing ? 200 : 201).json({ repo: presentRepo(getRepo(row.id)!) });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
   }
