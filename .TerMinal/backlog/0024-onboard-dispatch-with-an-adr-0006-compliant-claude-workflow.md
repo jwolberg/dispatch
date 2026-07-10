@@ -1,16 +1,15 @@
 ---
 id: 24
 title: "Onboard dispatch with an ADR-0006-compliant claude.yml, and drop GH_PAT from the installer"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: true
 type: chore
 source: "operator asked why the Tracked card warns 'No Claude automation detected'"
 created: 2026-07-10
-updated: 2026-07-10
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/18"
+updated: 2026-07-09
+prs: []
 refs:
   - "scripts/install-claude-action.sh"
   - ".github/workflows/claude.yml"
