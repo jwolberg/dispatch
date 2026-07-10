@@ -7,7 +7,7 @@ import type { CommitIdentity } from "../providers/types.js";
  * raw payloads and the reasoning are in `./__fixtures__/README.md`. Do not change
  * this constant from documentation — re-sample.
  */
-export const CLAUDE_GIT_AUTHOR_NAME = "claude[bot]";
+const CLAUDE_GIT_AUTHOR_NAME = "claude[bot]";
 
 /**
  * Did `claude-code-action` push this commit?

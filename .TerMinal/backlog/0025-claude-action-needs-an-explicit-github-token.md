@@ -1,16 +1,15 @@
 ---
 id: 25
 title: "claude.yml never runs: omitting github_token makes claude-code-action demand the Claude GitHub App"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
 type: bug
 source: "observed while sampling for #4 AC 9"
 created: 2026-07-10
-updated: 2026-07-10
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/21"
+updated: 2026-07-09
+prs: []
 refs:
   - ".github/workflows/claude.yml"
   - "scripts/install-claude-action.sh"

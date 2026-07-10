@@ -130,8 +130,26 @@ interface GitProvider {
   getPRStatus(pr): PRStatus                 // state, mergeable, checks[]/pipelines[]
   getWorkflowRuns(repo, ref): Run[]
   mergePR(pr, method): MergeResult
+
+  // #4 — Dispatch opens the PR, and onboards a repo (ADR-0006 [2]).
+  listBranches(repo): BranchRef[]
+  getCommitIdentity(repo, sha): CommitIdentity   // author name + resolved login + Bot|User
+  createPullRequest(repo, input): PRRef
+  automationSetup(repo): RepoAutomationSetup | null
 }
 ```
+
+Two of these carry a fact the type system is doing real work to hold:
+
+- **`getCommitIdentity` returns three fields**, not a boolean, because no single one
+  identifies Claude. `commit.author.name` is `claude[bot]`, but the provider resolves
+  `author.login` from the commit *email* to `github-actions[bot]`, and `author.type`
+  (`Bot`) also matches Dependabot. The discriminator was **sampled from a real run**,
+  never inferred — see `server/poller/__fixtures__/README.md`. The poller opens a PR
+  from Claude's branch and never from a human's, which is not a recoverable mistake.
+- **`automationSetup` returns `null` for GitLab.** `claude-code-action` is GitHub-only,
+  so the absence is in the type rather than an exception thrown from the bottom of a
+  call stack; the setup route answers `501`.
 
 Each adapter **normalizes provider concepts into Dispatch concepts** so the core sees one
 vocabulary:
