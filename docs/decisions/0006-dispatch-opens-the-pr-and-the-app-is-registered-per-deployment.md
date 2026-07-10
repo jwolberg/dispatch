@@ -121,6 +121,29 @@ chooses personal or org ownership in GitHub's own UI, not ours); GitHub redirect
 back to `/api/github/callback?code=…`; Dispatch exchanges the code **once** for the
 App id, client id, client secret, private key, and webhook secret.
 
+> **Corrected 2026-07-09 (SES-0002, while building #2).** The `?org=<org>`
+> parameter above **does not exist.** Ownership is chosen by the *path* the form
+> POSTs to, not by a query parameter:
+>
+> | Owner | Form action |
+> |---|---|
+> | Personal account | `https://github.com/settings/apps/new?state=<state>` |
+> | Organization | `https://github.com/organizations/<org>/settings/apps/new?state=<state>` |
+>
+> `state` is the only query parameter, on either path. The rest of this section
+> stands — the operator still chooses ownership in GitHub's own UI, and the org
+> name is still a field on our setup screen rather than a constant in this repo.
+> Verified against GitHub's manifest-flow documentation, and the seven requested
+> permission keys were verified against the `app-permissions` schema in GitHub's
+> OpenAPI description (`workflows` accepts only `write`; there is no `read`).
+>
+> Also corrected: the conversion response types `webhook_secret` as **nullable**
+> (`POST /app-manifests/{code}/conversions`, required fields `client_id`,
+> `client_secret`, `webhook_secret`, `pem`). Dispatch must tolerate a null rather
+> than assume a string. And the code is documented as valid for **one hour**;
+> single-use is *not* stated anywhere, so `/api/github/callback` must enforce
+> one-shot exchange itself rather than rely on GitHub to reject a replay.
+
 Consequences:
 
 - **No App name, client id, or key is committed to this repository.** The name is an

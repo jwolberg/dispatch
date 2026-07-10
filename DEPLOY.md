@@ -50,6 +50,37 @@ done
 (Use `-l` instead of `-s` if your keychain item is stored under the label
 attribute. Add `GITLAB_TOKEN` the same way if you track GitLab repos.)
 
+### 1.1 `DISPATCH_ENCRYPTION_KEY` — required before registering a GitHub App
+
+Registering a GitHub App from the browser (§3.5) hands Dispatch the App's **private
+key**, at runtime. It does not exist when the process boots, so it cannot come from
+the environment: Dispatch writes it to SQLite, encrypted at rest under this key.
+
+```bash
+openssl rand -base64 32 \
+  | gcloud secrets create dispatch-encryption-key --data-file=- --replication-policy=automatic
+```
+
+Then pass it in alongside the others in §2:
+
+```
+--set-secrets DISPATCH_ENCRYPTION_KEY=dispatch-encryption-key:latest
+```
+
+Three things follow from this, and none of them are optional:
+
+- **Back the key up somewhere you will still have it after a redeploy.** Lose it and
+  the App's private key is unrecoverable ciphertext. Dispatch **refuses to start**
+  rather than silently reverting to `GITHUB_TOKEN` — recover the key, or clear the
+  `github_app` table and register a new App.
+- **Never store it in the same bucket as the snapshot.** The snapshot *is* the
+  ciphertext; the key is what protects it.
+- **Rotating the App's private key is not complete until the old snapshot versions
+  expire.** See §4.1.
+
+Not needed for local development or for a `GITHUB_TOKEN`-only deployment. Dispatch
+boots without it as long as no App is registered.
+
 ## 2. Deploy
 
 `--source .` uploads the repo, builds the `Dockerfile` via Cloud Build, and
@@ -107,11 +138,26 @@ gcloud beta run services proxy dispatch --region us-central1
 
 ## 3.5 Connect your repos
 
-Connecting a repo works exactly as it does locally — same tokens, same
-permissions, same Track button. See **Connecting a repo** in
-[`README.md`](README.md#connecting-a-repo) for the fine-grained PAT permissions,
-the `claude-code-action` install, and how preview URLs are discovered. Only two
-things differ on Cloud Run.
+**Preferred: register a GitHub App** from *Repo Config → GitHub App*. You name it,
+choose your personal account or an organization, and confirm its permissions on
+GitHub's own page — no PAT, no shell. Dispatch stores the App's private key
+encrypted (§1.1) and, once installed, repos under that account authenticate with a
+minted installation token instead of `GITHUB_TOKEN`.
+
+There is no central Dispatch App: this repo is deployed by anyone, for themselves,
+so each deployment registers its own (ADR-0006 §5).
+
+`GITHUB_TOKEN` is still required even with an App installed — three account-level
+calls (the rate-limit probe, the health check, and repo discovery) have no
+installation to resolve against, and retiring them is ticket #21. Repos outside any
+installation also continue to use it.
+
+The rest of this section is the `GITHUB_TOKEN` path, which remains fully supported
+and is the whole GitLab story. Connecting a repo that way works exactly as it does
+locally — same tokens, same permissions, same Track button. See **Connecting a
+repo** in [`README.md`](README.md#connecting-a-repo) for the fine-grained PAT
+permissions, the `claude-code-action` install, and how preview URLs are discovered.
+Only two things differ on Cloud Run.
 
 **Where the tokens live.** `GITHUB_TOKEN` came from Secret Manager in §1–2. To
 also track GitLab repos, add its token the same way and attach it:
@@ -185,6 +231,46 @@ gcloud run services update dispatch --region us-central1 \
 Optional: `DISPATCH_GCS_OBJECT` (defaults to `dispatch.db`). Turn versioning on
 — a corrupt snapshot then stays recoverable. The server logs a warning at boot
 whenever the DB is on an unmounted path *and* no bucket is configured.
+
+### 4.1 Expire noncurrent versions, or key rotation rotates nothing
+
+The snapshot is the **whole database**, and since #2 that database contains the
+GitHub App's private key. It is encrypted at rest (§1.1), so what reaches the
+bucket is ciphertext — but object versioning, which §4 turns on deliberately so a
+corrupt snapshot stays recoverable, has a second consequence:
+
+> **An old object version keeps the *old* ciphertext, readable with the *old*
+> encryption key, indefinitely.**
+
+So if you ever rotate the App's private key or `DISPATCH_ENCRYPTION_KEY`, the
+superseded secret remains recoverable from a noncurrent version until that version
+is deleted. Rotation is not finished until the old versions are gone. Set a
+lifecycle rule so they age out on their own:
+
+```bash
+cat > /tmp/lifecycle.json <<'JSON'
+{"rule": [
+  {"action": {"type": "Delete"},
+   "condition": {"daysSinceNoncurrentTime": 30, "isLive": false}},
+  {"action": {"type": "Delete"},
+   "condition": {"numNewerVersions": 10, "isLive": false}}
+]}
+JSON
+gcloud storage buckets update gs://YOUR_PROJECT_ID-state --lifecycle-file=/tmp/lifecycle.json
+rm /tmp/lifecycle.json
+```
+
+Thirty days of recoverability, at most ten superseded copies. Tighten the window if
+you rotate more often than that; it is the upper bound on how long a retired
+credential stays readable.
+
+To rotate immediately rather than waiting for the rule, delete the noncurrent
+versions by hand:
+
+```bash
+gcloud storage ls --all-versions gs://YOUR_PROJECT_ID-state/dispatch.db
+gcloud storage rm gs://YOUR_PROJECT_ID-state/dispatch.db#GENERATION
+```
 
 ### Why not a volume?
 

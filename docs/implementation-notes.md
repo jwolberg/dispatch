@@ -1023,3 +1023,58 @@ run red against the code they guard.
 **Left for #2:** a memoized `AppTokenSource` outlives a rotated private key or a
 reinstalled App. The store is the only thing that knows; `resetProviderCache()` on
 any write to the installations table is probably enough. Noted in the ticket.
+
+---
+
+## 2026-07-09 — #2, GitHub App manifest registration + install flow (SES-0002)
+
+**Three claims about GitHub's manifest format were wrong in ADR-0006, and all three
+would have compiled.** Verified against GitHub's OpenAPI description and the live
+`permissions` object of three real Apps *before* encoding any of it:
+
+- There is no `?org=<org>` parameter. Ownership is chosen by the path
+  (`/settings/apps/new` vs `/organizations/<org>/settings/apps/new`); `state` is the
+  only query parameter. Posting to the personal path with a stray `?org=` would have
+  registered the App on the wrong account while looking like it worked. There is now
+  a test asserting the string `org=` never appears in either action URL.
+- `webhook_secret` is nullable in the conversion response. `AppRecord` types it
+  `string | null`.
+- The code is documented valid for one hour; single use is **never stated**. So the
+  callback consumes its CSRF `state` before any network call, and enforces one-shot
+  exchange itself.
+
+ADR-0006 corrected by appending a dated note, not by rewriting the original claim.
+
+**Scope shrank on contact.** #2's acceptance criteria said to invert `redaction.ts`
+to value-registration. #3 already did (ADR-0006 [7] records the correction). What
+was left was calling `registerSecret()` on keys decrypted from SQLite.
+
+**A leak the mutation pass found, not the tests.** Mutating `safeMessage(err)` to
+`String(err)` on the 502 path did not turn the suite red. Behind that weak test was
+a real gap: `convertManifestCode()` received the plaintext PEM from GitHub and did
+not register it with the redactor until it was later read back out of SQLite.
+Anything that threw in that window — a disk error, a constraint violation — would
+have written the private key to a log line. Now registered the moment the response
+body parses, on the success *and* failure paths.
+
+**Deliberate: `forRepo()` falls back to `GITHUB_TOKEN` for a repo the App was not
+granted.** Handing back the installation anyway makes every call on that repo 404,
+and regresses a repo the operator was already tracking. The cost is that a stale
+`repos_json` keeps a newly-granted repo on the env token until the install flow
+re-runs; #17's webhooks are the real fix. Written down, not silently designed for.
+
+**Deliberate: boot refuses to start when an App is registered and
+`DISPATCH_ENCRYPTION_KEY` is missing.** Not "warn and fall back" — silently
+reverting to `GITHUB_TOKEN` is exactly the failure the ticket exists to prevent.
+Verified live: exit 1, actionable message, no PEM in the log.
+
+**Still open, and it is #21's, not this ticket's:** `GITHUB_TOKEN` remains required
+even with an App installed, because the rate-limit probe, the health route, and
+`discoverRepos()` are account-level calls with no installation to resolve against.
+`providers/index.ts` said that rewiring "belongs to #2's source swap"; that comment
+was stale and now points at #21.
+
+**Not done, and it cannot be faked:** AC 6 and AC 13 need a real App on a real
+account. Until one exists, ADR-0006 [8]'s central inference — that a PR opened with
+an *App installation token* triggers `pull_request` runs without approval — remains
+inference. It is the reason #4 and #5 are shaped the way they are.

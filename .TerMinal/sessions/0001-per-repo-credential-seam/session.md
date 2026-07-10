@@ -3,9 +3,9 @@ id: 1
 slug: per-repo-credential-seam
 anchor: SES-0001
 title: "Per-repo credential seam (#3) — memoize on installation, env token still flowing"
-status: active
+status: closed
 started: 2026-07-09T21:15:00Z
-ended: null
+ended: 2026-07-09T22:05:00Z
 goal: "Land the per-repo credential seam (#3): memoize getProvider on installation, mint/refresh tokens behind providers/, env token still flowing through"
 tickets: [3, 21]
 branches:
@@ -14,6 +14,8 @@ prs:
   - "https://github.com/jwolberg/dispatch/pull/10"
 related_research: []
 related_docs:
+  - "docs/learnings/cached-credentials-and-shared-mutable-state.md"
+  - "docs/architecture.md"
   - "docs/decisions/0002-github-app-tokens-and-the-anti-recursion-rule.md"
   - "docs/decisions/0006-dispatch-opens-the-pr-and-the-app-is-registered-per-deployment.md"
   - "docs/BUILD_PLAN-v2.md"
@@ -223,7 +225,30 @@ the implementation it guards is not a formality.
 
 ## [6] Outcomes
 
-_pending_
+**Shipped: PR [#10](https://github.com/jwolberg/dispatch/pull/10)**, merged `834de2c`,
+`verify` green. 12 commits, 34 files, +2279/−134.
+
+- **#3 closed** — per-repo credential resolution. All acceptance criteria met, including
+  the two added mid-session for the redactor.
+- **ADR-0006** written and accepted: Dispatch's server opens the PR (closing the gate
+  ADR-0002 [4] left open), and the App is registered **per deployment** because this is a
+  public repo people deploy for themselves.
+- **#2 and #4 amended and de-`hitl`'d** — their approval gates dissolved. #4 lost its
+  hardest requirement entirely: with no App credential written into user repos, it
+  writes one secret and never detects `can_approve_pull_request_reviews`.
+- **#21 filed** — account-level provider calls have no credential under an App.
+- **`redaction.ts` gained its first tests** (10) and value-registration.
+
+New behind the seam: `token-source.ts`, `installations.ts`. `github.ts` resolves auth per
+request. 11 call sites migrated to `getProviderForRepo(ref)`. 327 tests, up from 280.
+
+### [6.1] Verified, not assumed
+
+- Booted the server twice against GitHub's **live** API (`/api/health` → `valid: true`),
+  once after the seam and again after the auth hooks were collapsed.
+- Both concurrency guards, and the two strengthened memoization assertions, confirmed
+  **red** against the implementation they guard before being trusted.
+- `grep` proves no production code outside `providers/` names an installation.
 
 ## [7] Follow-ups
 
@@ -241,4 +266,31 @@ _pending_
 
 ## [8] Notes
 
-_pending_
+### [8.1] The App path is landed but unwired
+
+`setInstallationStore()` is never called in production, so `AppTokenSource` is reachable
+only from tests. This is exactly what `BUILD_PLAN-v2.md` §T1-2 asks for — *"land the
+credential seam first, with the env token still flowing through it, then swap the
+source"* — but it means #3's "installation tokens are minted behind the seam" is proven
+by unit tests and never by a running process.
+
+Rather than leave that implicit, #2 gained two acceptance criteria: call
+`setInstallationStore()` at boot, and prove end-to-end that a tracked repo polls with a
+minted token rather than `GITHUB_TOKEN`. `docs/architecture.md` §5.1 carries the same
+warning inline.
+
+### [8.2] Documentation drift found and fixed
+
+- `docs/architecture.md` §5 described the factory as keyed on `(provider, host)`. Now
+  §5.1 documents credential resolution, the injection, and the unwired status.
+- `docs/BUILD_PLAN-v2.md`'s dependency table and graph drew `T1-1 ─► T1-2`, contradicting
+  its own prose two paragraphs later. Corrected, with a dated note saying why.
+
+### [8.3] What I would do differently
+
+I let the adversarial reviewer confirm two concurrency bugs I had already described in
+prose, rather than pre-fixing them, to avoid racing it on the same files. That was right.
+But I had described the first as "no in-flight deduplication" — a stampede problem — and
+it was actually a credential-into-logs bug. Naming a defect by its cheapest symptom is
+how it gets deprioritized. Captured in
+[`docs/learnings/cached-credentials-and-shared-mutable-state.md`](../../../docs/learnings/cached-credentials-and-shared-mutable-state.md).

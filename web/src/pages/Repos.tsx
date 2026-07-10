@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Page } from "../components/Page.js";
 import { RepoCard } from "../components/RepoCard.js";
 import { ConfirmModal } from "../components/ConfirmModal.js";
+import { GitHubAppSetup } from "../components/GitHubAppSetup.js";
+import { installBannerFor } from "../lib/installBanner.js";
 import { reposApi } from "../api/repos.js";
 import { ApiError } from "../api/client.js";
 import type { RepoSummary, TrackedRepo } from "../api/types.js";
@@ -23,6 +25,9 @@ export function ReposPage() {
     () => new Set(tracked.map((r) => `${r.provider}:${r.path}`)),
     [tracked]
   );
+
+  // Set when GitHub bounced us back from an App install (#2).
+  const installBanner = useMemo(() => installBannerFor(window.location.search), []);
 
   async function loadTracked() {
     const { repos } = await reposApi.list();
@@ -106,6 +111,17 @@ export function ReposPage() {
           {error}
         </div>
       )}
+
+      {installBanner && (
+        <div className="mb-4 rounded border border-border bg-surface-2 px-3 py-2 text-body text-gray-200">
+          {installBanner}
+        </div>
+      )}
+
+      <h2 className="mb-2 text-body font-semibold text-gray-200">GitHub App</h2>
+      <div className="mb-6">
+        <GitHubAppSetup />
+      </div>
 
       <h2 className="mb-2 text-body font-semibold text-gray-200">Tracked</h2>
       {tracked.length === 0 ? (

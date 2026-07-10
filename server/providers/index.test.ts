@@ -82,7 +82,9 @@ describe("getProvider / getProviderForRepo", () => {
   describe("fallback to the env token", () => {
     it("resolves a repo with no installation to the GITHUB_TOKEN adapter", () => {
       setInstallationStore(storeOf({}));
-      expect(() => getProviderForRepo(repo("acme/widgets"))).not.toThrow();
+      // Identity with the account-level adapter is what proves it is the env one.
+      // `not.toThrow()` would also pass if it silently built an App adapter.
+      expect(getProviderForRepo(repo("acme/widgets"))).toBe(getProvider("github"));
     });
 
     it("resolves every repo to the env adapter when no store is injected at all", () => {
@@ -107,11 +109,11 @@ describe("getProvider / getProviderForRepo", () => {
   });
 
   describe("account-level getProvider (no repo in hand)", () => {
-    it("still resolves to the env-token adapter", () => {
+    it("ignores the installation store entirely — an installed repo's adapter is a different one", () => {
       // scheduler.ts, health.ts and discover.ts ask for a provider with no repo.
-      // Under an App there is no account-level token; rewiring them is #2's swap.
+      // Under an App there is no account-level token; rewiring them is #21.
       setInstallationStore(storeOf({ "acme/widgets": install(100) }));
-      expect(() => getProvider("github")).not.toThrow();
+      expect(getProvider("github")).not.toBe(getProviderForRepo(repo("acme/widgets")));
     });
 
     it("hands back the same adapter the env fallback uses, so the ETag cache is shared", () => {

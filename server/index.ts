@@ -6,7 +6,9 @@ import { loadConfig, warnIfEphemeralDb } from "./lib/env.js";
 import { getDb, DB_PATH } from "./db/migrate.js";
 import { restoreIfMissing, snapshotEnabled, snapshotMiddleware, flush, isDirty } from "./db/snapshot.js";
 import { sqliteCondCacheStore } from "./db/http-cache.js";
-import { setCondCacheStore } from "./providers/index.js";
+import { openInstallationStore } from "./db/installations.js";
+import { setCondCacheStore, setInstallationStore, resetProviderCache } from "./providers/index.js";
+import { githubAppRouter } from "./routes/github-app.js";
 import { healthRouter } from "./routes/health.js";
 import { discoverRouter } from "./routes/discover.js";
 import { reposRouter } from "./routes/repos.js";
@@ -42,6 +44,24 @@ if (snapshotEnabled()) console.log(`[dispatch] snapshotting state to gs://${proc
 // Cloud Run cold start) replays ETags instead of re-fetching everything (T0-9).
 setCondCacheStore(sqliteCondCacheStore);
 
+// Resolve each repo's credential through its GitHub App installation, when one
+// exists (#2). Without this line #3's seam is dead code and AppTokenSource is
+// never constructed in production — every repo silently falls back to
+// GITHUB_TOKEN.
+//
+// `onChange` is resetProviderCache: adapters memoize one AppTokenSource, holding
+// one private key, for the life of the process. A regenerated key or a reinstall
+// must drop them, or they mint against dead credentials until a restart.
+//
+// Throws when an App is registered but DISPATCH_ENCRYPTION_KEY is gone. That is
+// deliberate: reverting to GITHUB_TOKEN there would silently stop using the App.
+const installations = openInstallationStore(process.env, resetProviderCache);
+setInstallationStore(installations ?? undefined);
+if (installations) {
+  const app = installations.getApp();
+  if (app) console.log(`[dispatch] github app "${app.slug}" (id ${app.appId}) registered`);
+}
+
 const app = express();
 // Shared-password gate (no-op unless DISPATCH_PASSWORD is set) — runs before
 // everything so unauthenticated requests never reach routes or static assets.
@@ -60,6 +80,7 @@ api.use("/tickets", ticketsRouter);
 api.use("/tickets", summaryRouter); // T1-5: GET /tickets/:id/summary
 api.use("/board", boardRouter);
 api.use("/activity", activityRouter);
+api.use("/github", githubAppRouter); // #2: manifest registration + install callback
 app.use("/api", api);
 
 // Production: serve the built SPA + client-side routing fallback when a web
