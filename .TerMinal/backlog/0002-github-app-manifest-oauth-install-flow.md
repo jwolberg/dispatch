@@ -1,7 +1,7 @@
 ---
 id: 2
 title: "GitHub App: manifest registration + OAuth install flow"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-09
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/11"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-1"
