@@ -1149,3 +1149,33 @@ replaced it with `getAccountProviders()`. Corrected.
 what it says — `detectAutomation()` found no `claude-code-action` workflow. Of the
 tracked repos only `situation` has one. Tracking itself works; `POST /api/repos`
 returns 201 and the repo appears in `GET /api/repos`.
+
+## 2026-07-10 — #23: UNIQUE (provider, host, path) never fired for GitHub
+
+Found while chasing "Track doesn't work". Track *did* work; the repo was tracked
+each time. What actually happened is that **every click appended a row**:
+`repos` declares `UNIQUE (provider, host, path)`, GitHub repos always carry
+`host = NULL`, and SQLite treats each NULL as distinct inside a UNIQUE index. So
+the constraint never fired for GitHub. GitLab repos (non-null host) were always
+deduped, which is why this hid. A live db held `jwolberg/dispatch` twice.
+
+Fix: an expression index, `idx_repos_identity ON repos (provider,
+COALESCE(host, ''), path)`, plus a boot migration that collapses existing
+duplicates first (the index cannot be created over them).
+
+**Decision — idempotent 200 over 409** (operator's call). Re-tracking returns the
+existing row and refreshes its cached context, rather than erroring. A re-track is
+how someone asks for fresh context, and the route has already paid for the fetch.
+The tradeoff: a genuine double-submit is now silent. The `UNIQUE` constraint on
+the table stays — SQLite has no `DROP CONSTRAINT`, and it still guards GitLab.
+
+Migration detail worth remembering: `tickets` is `UNIQUE (repo_id, issue_number)`,
+so re-pointing a loser's tickets at the survivor can collide. `UPDATE OR IGNORE`
+leaves the colliding row behind and the `ON DELETE CASCADE` sweeps it when the
+loser repo is deleted — the survivor's copy is the one worth keeping.
+
+**Not a bug, again:** `⚠ No Claude automation detected` is `detectAutomation()`
+truthfully reporting that a tracked repo has no `claude-code-action` workflow.
+`jwolberg/dispatch` has only `ci.yml`. The banner renders on a card in the
+*Tracked* list, so it can only appear once tracking succeeded — it reads like a
+failure. Worth a copy change; not filed.

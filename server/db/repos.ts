@@ -41,6 +41,21 @@ export function getRepo(id: number): RepoRow | undefined {
   return getDb().prepare("SELECT * FROM repos WHERE id = ?").get(id) as RepoRow | undefined;
 }
 
+/**
+ * The row for a repo's identity, matching the `idx_repos_identity` index (#23).
+ * `COALESCE` on both sides so an omitted host and an explicit NULL host — which
+ * is every GitHub repo — resolve to the same row.
+ */
+export function findRepoByIdentity(
+  provider: string,
+  host: string | null | undefined,
+  path: string
+): RepoRow | undefined {
+  return getDb()
+    .prepare("SELECT * FROM repos WHERE provider = ? AND COALESCE(host, '') = ? AND path = ?")
+    .get(provider, host ?? "", path) as RepoRow | undefined;
+}
+
 export function insertRepo(repo: NewRepo): RepoRow {
   const info = getDb()
     .prepare(
