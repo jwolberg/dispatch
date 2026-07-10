@@ -85,6 +85,19 @@ function splitPath(path: string): { owner: string; repo: string } {
  * GitHub adapter. The ONLY module (besides the GitLab adapter) permitted to
  * import a provider SDK. Normalizes GitHub concepts into Dispatch DTOs.
  */
+/**
+ * Which question `discoverRepos()` is allowed to ask (#21).
+ *
+ * `user` — a PAT: `GET /user/repos`, every repo the *user* can reach.
+ * `installation` — a GitHub App token: `GET /installation/repositories`, only the
+ * repos that installation was granted. `/user/repos` returns 403 for it, and the
+ * installation endpoint does not exist for a PAT, so this is not a preference —
+ * it is which endpoint is legal for the credential the adapter holds.
+ *
+ * Set by the factory, which knows the credential. Callers never pass it.
+ */
+export type RepoScope = "user" | "installation";
+
 export class GitHubProvider implements GitProvider {
   private readonly octokit: Octokit;
 
@@ -94,7 +107,12 @@ export class GitHubProvider implements GitProvider {
   // this instance, and survives process restarts when a store is supplied.
   private readonly conds: CondCache;
 
-  constructor(tokens: TokenSource, host?: string | null, condStore?: CondCacheStore) {
+  constructor(
+    tokens: TokenSource,
+    host?: string | null,
+    condStore?: CondCacheStore,
+    private readonly scope: RepoScope = "user"
+  ) {
     // Self-hosted GitHub Enterprise uses /api/v3; github.com uses the default.
     const baseUrl = host ? `${host.replace(/\/$/, "")}/api/v3` : undefined;
     this.octokit = new Octokit({ baseUrl });
@@ -150,11 +168,20 @@ export class GitHubProvider implements GitProvider {
     };
   }
 
+  /**
+   * Every repo this adapter's credential can reach.
+   *
+   * Two endpoints, chosen by {@link RepoScope}, because a PAT and an installation
+   * token cannot ask each other's question. `/installation/repositories` wraps its
+   * results in a `repositories` envelope rather than returning a bare array;
+   * Octokit's paginator unwraps it, so both branches yield the same row shape.
+   */
   async discoverRepos(): Promise<RepoSummary[]> {
-    const repos = await this.octokit.paginate("GET /user/repos", {
-      sort: "pushed",
-      per_page: 100,
-    });
+    const repos =
+      this.scope === "installation"
+        ? await this.octokit.paginate("GET /installation/repositories", { per_page: 100 })
+        : await this.octokit.paginate("GET /user/repos", { sort: "pushed", per_page: 100 });
+
     return repos.map((r) => ({
       provider: "github" as const,
       host: null,

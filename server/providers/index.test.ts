@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
 import {
   getAccountProviders,
   getProvider,
@@ -9,7 +10,12 @@ import {
 import type { Installation, InstallationStore, RepoKey } from "./installations.js";
 import type { RepoRef } from "./types.js";
 
-const PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-used-until-a-token-is-minted\n-----END PRIVATE KEY-----";
+// A real key: the #21 factory tests actually mint, and signAppJwt() signs for real.
+const { privateKey: PRIVATE_KEY } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+});
 
 function install(installationId: number, accountLogin = "acme"): Installation {
   return { installationId, appId: 1, privateKey: PRIVATE_KEY, accountLogin };
@@ -208,6 +214,46 @@ describe("getProvider / getProviderForRepo", () => {
       for (const account of getAccountProviders("github")) {
         expect(Object.keys(account).sort()).toEqual(["kind", "label", "provider"]);
       }
+    });
+  });
+
+  describe("the factory picks the discovery endpoint (#21)", () => {
+    // The scope is right in GitHubProvider only if the factory passes it. Without
+    // this, an App-backed adapter would call GET /user/repos and take a 403.
+    afterEach(() => vi.unstubAllGlobals());
+
+    /** Answers the mint, then the discovery call — an App adapter makes both. */
+    function stubFetch(body: unknown) {
+      const m = vi.fn(async (url: string | URL | Request) => {
+        const json = String(url).includes("/access_tokens")
+          ? { token: "ghs_minted", expires_at: new Date(Date.now() + 3600e3).toISOString() }
+          : body;
+        return new Response(JSON.stringify(json), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+      vi.stubGlobal("fetch", m);
+      return m;
+    }
+
+    const nonMintUrls = (m: ReturnType<typeof vi.fn>) =>
+      m.mock.calls.map(([u]) => String(u)).filter((u) => !u.includes("/access_tokens"));
+
+    it("gives an App-backed adapter the installation endpoint", async () => {
+      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
+      const m = stubFetch({ total_count: 0, repositories: [] });
+
+      await getProviderForRepo(repo("acme/widgets")).discoverRepos();
+      const urls = nonMintUrls(m);
+      expect(urls[0]).toContain("/installation/repositories");
+      expect(urls.some((u) => u.includes("/user/repos"))).toBe(false);
+    });
+
+    it("leaves the env adapter on /user/repos", async () => {
+      const m = stubFetch([]);
+      await getProvider("github").discoverRepos();
+      expect(nonMintUrls(m)[0]).toContain("/user/repos");
     });
   });
 

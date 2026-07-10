@@ -87,7 +87,9 @@ function resolve(
       const tokens: TokenSource = installation
         ? new AppTokenSource(installation, { apiBase: host ? `${host.replace(/\/$/, "")}/api/v3` : undefined })
         : new EnvTokenSource(requireEnv("GITHUB_TOKEN"));
-      instance = new GitHubProvider(tokens, host, condStore);
+      // The credential decides which discovery endpoint is legal (#21). The
+      // factory is the only place that knows which credential this adapter got.
+      instance = new GitHubProvider(tokens, host, condStore, installation ? "installation" : "user");
       break;
     }
     case "gitlab":
