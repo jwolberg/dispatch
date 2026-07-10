@@ -207,9 +207,7 @@ export class SqliteInstallationStore implements InstallationStore {
   forRepo(key: RepoKey): Installation | null {
     if (key.provider !== "github") return null; // GitLab has no App story
 
-    const app = this.db.prepare("SELECT app_id, private_key_enc FROM github_app WHERE id = 1").get() as
-      | Pick<AppRow, "app_id" | "private_key_enc">
-      | undefined;
+    const app = this.appCredentials();
     if (!app) return null;
 
     const row = this.db
@@ -224,7 +222,33 @@ export class SqliteInstallationStore implements InstallationStore {
       installationId: rec.installationId,
       appId: app.app_id,
       privateKey: this.reveal(app.private_key_enc),
+      accountLogin: rec.accountLogin,
     };
+  }
+
+  /**
+   * Every installation, for the account-level calls that have no repo (#21).
+   *
+   * Empty when no App is registered — which is what keeps `getAccountProviders()`
+   * on the env token for a `GITHUB_TOKEN`-only deployment.
+   */
+  list(): Installation[] {
+    const app = this.appCredentials();
+    if (!app) return [];
+
+    const privateKey = this.reveal(app.private_key_enc); // one decrypt for all rows
+    return this.listInstallations().map((rec) => ({
+      installationId: rec.installationId,
+      appId: app.app_id,
+      privateKey,
+      accountLogin: rec.accountLogin,
+    }));
+  }
+
+  private appCredentials(): Pick<AppRow, "app_id" | "private_key_enc"> | undefined {
+    return this.db.prepare("SELECT app_id, private_key_enc FROM github_app WHERE id = 1").get() as
+      | Pick<AppRow, "app_id" | "private_key_enc">
+      | undefined;
   }
 }
 

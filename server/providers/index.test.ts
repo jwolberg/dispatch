@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  getAccountProviders,
   getProvider,
   getProviderForRepo,
   resetProviderCache,
@@ -10,13 +11,18 @@ import type { RepoRef } from "./types.js";
 
 const PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----\nnot-used-until-a-token-is-minted\n-----END PRIVATE KEY-----";
 
-function install(installationId: number): Installation {
-  return { installationId, appId: 1, privateKey: PRIVATE_KEY };
+function install(installationId: number, accountLogin = "acme"): Installation {
+  return { installationId, appId: 1, privateKey: PRIVATE_KEY, accountLogin };
 }
 
 /** A store that maps repo path → installation. Anything unlisted has no App. */
 function storeOf(byPath: Record<string, Installation>): InstallationStore {
-  return { forRepo: (key: RepoKey) => byPath[key.path] ?? null };
+  const seen = new Map<number, Installation>();
+  for (const i of Object.values(byPath)) seen.set(i.installationId, i);
+  return {
+    forRepo: (key: RepoKey) => byPath[key.path] ?? null,
+    list: () => [...seen.values()],
+  };
 }
 
 const repo = (path: string, host?: string | null): RepoRef => ({
@@ -118,6 +124,90 @@ describe("getProvider / getProviderForRepo", () => {
 
     it("hands back the same adapter the env fallback uses, so the ETag cache is shared", () => {
       expect(getProvider("github")).toBe(getProviderForRepo(repo("unlisted/repo")));
+    });
+  });
+
+  describe("getAccountProviders — one adapter per credential (#21)", () => {
+    // health.ts and discover.ts have no repo, and under an App there is no
+    // account-level credential — only one per installation. They iterate opaque
+    // adapters; nothing outside providers/ learns what an installation is.
+
+    it("returns just the env adapter when no store is injected", () => {
+      const accounts = getAccountProviders("github");
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].kind).toBe("env");
+      expect(accounts[0].provider).toBe(getProvider("github"));
+    });
+
+    it("labels the env adapter by its environment variable", () => {
+      expect(getAccountProviders("github")[0].label).toBe("GITHUB_TOKEN");
+    });
+
+    it("returns one adapter per installation, labelled by account", () => {
+      setInstallationStore(
+        storeOf({ "acme/widgets": install(100, "acme"), "jw/dispatch": install(200, "jwolberg") })
+      );
+      const accounts = getAccountProviders("github");
+
+      expect(accounts.filter((a) => a.kind === "app").map((a) => a.label).sort()).toEqual([
+        "acme",
+        "jwolberg",
+      ]);
+    });
+
+    it("gives each installation a distinct adapter, and reuses the memoized one", () => {
+      // Distinct: two installations hold two different credentials. Reused: the
+      // adapter carries the ETag cache, and discover must not reset it every call.
+      setInstallationStore(
+        storeOf({ "acme/widgets": install(100, "acme"), "jw/dispatch": install(200, "jwolberg") })
+      );
+      const [a, b] = getAccountProviders("github").filter((x) => x.kind === "app");
+
+      expect(a.provider).not.toBe(b.provider);
+      expect(a.provider).toBe(getProviderForRepo(repo("acme/widgets")));
+      expect(b.provider).toBe(getProviderForRepo(repo("jw/dispatch")));
+    });
+
+    it("also includes the env adapter when GITHUB_TOKEN is set alongside an App", () => {
+      // A repo outside every installation is reachable only via the env token.
+      // Dropping it here would silently hide those repos from Discover.
+      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
+      const kinds = getAccountProviders("github").map((a) => a.kind);
+      expect(kinds).toContain("env");
+      expect(kinds).toContain("app");
+    });
+
+    it("omits the env adapter — and does not throw — when GITHUB_TOKEN is unset", () => {
+      // The exit criterion of #21: run end-to-end with only an App. `requireEnv`
+      // must never be reached.
+      delete process.env.GITHUB_TOKEN;
+      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
+
+      const accounts = getAccountProviders("github");
+      expect(accounts.map((a) => a.kind)).toEqual(["app"]);
+    });
+
+    it("returns nothing rather than throwing when there is no credential at all", () => {
+      // No App, no token. Discover should render an empty list and health should
+      // say `configured: false` — neither should 500.
+      delete process.env.GITHUB_TOKEN;
+      expect(getAccountProviders("github")).toEqual([]);
+    });
+
+    it("leaves GitLab on its env token regardless of the installation store", () => {
+      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
+      const accounts = getAccountProviders("gitlab");
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].kind).toBe("env");
+    });
+
+    it("never exposes an installation id to the caller", () => {
+      // The seam's rule (ARCHITECTURE §5). A label is an account login — public,
+      // and already visible in every RepoSummary.path.
+      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
+      for (const account of getAccountProviders("github")) {
+        expect(Object.keys(account).sort()).toEqual(["kind", "label", "provider"]);
+      }
     });
   });
 

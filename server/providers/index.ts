@@ -114,21 +114,67 @@ export function getProviderForRepo(ref: RepoRef): GitProvider {
 }
 
 /**
- * Factory for an account-level call — one with no repo: the rate-limit probe
- * (`poller/scheduler.ts`, `routes/health.ts`) and repo discovery
- * (`routes/discover.ts`).
+ * Factory for a call with no repo, and therefore no installation.
  *
- * These always use the env token. Under a GitHub App there is no account-level
- * credential at all — `discoverRepos()` would enumerate an *installation's*
- * repos — so rewiring them is its own ticket (#21), not this seam.
- *
- * That means a deployment with an App but no `GITHUB_TOKEN` still throws here.
- * #2 registers the App and resolves per-repo credentials; #21 is what finally
- * retires the env token from these three call sites.
+ * Always the env token. It remains the whole GitLab story, the credential for a
+ * repo outside every installation, and the documented local path — but a GitHub
+ * caller that wants to ask an *account-level* question should use
+ * {@link getAccountProviders}, which does not assume a single account-level
+ * credential exists. Under an App, it does not.
  */
 export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
   if (factoryOverride) return factoryOverride(provider, host);
   return resolve(provider, host, null);
+}
+
+/** An adapter, and enough to name the credential behind it — never which one. */
+export interface AccountProvider {
+  /** `env` = a PAT; `app` = a GitHub App installation token. */
+  kind: "env" | "app";
+  /** An account login (`acme`), or the env var's name. Safe to render. */
+  label: string;
+  provider: GitProvider;
+}
+
+/**
+ * One adapter per credential that can answer an account-level question (#21).
+ *
+ * A PAT belongs to a *user* and enumerates that user's repos. An installation
+ * token belongs to one *installation* and enumerates only its repos. So under a
+ * GitHub App there is no single "account-level provider" — there are N, and
+ * `discoverRepos()` / `getRateLimit()` must be asked of each and merged.
+ *
+ * **The seam holds.** A caller receives a `label` (an account login — public, and
+ * already the owner half of every `RepoSummary.path`) and an opaque `GitProvider`.
+ * It never sees an installation id, and never learns that installations exist.
+ * That is ARCHITECTURE §5's rule, and it is why this returns `AccountProvider[]`
+ * rather than exposing the store.
+ *
+ * The env adapter is included **alongside** the App's when `GITHUB_TOKEN` is set:
+ * a repo outside every installation is reachable only through it, so dropping it
+ * would silently hide those repos from Discover. It is omitted when the token is
+ * unset — the case `requireEnv` must never see, and #21's exit criterion.
+ *
+ * Returns `[]` when there is no credential at all. Callers render an empty list or
+ * report `configured: false`. Nothing throws.
+ */
+export function getAccountProviders(provider: ProviderId, host?: string | null): AccountProvider[] {
+  if (provider === "gitlab") {
+    return process.env.GITLAB_TOKEN
+      ? [{ kind: "env", label: "GITLAB_TOKEN", provider: resolve(provider, host, null) }]
+      : [];
+  }
+
+  const accounts: AccountProvider[] = (installationStore?.list() ?? []).map((installation) => ({
+    kind: "app" as const,
+    label: installation.accountLogin,
+    provider: resolve(provider, host, installation),
+  }));
+
+  if (process.env.GITHUB_TOKEN) {
+    accounts.push({ kind: "env", label: "GITHUB_TOKEN", provider: resolve(provider, host, null) });
+  }
+  return accounts;
 }
 
 /** Drop memoized adapters (e.g. after a token/env change). Test + ops hook. */

@@ -167,6 +167,7 @@ describe("installations store", () => {
         installationId: 42,
         appId: APP.appId,
         privateKey: PEM,
+        accountLogin: "acme",
       });
     });
 
@@ -341,6 +342,40 @@ describe("installations store", () => {
       expect(getProviderForRepo({ provider: "github", path: "acme/widgets" })).not.toBe(
         getProvider("github")
       );
+    });
+  });
+
+  describe("list() — the account-level enumeration (#21)", () => {
+    it("returns nothing when no App is registered", () => {
+      expect(newStore().list()).toEqual([]);
+    });
+
+    it("returns nothing when an App exists but nothing is installed", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      expect(store.list()).toEqual([]);
+    });
+
+    it("returns one entry per installation, each carrying the App's key", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation({ installationId: 42, accountLogin: "acme" }));
+      store.saveInstallation(installation({ installationId: 43, accountLogin: "jwolberg" }));
+
+      expect(store.list()).toEqual([
+        { installationId: 42, appId: APP.appId, privateKey: PEM, accountLogin: "acme" },
+        { installationId: 43, appId: APP.appId, privateKey: PEM, accountLogin: "jwolberg" },
+      ]);
+    });
+
+    it("registers the private key with the redactor", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation());
+      __resetRegisteredSecrets();
+
+      store.list();
+      expect(safeMessage(new Error(`boom ${PEM}`))).not.toContain(PEM);
     });
   });
 

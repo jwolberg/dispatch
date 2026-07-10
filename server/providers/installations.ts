@@ -14,6 +14,14 @@ export interface Installation {
   appId: number;
   /** PEM. Held in memory only; never logged (see lib/redaction.ts). */
   privateKey: string;
+  /**
+   * The account this installation belongs to (`acme`, `jwolberg`).
+   *
+   * Public information — it is the owner half of every `RepoSummary.path` this
+   * installation can see. It exists so `getAccountProviders()` can *label* an
+   * adapter without handing the caller an installation id (#21).
+   */
+  accountLogin: string;
 }
 
 /** The identity of a repo, as far as installation lookup is concerned. */
@@ -34,4 +42,16 @@ export interface RepoKey {
  */
 export interface InstallationStore {
   forRepo(key: RepoKey): Installation | null;
+
+  /**
+   * Every installation this deployment knows about.
+   *
+   * Needed by the account-level calls (#21) — repo discovery and the rate-limit
+   * probe have no repo to resolve against, and under an App there is no
+   * account-level credential, only one credential per installation. This is the
+   * *only* way to enumerate them, and it stays inside `providers/`.
+   *
+   * Empty when no App is registered.
+   */
+  list(): Installation[];
 }
