@@ -302,6 +302,53 @@ describe("GET /api/github/installed", () => {
 
     expect(store().listInstallations()).toEqual([]);
   });
+
+  it("uploads a snapshot before redirecting, because snapshotMiddleware skips GET", async () => {
+    // GitHub sends the operator here as a browser GET. snapshotMiddleware
+    // deliberately short-circuits on GET/HEAD, so nothing would ever upload the
+    // registration — and the next Cloud Run redeploy would restore a snapshot that
+    // has never heard of the App. The route must flush for itself.
+    store().saveApp(APP);
+    const flushSnapshot = vi.fn(async () => {});
+    const gh = fakeGitHub();
+
+    await withServer(app({ fetchImpl: gh.impl, flushSnapshot }), async (base) => {
+      const res = await fetch(`${base}/api/github/installed?installation_id=42`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+    });
+
+    expect(flushSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not upload a snapshot when nothing was recorded", async () => {
+    store().saveApp(APP);
+    const flushSnapshot = vi.fn(async () => {});
+    const gh = fakeGitHub({ installationStatus: 500 });
+
+    await withServer(app({ fetchImpl: gh.impl, flushSnapshot }), async (base) => {
+      await fetch(`${base}/api/github/installed?installation_id=42`, { redirect: "manual" });
+    });
+
+    expect(flushSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("still redirects when the snapshot upload fails", async () => {
+    // The row is committed locally either way, and it stays dirty so the next
+    // mutating request retries. Failing the operator's install over a transient
+    // GCS error would be worse than a stale snapshot.
+    store().saveApp(APP);
+    const flushSnapshot = vi.fn(async () => {
+      throw new Error("GCS 503");
+    });
+    const gh = fakeGitHub();
+
+    await withServer(app({ fetchImpl: gh.impl, flushSnapshot }), async (base) => {
+      const res = await fetch(`${base}/api/github/installed?installation_id=42`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+    });
+
+    expect(store().listInstallations()).toHaveLength(1);
+  });
 });
 
 describe("GET /api/github/app — what the setup screen reads", () => {

@@ -1,9 +1,17 @@
 # Build Plan v2 — Tiers 0–2
 
-**Status:** Tier 0 **complete** (10/10). Tiers 1–2 not started.
+**Status:** Tier 0 **complete** (10/10). Tier 1 **8/10** — only the onboarding
+track remains (T1-3, T1-4). Tier 2 not started.
 **Supersedes:** nothing. `docs/BUILD_PLAN.md` covers v1 (Phases 1–6, complete).
 **Source:** assessment of 2026-07-09 (Dispatch vs. TerMinal vs. the 2026 orchestrator market).
-**Last updated:** 2026-07-09 — see `docs/implementation.md` for the Tier 0 run.
+**Last updated:** 2026-07-10 — Tier 0 run in `docs/implementation.md`; Tier 1 run
+in `docs/implementation-notes.md`.
+
+**The one thing to read before picking up T1-3.** ADR-0006 [8]'s central claim —
+that a pull request opened with a GitHub App *installation token* triggers
+`pull_request` runs without approval — is still **inferred, not observed**. T1-3 and
+T1-4 are both shaped around it. T1-1 has now registered the machinery to check it;
+ticket **#22** is the check, and it should happen before T1-3, not after.
 
 ---
 
@@ -172,18 +180,25 @@ first ship, for a user who cannot read a diff and has never minted a PAT.
 
 ### Tickets
 
-| ID | Title | Size | Depends on |
-|---|---|---|---|
-| T1-0 | **Spike:** GitHub App installation tokens and the anti-recursion rule | S | — |
-| T1-1 | GitHub App: manifest registration + OAuth install flow | L | T1-0 |
-| T1-2 | Per-repo credential resolution (replaces the global env token) | M | — (see below) |
-| T1-3 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 |
-| T1-4 | Canary verification: prove the build triggers, at setup time | M | T1-3 |
-| T1-5 | Plain-language change summary on the card | M | T0-1 |
-| T1-6 | Preview-first card: hero preview + single verdict chip | S | T1-5 |
-| T1-7 | **Spike:** revert mechanism per provider | S | — |
-| T1-8 | One-click revert | M | T1-7 |
-| T1-9 | Spend tracking + daily budget cap | M | T0-1 |
+| ID | Ticket | Title | Size | Depends on | Status |
+|---|---|---|---|---|---|
+| T1-0 | #1 | **Spike:** GitHub App installation tokens and the anti-recursion rule | S | — | Complete (ADR-0002) |
+| T1-1 | #2 | GitHub App: manifest registration + OAuth install flow | L | T1-0 | Complete (PR #11) |
+| T1-2 | #3 | Per-repo credential resolution (replaces the global env token) | M | — (see below) | Complete (PR #10) |
+| T1-3 | #4 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 | **Open — next** |
+| T1-4 | #5 | Canary verification: prove the build triggers, at setup time | M | T1-3 | Open |
+| T1-5 | #6 | Plain-language change summary on the card | M | T0-1 | Complete |
+| T1-6 | #7 | Preview-first card: hero preview + single verdict chip | S | T1-5 | Complete |
+| T1-7 | #8 | **Spike:** revert mechanism per provider | S | — | Complete (ADR-0003) |
+| T1-8 | #9 | One-click revert | M | T1-7 | Complete (ADR-0004) |
+| T1-9 | #10 | Spend tracking + daily budget cap | M | T0-1 | Complete |
+
+**Spun out of this tier, and both still open:**
+
+| Ticket | Title | Why it exists |
+|---|---|---|
+| #21 | Account-level provider calls under an App | **Done (PR #13).** T1-2 could not resolve the rate-limit probe, health route, or `discoverRepos()` — they have no repo, so no installation. `getAccountProviders()` now returns one adapter per credential; Discover fans out and merges, health reports one entry per credential, and the env-only `getProvider()` factory is gone. `GITHUB_TOKEN` is optional. |
+| #22 | Live-verify the App path | T1-1's AC 6 and AC 13 need an App on a real account. Closes ADR-0006 [8]'s open inference. `hitl` — only the operator can register an App. |
 
 **T1-0 — Spike, and it gates the whole tier.**
 The claim I want verified before building on it: *events authenticated with a
@@ -196,6 +211,19 @@ tokens but we must keep minting a PAT, and T1-3 gets meaningfully uglier.
 
 Do not start T1-1 before this is settled. Timebox to half a day; the answer is a
 paragraph and a link.
+
+> **Done, and only half-settled — read this before T1-3 (2026-07-09/10).** The
+> spike produced ADR-0002 and ADR-0006. ADR-0006 [2] went further than the spike
+> asked: **the workflow no longer opens PRs at all.** `claude-code-action` pushes a
+> branch under the default `GITHUB_TOKEN`, and Dispatch's own server opens the pull
+> request with its installation token. That deletes the `gh pr create` post-step and
+> leaves `GH_PAT` with no caller.
+>
+> But the arm this rests on — that a PR opened with an *installation token* triggers
+> `pull_request` runs without approval — was never observed. What was observed was a
+> fine-grained PAT. ADR-0006 [8] says so plainly. **T1-1 registered the first App;
+> #22 is the fifteen-minute check.** Do it before T1-3, because if the arm is false,
+> T1-3 is a different ticket.
 
 > **Corrected 2026-07-09 (SES-0001, shipped as PR #10).** This table and the graph
 > below drew `T1-1 ─► T1-2`, contradicting the prose immediately after it. T1-2 does
@@ -219,6 +247,25 @@ tokens that expire hourly. This is not a drop-in change:
 Treat this as the riskiest refactor in the plan. It touches every adapter call
 site indirectly, and it is why T1-2 is separated from T1-1: land the credential
 seam first, with the env token still flowing through it, then swap the source.
+
+> **Both landed (PR #10, PR #11). What the plan did not anticipate:**
+>
+> - **The private key became runtime state.** Self-registration means the key arrives
+>   in an HTTP callback, not from the environment, so Dispatch must *write* it. It
+>   lives in SQLite, AES-256-GCM encrypted under `DISPATCH_ENCRYPTION_KEY`, because
+>   `snapshot.ts` uploads the whole database to a versioned bucket. `DEPLOY.md` §1.1
+>   and §4.1. Boot **refuses to start** when an App is registered and the key is gone.
+> - **`GITHUB_TOKEN` did not go away here — #21 retired it.** Measured, not inferred:
+>   with an App registered and no env token, the process booted and the board served,
+>   but `/api/discover` 502'd and `/api/health` reported `configured: false` while an
+>   App was registered. The plan said "`GITHUB_TOKEN` must keep working"; it did not
+>   anticipate that its *absence* would make the health check lie. #21 fixed both, and
+>   the env token now buys only repos outside an installation, plus GitLab.
+> - **Three of ADR-0006's claims about GitHub's manifest format were wrong**, and all
+>   three would have compiled: there is no `?org=` parameter (ownership is chosen by
+>   the path), `webhook_secret` is nullable, and the manifest code is documented to
+>   expire in an hour but is never promised single-use. Corrected in ADR-0006 [5].
+>   Verify an external format against the API before encoding it, not after.
 
 **T1-3 — Browser onboarding.**
 Port `scripts/install-claude-action.sh` (250 lines of bash) into TypeScript
@@ -360,11 +407,22 @@ which is why it depends on T2-6 landing first.
 - Vitest as the test runner (T0-1). Shares Vite's existing resolution.
 - Correction-entry style for the doc fix (T0-7), not silent rewriting.
 - Preview screenshots dropped from T1-6.
+- AES-256-GCM in SQLite for the App private key, not GCP Secret Manager (T1-1,
+  ADR-0006 [6.1]) — Secret Manager needs `secretmanager.admin` on the runtime SA
+  and couples a deploy-anywhere tool to one cloud.
+- `forRepo()` falls back to `GITHUB_TOKEN` for a repo the App was not granted,
+  rather than returning a token that 404s on every call (T1-1).
 
 **Open, and each needs an answer before its ticket starts:**
 
-1. **T1-0 — GitHub App installation tokens vs. the anti-recursion rule.** Settle
-   by spike, not by argument. Gates all of Tier 1.
+1. ~~**T1-0 — GitHub App installation tokens vs. the anti-recursion rule.** Settle
+   by spike, not by argument. Gates all of Tier 1.~~
+   **Half-resolved 2026-07-09/10.** The spike produced ADR-0002 and ADR-0006, and
+   ADR-0006 [2] went further: the workflow stops opening PRs entirely, Dispatch's
+   server opens them, and `GH_PAT` loses its only caller. **But the load-bearing arm
+   was never observed** — what was tested was a fine-grained PAT, not an App
+   installation token (ADR-0006 [8], ADR-0002 [5]). T1-1 has now built the machinery
+   to check it. **#22 closes this, and it must precede T1-3.**
 2. ~~**T1-7 — Revert mechanism.** Spike. Fallback (deep-link + track the resulting
    PR) is acceptable and should be assumed until the spike says otherwise.~~
    **Resolved 2026-07-09 — the spike said otherwise.** Both providers expose a
@@ -375,9 +433,19 @@ which is why it depends on T2-6 landing first.
 3. **T2-6 — OIDC provider.** GitHub as the identity provider is the obvious
    default given every user already has an account and we are already asking for
    an App installation. Recommend it; confirm before building.
+4. **New (T1-1) — what should Discover *show* when an App is installed?** This is the
+   open product decision inside #21, and it must be answered before that ticket is
+   built. An installation token cannot enumerate an account's repos, so either
+   Dispatch fans out over `GET /app/installations` → `GET /installation/repositories`
+   and merges, or it drops server-side discovery on the App path and lets GitHub's
+   own installation picker be the discovery UI. The second is less code and matches
+   where the operator already chose repos in #2's flow — but it changes what the
+   Repos page's **Discover** section means.
 
 **Escalating-cost items flagged for explicit approval before execution**, per the
-decision protocol: T1-1 (registers an external GitHub App), T1-3 (writes
+decision protocol: ~~T1-1 (registers an external GitHub App)~~ — *dissolved by
+ADR-0006 [5]: the operator registers their own App, on their own account, by their
+own click on github.com; nothing escalating is executed by an agent* — T1-3 (writes
 workflow files and secrets into user repos), T1-8 (creates revert PRs), T2-6
 (changes the auth model). None of these should be executed as a side effect of
 "work the plan."
@@ -386,14 +454,18 @@ workflow files and secrets into user repos), T1-8 (creates revert PRs), T2-6
 
 ## [5] Sequencing
 
+`✔` = merged. `◆` = the next thing to do.
+
 ```
-T0 (all)  ──────────────────────────────────► gate: verify green in CI
+T0 (all) ✔ ─────────────────────────────────► gate: verify green in CI
    │
-   ├─ T1-0 spike ─► T1-1 ─┬─► T1-3 ─► T1-4           (browser onboarding)
-   │                 T1-2 ─┘                          (seam; lands independently)
-   ├─ T1-5 ─► T1-6                                    (legible card)
-   ├─ T1-7 spike ─► T1-8                              (revert)
-   └─ T1-9                                            (spend cap)
+   ├─ T1-0 ✔ spike ─► T1-1 ✔ ─┬─► ◆#22 ─► T1-3 ─► T1-4   (browser onboarding)
+   │                  T1-2 ✔ ─┘     ▲                     (seam; landed independently)
+   │                                └── observes ADR-0006 [8]; if false, T1-3 changes
+   ├─ T1-5 ✔ ─► T1-6 ✔                                    (legible card)
+   ├─ T1-7 ✔ spike ─► T1-8 ✔                              (revert)
+   ├─ T1-9 ✔                                              (spend cap)
+   └─ #21 ✔                                               (retire the env token)
         │
         ├─ T2-1 ─► T2-2                               (review loop)
         ├─ T2-3                                       (merged vs deployed)
@@ -402,9 +474,16 @@ T0 (all)  ───────────────────────�
         └─ T2-6 ─► T2-7                               (auth, then webhooks)
 ```
 
-Tier 1's four tracks are independent of each other and can run in parallel once
-Tier 0 is green. Tier 2 should not start before Tier 1's onboarding track lands,
-because T2-5 depends on Dispatch owning the workflow it needs to modify.
+Tier 1's four tracks were independent and ran in parallel; three are done. What
+remains is the onboarding track, and it is strictly serial. **#22 is inserted ahead
+of T1-3 on purpose:** T1-3 and T1-4 are both built on ADR-0006 [8]'s unobserved
+arm, so verifying it costs fifteen minutes and de-risks two L/M tickets.
+
+#21 landed (PR #13), so "no PAT" is now true of Discover too — which is how a repo
+gets onboarded in the first place.
+
+Tier 2 should not start before Tier 1's onboarding track lands, because T2-5
+depends on Dispatch owning the workflow it needs to modify.
 
 ## [6] What this plan deliberately does not do
 

@@ -18,8 +18,8 @@ function requireEnv(name: string): string {
 
 // Adapters are memoized by (provider, host, installationId) so a single instance
 // — and its in-process conditional-request (ETag) cache — survives across poll
-// cycles. Without this, every getProvider() built a fresh Octokit and the ETag
-// cache reset each 20s tick, so unchanged polls kept spending rate-limit quota.
+// cycles. Without this, every lookup built a fresh Octokit and the ETag cache
+// reset each 20s tick, so unchanged polls kept spending rate-limit quota.
 //
 // `installationId` joined the key in #3: two repos under one App installation
 // share a token and therefore should share an adapter, but a repo under a
@@ -30,8 +30,8 @@ export type ProviderFactory = (provider: ProviderId, host?: string | null) => Gi
 
 // Test seam (T0-5). The merge route is the highest-blast-radius endpoint in the
 // app — it merges to production — so its gate must be exercisable against a fake
-// GitProvider. Production code never calls this; it stays null and getProvider
-// keeps its memoized real adapters.
+// GitProvider. Production code never calls this; it stays null and the factories
+// below keep their memoized real adapters.
 let factoryOverride: ProviderFactory | null = null;
 
 /** Install (or clear, with null) a provider factory. Tests only. */
@@ -69,8 +69,8 @@ function installationFor(key: RepoKey): Installation | null {
 
 /**
  * One adapter per (provider, host, credential). `installation` is null for the
- * env-token adapter, which is why an unconfigured repo and an account-level
- * `getProvider()` call land on the same instance and share one ETag cache.
+ * env-token adapter, which is why an unconfigured repo and the env entry from
+ * `getAccountProviders()` land on the same instance and share one ETag cache.
  */
 function resolve(
   provider: ProviderId,
@@ -107,8 +107,9 @@ function resolve(
  * Factory for a repo. Resolves the repo's installation *internally*, so callers
  * name a repo and never an installation (ARCH §5).
  *
- * Prefer this over {@link getProvider} anywhere a repo is in hand — which is 11
- * of the 14 call sites, all of which already build a `RepoRef`.
+ * Use this anywhere a repo is in hand — which is 11 of the 14 call sites, all of
+ * which already build a `RepoRef`. The other three had no repo and now use
+ * {@link getAccountProviders}.
  */
 export function getProviderForRepo(ref: RepoRef): GitProvider {
   if (factoryOverride) return factoryOverride(ref.provider, ref.host);

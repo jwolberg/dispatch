@@ -220,11 +220,35 @@ Two consequences worth stating:
 `getProviderForRepo()` still falls back to the env token for a repo outside every installation, and
 GitLab has no App story — its account-level call is always the env adapter.
 
-> **Status:** the App path is landed but **not yet wired**. Nothing calls
-> `setInstallationStore()` in production, so `AppTokenSource` is currently reachable only from
-> tests. Ticket **#2** registers the App and injects the store; until then every repo uses
-> `GITHUB_TOKEN`. This is deliberate — `docs/BUILD_PLAN-v2.md` §T1-2 says to land the credential
-> seam first with the env token still flowing through it, then swap the source.
+> **Status (updated 2026-07-10, #2 / PR #11): the App path is wired.** `server/index.ts` calls
+> `setInstallationStore()` with a SQLite-backed store, so `AppTokenSource` is now constructed in
+> production and a repo under an App installation polls with a minted installation token.
+>
+> Resolution is by **account**, then narrowed by the installation's granted repo list. When the
+> operator chose *"only select repositories"* and a repo is not among them, `forRepo()` returns
+> `null` and that repo keeps using `GITHUB_TOKEN` — handing back the installation anyway would
+> 404 every call and regress a repo they were already tracking. The cost: a `repos_json` that has
+> gone stale (they granted a repo on github.com after installing) silently keeps it on the env
+> token until the install flow re-runs. Ticket **#17**'s webhooks are the real fix.
+>
+> Every write to the store calls `resetProviderCache()`. An adapter memoizes one `AppTokenSource`
+> holding one private key for the life of the process, so a regenerated key or a reinstall would
+> otherwise mint against dead credentials forever — a 401 re-mints exactly once, with the same
+> stale key.
+>
+> **What the env token is still for** (measured 2026-07-10 by booting with `GITHUB_TOKEN` unset,
+> not inferred). Before #21, an App-only deployment booted and served the board, but
+> `GET /api/discover` returned **502** and `GET /api/health` reported GitHub `configured: false`
+> while an App was demonstrably registered. #21 fixed all three: discovery fans out across
+> credentials, `configured` means "any credential exists", and the gauge is fed by whichever
+> budget is smallest.
+>
+> `GITHUB_TOKEN` now buys exactly two things: repos **outside** every installation, and all of
+> GitLab. It remains the documented local-development path.
+>
+> Not yet observed: that a repo under an installation *polls green* with no env token. The
+> credential resolves and no code path demands the token; the round trip needs a real App
+> (ticket **#22**).
 
 ---
 
@@ -235,26 +259,55 @@ GitLab has no App story — its account-level call is always the env adapter.
 | Issues, PRs/MRs, checks, comments, merges | **Git provider** | Single source of truth |
 | Chat transcripts, repo registry, settings | **SQLite** | Local only |
 | Cached repo context (CLAUDE.md, tree, README) | **SQLite** | Disposable cache, ≤6h TTL |
-| Polled status snapshots + ETags | **SQLite** | Disposable cache |
+| Polled status snapshots | **SQLite** | Disposable cache |
+| HTTP conditional-request cache (ETag + body) | **SQLite** | Disposable cache |
+| Spend ledger | **SQLite** | **Not** disposable — the sole record money was spent |
+| GitHub App + its installations | **SQLite** | **Confidential**, encrypted at rest |
 
-SQLite schema (PRD §7):
+SQLite schema (PRD §7). Tables carry **two independent axes** — whether the provider can rebuild
+them, and whether their contents are a credential:
 
 ```sql
+-- Irreplaceable. Provider + these rows reconstruct the whole board.
 repos(id, provider, host, path, description, web_url, default_branch, language,
-      preview_url_pattern, merge_method DEFAULT 'squash',
+      preview_url_pattern, merge_method DEFAULT 'squash', claude_md_path,
       claude_md_cache, readme_excerpt_cache, file_tree_cache,
       automation_detected, context_refreshed_at)
 chats(id, repo_id, created_at, transcript_json, status)        -- draft|filed
 tickets(id, repo_id, chat_id, issue_number, created_at)
-status_cache(ticket_id, payload_json, etag_map_json, updated_at)
+
+-- Disposable. Wiping any of these costs exactly one re-fetch or re-summarize.
+status_cache(ticket_id, payload_json, updated_at)
+http_cache(key, etag, body_json, updated_at)                   -- T0-9; per repo/resource
+summary_cache(ticket_id, head_sha, payload_json, updated_at)   -- T1-5
 activity(id, ticket_id, type, summary, url, occurred_at)
+
+-- NOT disposable: wiping it resets the daily cap to zero spent. It fails OPEN.
+spend(id, occurred_at, model, kind, ticket_id, input_tokens, output_tokens,
+      cache_creation_input_tokens, cache_read_input_tokens, usd)
+
+-- CONFIDENTIAL (#2). Neither disposable nor rebuildable — losing them means
+-- re-registering the App. Every *_enc column is an AES-256-GCM envelope from
+-- lib/crypto.ts, keyed by DISPATCH_ENCRYPTION_KEY, because snapshot.ts uploads
+-- the whole database to a versioned bucket (see §14).
+github_app(id CHECK (id = 1), app_id, slug, name, client_id,
+           client_secret_enc, private_key_enc, webhook_secret_enc, html_url, created_at)
+installations(installation_id, account_login, account_type,
+              repository_selection, repos_json, created_at, updated_at)
 ```
+
+`github_app` is a **singleton**: Dispatch is deployed per-operator and each deployment registers
+its own App, so there is no central App to be one row among many (ADR-0006 §5).
 
 **Rebuild invariant (acceptance #9):** `repos` + `tickets` rows plus the provider API are
 sufficient to reconstruct the entire board. Every `*_cache` table is disposable; the board
 must repopulate from the provider on first poll after a cache wipe. This is the single most
 important architectural constraint — no derived state (board columns, check status, PR
 linkage) may be persisted as authoritative.
+
+The rebuild rule says nothing about **confidentiality**, and the two are orthogonal. `github_app`
+is irreplaceable *and* secret; `http_cache` is disposable and public. Conflating them is how a
+private key ends up in a snapshot.
 
 ---
 
@@ -372,6 +425,14 @@ Backend routes (all credentials server-side only; PRD §6):
 | `POST /api/tickets/:id/merge` | Ship |
 | `GET /api/activity` | Activity feed |
 | `GET /api/health` | Token validity, rate-limit remaining, DB status |
+| `GET /api/github/app` | Registration + installation state for the setup screen (#2) |
+| `POST /api/github/app/manifest` | Issue a manifest + CSRF `state` for the operator to POST to GitHub |
+| `GET /api/github/callback` | GitHub's `redirect_url` — exchange the code once, persist the App |
+| `GET /api/github/installed` | GitHub's `setup_url` — record what the installation covers |
+
+`GET /api/github/app` returns a hand-built projection, never a filtered `AppRecord`: adding a
+field must be a decision, so a credential added to the record later cannot leak by being spread
+into a response. The private key, client secret, and webhook secret never cross this boundary.
 
 ---
 
@@ -406,8 +467,21 @@ Backend routes (all credentials server-side only; PRD §6):
 
 ## 14. Cross-cutting concerns
 
-- **Security:** localhost bind guard (S1); env-only secrets, redacted everywhere (S2);
-  confirmation modals on destructive actions (S5).
+- **Security:** localhost bind guard (S1); secrets redacted everywhere (S2); confirmation modals
+  on destructive actions (S5).
+- **Secrets are no longer env-only (#2).** A GitHub App's private key arrives in an HTTP callback
+  at runtime, so it cannot come from the environment — it is written to `github_app`, AES-256-GCM
+  encrypted under `DISPATCH_ENCRYPTION_KEY`, because `db/snapshot.ts` `VACUUM INTO`s the whole
+  database and uploads it to a **versioned** GCS bucket. Three consequences:
+  - `lib/redaction.ts` cannot scan `process.env` for what is not there. Secrets **register their
+    values** with the redactor when they are *loaded* — on decrypt from SQLite, and on arrival in
+    the manifest-conversion response, before anything can throw while holding the plaintext.
+  - Bucket versioning preserves the *old* ciphertext under the *old* key indefinitely. Rotation
+    is not complete until noncurrent versions expire; `DEPLOY.md` §4.1 sets the lifecycle rule.
+  - Boot **refuses to start** when an App is registered and `DISPATCH_ENCRYPTION_KEY` is absent,
+    rather than silently reverting to `GITHUB_TOKEN`.
+  Rejected: GCP Secret Manager — it needs `roles/secretmanager.admin` on the runtime SA and
+  couples a deploy-anywhere tool to one cloud (ADR-0006 §6.1).
 - **Resilience:** provider rate-limit backoff + pause banner (S3); Anthropic retry + input
   preservation (S4); defensive poller reconciliation (S6).
 - **Observability:** `GET /api/health` exposes token validity, rate-limit remaining, and DB
