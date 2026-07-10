@@ -163,17 +163,25 @@ have manufactured is not this repo's actual posture, and [3.1] is the failure
 mode that would really bite. This arm rests on GitHub's documentation, quoted in
 [2].
 
-**Inferred, not observed — an *installation* token specifically.** We observed a
-fine-grained PAT. GitHub's documentation treats a PAT and an App installation
-access token identically for this purpose, naming them in the same sentence as
-the remedy. The substitution was a deliberate choice (2026-07-09) to avoid
-registering a GitHub App, which is ticket #2 — the very thing this spike gates.
+**Observed 2026-07-10 (was inferred) — an *installation* token specifically.**
+Originally we observed only a fine-grained PAT, and substituted it for an
+installation token on the strength of GitHub's documentation, which names them in
+the same sentence as the remedy. That substitution was a deliberate choice
+(2026-07-09) to avoid registering a GitHub App — ticket #2, the thing this spike
+gated.
 
-**What would close the gap, if it ever needs closing:** #2 registers the App.
-Once one exists, re-run the PAT observation with an installation token in a repo
-Dispatch owns. Until then, treat the App-token arm as well-supported inference,
-not measurement — and do not let #4's design depend on a behavior that differs
-between a PAT and an installation token, because we have not distinguished them.
+#2 registered App `dispatch-jay`, and #22 then ran the observation directly: a PR
+opened by installation token 145573719 on `jwolberg/cohort-bot` created
+`pull_request` run
+[29065952153](https://github.com/jwolberg/cohort-bot/actions/runs/29065952153) —
+`status: completed`, `conclusion: success`, no approval gate, with `actor` and
+`triggering_actor` both `dispatch-jay[bot]` rather than a human login. The PAT and
+the installation token therefore behave identically here, as documented. The gap is
+closed; see ADR-0006 [8] for the full record.
+
+The caution it raised has been discharged, not merely aged out: #4's design may now
+rely on this behavior, because a PAT and an installation token have been
+distinguished — and they agree.
 
 ## [6] Sources
 

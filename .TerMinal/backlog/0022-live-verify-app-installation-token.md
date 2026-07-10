@@ -1,7 +1,7 @@
 ---
 id: 22
 title: "Live-verify the App path: installation token polls, and its PR triggers a run"
-status: open
+status: in-progress
 priority: high
 horizon: now
 hitl: true
@@ -71,3 +71,35 @@ Note on step 3: do *not* unset `GITHUB_TOKEN` — boot needs it for the account-
 calls (#21). Corrupt it instead. `/api/health` then reports bad credentials while a
 repo under the installation keeps polling green, and nothing but an installation
 token could have fetched it.
+
+## Result — 2026-07-10, both criteria observed
+
+The human registered App `dispatch-jay` (app id 4261376); installation 145573719
+covers all of `jwolberg` (`repository_selection: all`).
+
+**AC 6 — proven.** `scripts/verify-app-token.ts`. With `GITHUB_TOKEN` corrupted
+in-process, `jwolberg/situation` fetched 16 workflow runs at rate-limit ceiling
+**6950** (installation-scoped; a PAT is capped at 5000), while
+`octocat/Hello-World` and the `env:GITHUB_TOKEN` account both failed
+`Bad credentials`. The harness skips the conditional-request cache on purpose — a
+replayed ETag would serve a cached 200 and fake the result.
+
+**AC 13 — proven, the arm holds.** `scripts/verify-app-pr-triggers-run.ts` on
+`jwolberg/cohort-bot`: a PR opened by the installation token created `pull_request`
+run [29065952153](https://github.com/jwolberg/cohort-bot/actions/runs/29065952153)
+— `status: completed`, `conclusion: success`, no approval gate, `actor` =
+`triggering_actor` = `dispatch-jay[bot]`. #4 and #5 proceed as written; `GH_PAT`
+stays deleted. The workflow was committed to the PR head only, so the scratch
+repo's `main` was never modified; branch and PR were removed after.
+
+**AC on ADRs — done.** ADR-0006 [8] and ADR-0002 [5] both moved from
+"inferred, not observed" to observed, with the run linked.
+
+Two defects surfaced while doing this, fixed in the same PR:
+
+- The runbook's `echo … >> .env` was not idempotent. Run twice, `.env` held two
+  `DISPATCH_ENCRYPTION_KEY` lines; `dotenv` takes the last, so the first became
+  dead weight that decrypted nothing. Runbook now guards with `grep -q`, and
+  `.env.example` documents the variable (it never did).
+- `.gitignore` covered `.env` but not `.env.bak`/`.env.*`, so a routine backup of
+  `.env` would have been a committable file full of live secrets.
