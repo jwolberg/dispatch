@@ -11,6 +11,7 @@ created: 2026-07-09
 updated: 2026-07-09
 prs: []
 refs:
+  - "docs/runbooks/register-github-app-locally.md"
   - "SES-0002"
   - "ADR-0006 [8]"
   - "ADR-0002 [5]"
@@ -58,12 +59,13 @@ plan.
 onboarding, and it is about the operator's own account. It never leaves their
 hands (ADR-0006 [5]), which is exactly why an agent cannot do it.
 
-Steps, once `DISPATCH_ENCRYPTION_KEY` is set:
+**No deploy is required.** `redirect_url` and `setup_url` are browser redirects, not
+server-to-server callbacks, and the manifest registers the webhook `active: false`.
+The whole flow runs against `http://localhost:3001`.
 
-1. Repo Config → GitHub App → name it, pick personal or org, Register on GitHub.
-2. Install it on a scratch repo.
-3. Confirm the repo polls under the App: the boot log names the app, and the poll
-   should succeed with `GITHUB_TOKEN` deliberately unset for that repo's account.
-4. Have Dispatch open a PR on that repo with the installation token, and record
-   whether the `pull_request` workflow run starts or parks in `action_required`.
-5. Write the result into ADR-0006 [8].
+Step-by-step: **[`docs/runbooks/register-github-app-locally.md`](../../docs/runbooks/register-github-app-locally.md)**.
+
+Note on step 3: do *not* unset `GITHUB_TOKEN` — boot needs it for the account-level
+calls (#21). Corrupt it instead. `/api/health` then reports bad credentials while a
+repo under the installation keeps polling green, and nothing but an installation
+token could have fetched it.
