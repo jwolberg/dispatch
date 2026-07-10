@@ -108,6 +108,34 @@ The test must use a branch that **is** genuinely Claude-authored, so that the la
 is the only thing preventing the PR. A test that passes because the discriminator
 rejected the branch proves nothing.
 
+## Progress — 2026-07-10 (branch `feat/5-canary-verification`)
+
+Pure, unit-testable logic is built and green (`npm run verify`, 575 tests). Three
+commits, each TDD-first:
+
+- **Canary-label guard** — `openPRForClaudeBranch` returns null for a
+  `dispatch-canary`-labelled issue, so the canary never grows a PR
+  (`reconcile.ts`, `CANARY_LABEL`). Test uses a genuinely Claude-authored branch.
+- **`classifyCanaryRun`** — success is the only pass; `action_required` and the
+  `conclusion: failure` (#25) signatures fail with distinct messages. Reads raw
+  `(status, conclusion)`, not the lossy `RunState` (`canary.ts`).
+- **`pollCanary`** — bounded window, injected clock, timeout is a fail with two
+  distinct reasons (no run vs never completed) (`canary.ts`).
+
+**Remaining, and it crosses the escalating-cost line — STOP for approval.** The
+live orchestrator writes to a user's repo and spends their Claude subscription on
+a real run, so per the decision protocol it is not done as a side effect of "work
+the ticket." It also needs three new seam methods:
+
+- `closeIssue` — **missing** on `GitProvider`.
+- `deleteBranch` — **missing**.
+- a raw-run fetch for the canary: `getWorkflowRuns` exists but returns the
+  collapsed `RunState`, which erases `action_required`. Either add a raw variant
+  or widen the DTO.
+
+Then: the orchestrator (file labelled issue → `pollCanary` → close issue + delete
+any branch on both paths → persist verdict), DB column, and the card rendering.
+
 ## Design notes
 
 Pick the timeout deliberately and state it: a cold GitHub Actions runner can take
