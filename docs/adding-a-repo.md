@@ -60,25 +60,37 @@ Issues: write, Workflows: write, Secrets: write** (make one at
 <https://github.com/settings/personal-access-tokens/new>).
 
 ```bash
+CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
 GH_SETUP_TOKEN=github_pat_xxx \
   ./scripts/install-claude-action.sh <owner>/<repo>
-# Optional: a separate, narrower runtime token (Contents/PRs/Issues RW) for the
-# workflow's GH_PAT secret; defaults to GH_SETUP_TOKEN if unset:
-#   GH_PAT=github_pat_yyy GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh <owner>/<repo>
 ```
 
-Sets the `ANTHROPIC_API_KEY` and `GH_PAT` secrets, commits
+Sets **one** secret — your Claude auth token — commits
 `.github/workflows/claude.yml`, commits `.claude/skills/{plan,implement,debug}/SKILL.md`,
 and commits a CI gate at `.github/workflows/ci.yml` (created only if absent). The
-Anthropic key is read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY`
-(or pass `ANTHROPIC_API_KEY=...`).
+Claude token is read from the macOS keychain item `dispatch-CLAUDE_CODE_OAUTH_TOKEN`
+(or `dispatch-ANTHROPIC_API_KEY`), or passed in the environment. `GH_SETUP_TOKEN` is
+used by the installer and never written into the repo.
 
-> **PRs open automatically.** `claude-code-action` never opens PRs itself — by
-> design it pushes a branch and links a "Create PR" page. The workflow adds a
-> `gh pr create` post-step (using `steps.claude.outputs.branch_name`) that opens
-> the PR under **`GH_PAT`**. The PAT identity is the key: a PR opened by the
-> default `GITHUB_TOKEN` would **not** trigger `on: pull_request` CI (GitHub's
-> anti-recursion rule), so the gate below would never run.
+> **Corrected 2026-07-10 — `GH_PAT` is gone (ADR-0006 [2], #24).** This section used
+> to say the workflow opens the PR itself, via a `gh pr create` post-step
+> authenticated with a `GH_PAT` repo secret. It no longer does, and the installer
+> now *deletes* a leftover `GH_PAT`.
+>
+> `claude-code-action` pushes a branch under the repo's own default `GITHUB_TOKEN`,
+> and **Dispatch's server opens the pull request** with its GitHub App installation
+> token. A PR opened that way triggers `on: pull_request` CI without an approval
+> gate — observed directly in #22, not inferred. Writing a `GH_PAT` into every
+> onboarded repo handed each of them a token that could write to every repo that PAT
+> could reach; the App path has no such blast radius.
+>
+> Two consequences worth knowing:
+>
+> - The workflow must pass `github_token: ${{ github.token }}` **explicitly**. That
+>   input has no default: omit it and the action tries to mint a token from
+>   *Anthropic's* Claude GitHub App and 401s (#25).
+> - **The PR-opening half is not shipped yet** — it is ticket #4. Until then, `@claude`
+>   runs and pushes a branch, and no PR appears.
 
 > **The CI gate (`ci.yml`) — stack-aware:** runs on every PR so its checks move
 > the board **Building → Ready to test → Blocked**. The installer detects the
@@ -92,7 +104,8 @@ Anthropic key is read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY`
 >   install step and would block every PR — better to add one manually).
 >
 > Created only when the repo has no `ci.yml`, so it never clobbers existing CI.
-> Triggers on the auto-opened PRs because those come from `GH_PAT`, not the bot.
+> Triggers on the PRs Dispatch opens, because those come from an App installation
+> token, not from the workflow's `GITHUB_TOKEN` (ADR-0006 [2]).
 
 > **The deploy gate (`deploy.yml`) — optional, off by default.** Pass
 > `INSTALL_DEPLOY_GATE=1` to also install the verify-before-production gate from
@@ -123,12 +136,15 @@ Anthropic key is read from the macOS keychain item `dispatch-ANTHROPIC_API_KEY`
 > but it won't run them as named skills. (`debug` also ships bundled with Claude
 > Code; the committed copy just tunes it to the PR flow.)
 
-> **Note (Option B):** check-driven board states work here because the workflow
-> opens PRs under `GH_PAT` (a real identity), so CI triggers on them. If you
-> instead point the workflow's token back at the default `GITHUB_TOKEN`, PRs and
-> their commits become bot-authored and GitHub won't run CI on them — the board
-> would then never reach **Ready to test** on check status. Option A (the GitHub
-> App) is an alternative identity that also avoids that.
+> **Note:** check-driven board states work because **Dispatch** opens the pull
+> request with its App installation token, and GitHub runs `on: pull_request` CI on
+> an App-authored PR without an approval gate (#22 observed this; ADR-0006 [8]).
+>
+> The anti-recursion rule still applies to the *workflow's* own token: were the
+> workflow to open the PR under the default `GITHUB_TOKEN`, CI would not trigger and
+> the board would never reach **Ready to test**. That is precisely why the workflow
+> no longer opens PRs at all. Its `GITHUB_TOKEN` only pushes the branch, which was
+> never the blocked operation.
 
 After either path, click **Refresh context** on the repo card — the automation
 warning clears.

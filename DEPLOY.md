@@ -205,6 +205,53 @@ you skip the snapshot bucket in §4, every redeploy loses them and you re-Track.
 Issues themselves are never lost; they're on GitHub, labeled `dispatch`, and
 re-import on the first poll after tracking.
 
+## 3.6 Enable the build loop on a tracked repo
+
+**Tracking a repo writes nothing to it.** A tracked repo is not an onboarded one —
+that is what the repo card's ⚠ *No Claude automation detected* flag distinguishes.
+Onboarding commits `.github/workflows/claude.yml` to the target repo and sets one
+secret there.
+
+This is done against the **target repo**, not against Cloud Run, so it is the same
+command locally and in production. Nothing here touches Dispatch's own deployment:
+
+```bash
+CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
+GH_SETUP_TOKEN=github_pat_xxx \
+  ./scripts/install-claude-action.sh <owner>/<repo>
+```
+
+**Exactly one secret is written into the target repo: your Claude auth token.** Not
+a `GH_PAT`, not the App's private key, not `APP_CLIENT_ID`. That is the point of
+ADR-0006 [2] — writing an App credential into every onboarded repo would invert the
+blast radius, since one compromised repo would then compromise every repo the App is
+installed on.
+
+- Prefer `CLAUDE_CODE_OAUTH_TOKEN` (bills your Claude subscription) over
+  `ANTHROPIC_API_KEY` (metered). The installer **deletes** a leftover
+  `ANTHROPIC_API_KEY`, because it outranks the OAuth token in Claude's auth
+  precedence and would silently keep billing the API.
+- `GH_SETUP_TOKEN` needs **Contents, Workflows, Secrets: write**. It is used by the
+  installer and never stored in the repo.
+
+The workflow pushes a branch under the repo's own default `GITHUB_TOKEN`, passed
+**explicitly** as `github_token: ${{ github.token }}`. That input has no default:
+omit it and `claude-code-action` tries to mint a token from *Anthropic's* Claude
+GitHub App and fails with `401 … not installed on this repository` (#25).
+
+Dispatch then opens the pull request with its **App installation token**, which is
+what makes `on: pull_request` CI run on it without an approval gate — observed
+directly in #22, not inferred (ADR-0006 [8]).
+
+> **Not shipped yet.** The PR-opening half is ticket **#4**. Until it lands, `@claude`
+> runs and pushes a branch, and no pull request appears. This is the one place where
+> a production deployment is not yet end-to-end.
+
+Because the poller is what turns a branch into a pull request, **Dispatch must be
+running** for a build to proceed past the branch. That adds no new availability
+requirement — it must be up to render the board — but it turns a missed poll from
+"the board is stale" into "the build did not continue".
+
 ## 4. Persistence — a GCS snapshot, not a volume
 
 The SQLite DB lives on the instance's ephemeral disk at `/data/dispatch.db`.
