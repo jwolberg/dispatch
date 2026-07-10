@@ -230,8 +230,12 @@ and it is a prerequisite, not a follow-up.
 
 ## [8] Evidence: observed versus inferred
 
-**Observed.** `claude-code-action` does not open PRs; the `gh pr create` post-step
-does, under `GH_PAT` (`scripts/install-claude-action.sh:41–43,136–151`).
+**Observed.** `claude-code-action` does not open PRs; a `gh pr create` post-step
+did, under `GH_PAT`. That post-step lived in `scripts/install-claude-action.sh`
+when this ADR was written; **#24 deleted it from the script and from
+`.github/workflows/claude.yml`**, so [2] is now enforced by the installer rather
+than only decided here. Read the removal at `git show` of that commit, not at the
+old line numbers.
 `can_approve_pull_request_reviews: false` on `jwolberg/situation` (ADR-0002 [3.1]).
 `snapshot.ts` uploads the unencrypted DB; `DEPLOY.md:126` enables versioning;
 `redaction.ts` reads only `process.env`. `github.ts` exposes no PR-creation method.
