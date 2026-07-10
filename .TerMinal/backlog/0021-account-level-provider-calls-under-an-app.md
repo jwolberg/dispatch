@@ -1,15 +1,16 @@
 ---
 id: 21
 title: "Account-level provider calls have no credential under a GitHub App"
-status: open
+status: in-progress
 priority: high
 horizon: next
 hitl: false
 type: feature
 source: SES-0001
 created: 2026-07-09
-updated: 2026-07-09
-prs: []
+updated: 2026-07-10
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/13"
 refs:
   - "ADR-0006"
   - "SES-0001"
@@ -68,6 +69,20 @@ Discovery is the interesting one. Options, uncosted:
 
 The second is likely better and less code, but it changes what the Repos page's
 **Discover** section means when an App is installed. Decide before building.
+
+> **Decided 2026-07-10 (SES-0003).** *Fan out* — enumerate installations, list each
+> one's repos, merge, and let the Repos page group by owner. The deep-link option
+> collapses into it anyway: an `all` installation still has to be enumerated, so the
+> same call comes back. Health reports **one entry per installation**, which is the
+> only way the rate-limit banner means anything when two installations have two
+> budgets.
+>
+> **Measured 2026-07-10, correcting this ticket's premise.** "Today all three keep
+> resolving to `EnvTokenSource`, which works" is true, but the *consequence* is
+> narrower than assumed. With an App and no `GITHUB_TOKEN`: boot works, `/api/board`
+> 200s, and nothing on the per-repo path calls `requireEnv`. Only `/api/discover`
+> 502s, and `/api/health` reports `configured: false` while an App is registered —
+> a silent lie, and the sharpest part of this ticket.
 
 ## Why not folded into #2 or #3
 

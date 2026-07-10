@@ -191,9 +191,34 @@ retire a newer token another caller is already using, stripping it from the reda
 401s on one dead token re-mint once rather than each discarding its predecessor's fresh token.
 
 Three call sites have no repo — the rate-limit probe (`poller/scheduler.ts`, `routes/health.ts`)
-and repo discovery (`routes/discover.ts`) — and use `getProvider()` with the env token. Under a
-GitHub App there is no account-level credential at all, so those are ticket **#21**, not an
-oversight.
+and repo discovery (`routes/discover.ts`). Under a GitHub App there is **no account-level
+credential at all**: a PAT belongs to a user and enumerates that user's repos, while an
+installation token belongs to one installation and enumerates only its own. So there is no single
+account-level provider — there are N.
+
+`getAccountProviders(provider)` returns one adapter per credential (#21). The env-token
+`getProvider()` factory those three callers used is gone.
+
+```ts
+getAccountProviders(provider): AccountProvider[]   // { kind: 'env' | 'app', label, provider }
+```
+
+**The seam still holds.** A caller receives a `label` — an account login, which is public and
+already the owner half of every `RepoSummary.path` — and an opaque `GitProvider`. It never sees an
+installation id and never learns installations exist. Discover merges `discoverRepos()` across the
+adapters; health maps `getRateLimit()` over them.
+
+Two consequences worth stating:
+
+- **`discoverRepos()` is scoped by credential.** `GET /user/repos` for a PAT, `GET
+  /installation/repositories` for an App token. Not a preference — `/user/repos` returns 403 for an
+  installation token, and the installation endpoint does not exist for a PAT. The factory sets the
+  scope, because it is the only thing that knows which credential an adapter got.
+- **Each credential has its own rate-limit budget.** The gauge holds one number, so it holds the
+  binding one: the smallest remaining, which is what will pause polling first.
+
+`getProviderForRepo()` still falls back to the env token for a repo outside every installation, and
+GitLab has no App story — its account-level call is always the env adapter.
 
 > **Status (updated 2026-07-10, #2 / PR #11): the App path is wired.** `server/index.ts` calls
 > `setInstallationStore()` with a SQLite-backed store, so `AppTokenSource` is now constructed in
@@ -211,15 +236,19 @@ oversight.
 > otherwise mint against dead credentials forever — a 401 re-mints exactly once, with the same
 > stale key.
 >
-> **What the env token is still for** (measured 2026-07-10 by booting with `GITHUB_TOKEN` unset and
-> an App registered, not inferred): the process boots, names the App, and serves the board — no code
-> path demands it. But `GET /api/discover` returns **502**, because an installation token enumerates
-> only *its* repos and never an account's; `GET /api/health` reports GitHub `configured: false`
-> even though an App is registered; and the rate-limit gauge is never fed. Ticket **#21** owns all
-> three. `GITHUB_TOKEN` also remains the whole GitLab story and the documented local path.
+> **What the env token is still for** (measured 2026-07-10 by booting with `GITHUB_TOKEN` unset,
+> not inferred). Before #21, an App-only deployment booted and served the board, but
+> `GET /api/discover` returned **502** and `GET /api/health` reported GitHub `configured: false`
+> while an App was demonstrably registered. #21 fixed all three: discovery fans out across
+> credentials, `configured` means "any credential exists", and the gauge is fed by whichever
+> budget is smallest.
+>
+> `GITHUB_TOKEN` now buys exactly two things: repos **outside** every installation, and all of
+> GitLab. It remains the documented local-development path.
 >
 > Not yet observed: that a repo under an installation *polls green* with no env token. The
-> credential resolves without it; the round trip needs a real App (ticket **#22**).
+> credential resolves and no code path demands the token; the round trip needs a real App
+> (ticket **#22**).
 
 ---
 

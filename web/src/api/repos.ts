@@ -13,9 +13,17 @@ export interface TrackBody {
   claude_md_path?: string | null;
 }
 
+/** One credential that could not be enumerated (#21). `label` is an account login. */
+export interface DiscoverError {
+  label: string;
+  error: string;
+}
+
 export const reposApi = {
   discover: (provider: "github" | "gitlab") =>
-    api.get<{ provider: string; repos: RepoSummary[] }>(`/discover?provider=${provider}`),
+    api.get<{ provider: string; repos: RepoSummary[]; errors: DiscoverError[] }>(
+      `/discover?provider=${provider}`
+    ),
   list: () => api.get<{ repos: TrackedRepo[] }>("/repos"),
   track: (body: TrackBody) => api.post<{ repo: TrackedRepo }>("/repos", body),
   untrack: (id: number) => api.del<{ ok: boolean }>(`/repos/${id}`),

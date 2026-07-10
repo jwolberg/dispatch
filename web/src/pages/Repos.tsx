@@ -7,6 +7,7 @@ import { installBannerFor } from "../lib/installBanner.js";
 import { reposApi } from "../api/repos.js";
 import { ApiError } from "../api/client.js";
 import type { RepoSummary, TrackedRepo } from "../api/types.js";
+import type { DiscoverError } from "../api/repos.js";
 
 type Provider = "github" | "gitlab";
 
@@ -16,6 +17,9 @@ export function ReposPage() {
   const [provider, setProvider] = useState<Provider>("github");
   const [search, setSearch] = useState("");
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+  // Credentials that failed while others succeeded (#21). A revoked installation
+  // is a partial outage — the page still lists every other account's repos.
+  const [accountErrors, setAccountErrors] = useState<DiscoverError[]>([]);
   const [manual, setManual] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,9 +40,11 @@ export function ReposPage() {
 
   async function loadDiscovery(p: Provider) {
     setDiscoverError(null);
+    setAccountErrors([]);
     try {
-      const { repos } = await reposApi.discover(p);
+      const { repos, errors } = await reposApi.discover(p);
       setDiscovered(repos);
+      setAccountErrors(errors ?? []);
     } catch (err) {
       setDiscovered([]);
       setDiscoverError(err instanceof ApiError ? err.message : String(err));
@@ -163,6 +169,15 @@ export function ReposPage() {
           {discoverError}
         </div>
       )}
+
+      {accountErrors.map((e) => (
+        <div
+          key={e.label}
+          className="mb-3 rounded border border-status-wait/40 bg-status-wait/10 px-3 py-2 text-label text-status-wait"
+        >
+          Could not list repos for <span className="font-medium">{e.label}</span>: {e.error}
+        </div>
+      ))}
 
       <div className="mb-6 divide-y divide-border overflow-hidden rounded-lg border border-border">
         {filtered.length === 0 ? (

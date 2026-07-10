@@ -11,7 +11,7 @@ import {
 } from "./installations.js";
 import { ENCRYPTION_KEY_ENV, loadEncryptionKey } from "../lib/crypto.js";
 import { __resetRegisteredSecrets, safeMessage } from "../lib/redaction.js";
-import { getProvider, getProviderForRepo, setInstallationStore } from "../providers/index.js";
+import { getAccountProviders, getProviderForRepo, setInstallationStore } from "../providers/index.js";
 import { clearDirty, isDirty } from "./snapshot.js";
 
 // #2 — the first CONFIDENTIAL table in schema.sql. Every other table here is
@@ -168,6 +168,7 @@ describe("installations store", () => {
         installationId: 42,
         appId: APP.appId,
         privateKey: PEM,
+        accountLogin: "acme",
       });
     });
 
@@ -328,9 +329,9 @@ describe("installations store", () => {
       store.saveInstallation(installation({ accountLogin: "acme" }));
       setInstallationStore(store);
 
-      // Same adapter instance as an account-level call → it is the env adapter.
+      // Same instance as the env account → it is the env adapter, not the App's.
       const outside = getProviderForRepo({ provider: "github", path: "someone-else/repo" });
-      expect(outside).toBe(getProvider("github"));
+      expect(outside).toBe(getAccountProviders("github").find((a) => a.kind === "env")!.provider);
     });
 
     it("does NOT hand an installed repo the env adapter", () => {
@@ -340,8 +341,42 @@ describe("installations store", () => {
       setInstallationStore(store);
 
       expect(getProviderForRepo({ provider: "github", path: "acme/widgets" })).not.toBe(
-        getProvider("github")
+        getAccountProviders("github").find((a) => a.kind === "env")!.provider
       );
+    });
+  });
+
+  describe("list() — the account-level enumeration (#21)", () => {
+    it("returns nothing when no App is registered", () => {
+      expect(newStore().list()).toEqual([]);
+    });
+
+    it("returns nothing when an App exists but nothing is installed", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      expect(store.list()).toEqual([]);
+    });
+
+    it("returns one entry per installation, each carrying the App's key", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation({ installationId: 42, accountLogin: "acme" }));
+      store.saveInstallation(installation({ installationId: 43, accountLogin: "jwolberg" }));
+
+      expect(store.list()).toEqual([
+        { installationId: 42, appId: APP.appId, privateKey: PEM, accountLogin: "acme" },
+        { installationId: 43, appId: APP.appId, privateKey: PEM, accountLogin: "jwolberg" },
+      ]);
+    });
+
+    it("registers the private key with the redactor", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation());
+      __resetRegisteredSecrets();
+
+      store.list();
+      expect(safeMessage(new Error(`boom ${PEM}`))).not.toContain(PEM);
     });
   });
 

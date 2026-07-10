@@ -18,8 +18,8 @@ function requireEnv(name: string): string {
 
 // Adapters are memoized by (provider, host, installationId) so a single instance
 // — and its in-process conditional-request (ETag) cache — survives across poll
-// cycles. Without this, every getProvider() built a fresh Octokit and the ETag
-// cache reset each 20s tick, so unchanged polls kept spending rate-limit quota.
+// cycles. Without this, every lookup built a fresh Octokit and the ETag cache
+// reset each 20s tick, so unchanged polls kept spending rate-limit quota.
 //
 // `installationId` joined the key in #3: two repos under one App installation
 // share a token and therefore should share an adapter, but a repo under a
@@ -30,8 +30,8 @@ export type ProviderFactory = (provider: ProviderId, host?: string | null) => Gi
 
 // Test seam (T0-5). The merge route is the highest-blast-radius endpoint in the
 // app — it merges to production — so its gate must be exercisable against a fake
-// GitProvider. Production code never calls this; it stays null and getProvider
-// keeps its memoized real adapters.
+// GitProvider. Production code never calls this; it stays null and the factories
+// below keep their memoized real adapters.
 let factoryOverride: ProviderFactory | null = null;
 
 /** Install (or clear, with null) a provider factory. Tests only. */
@@ -69,8 +69,8 @@ function installationFor(key: RepoKey): Installation | null {
 
 /**
  * One adapter per (provider, host, credential). `installation` is null for the
- * env-token adapter, which is why an unconfigured repo and an account-level
- * `getProvider()` call land on the same instance and share one ETag cache.
+ * env-token adapter, which is why an unconfigured repo and the env entry from
+ * `getAccountProviders()` land on the same instance and share one ETag cache.
  */
 function resolve(
   provider: ProviderId,
@@ -87,7 +87,9 @@ function resolve(
       const tokens: TokenSource = installation
         ? new AppTokenSource(installation, { apiBase: host ? `${host.replace(/\/$/, "")}/api/v3` : undefined })
         : new EnvTokenSource(requireEnv("GITHUB_TOKEN"));
-      instance = new GitHubProvider(tokens, host, condStore);
+      // The credential decides which discovery endpoint is legal (#21). The
+      // factory is the only place that knows which credential this adapter got.
+      instance = new GitHubProvider(tokens, host, condStore, installation ? "installation" : "user");
       break;
     }
     case "gitlab":
@@ -105,31 +107,76 @@ function resolve(
  * Factory for a repo. Resolves the repo's installation *internally*, so callers
  * name a repo and never an installation (ARCH §5).
  *
- * Prefer this over {@link getProvider} anywhere a repo is in hand — which is 11
- * of the 14 call sites, all of which already build a `RepoRef`.
+ * Use this anywhere a repo is in hand — which is 11 of the 14 call sites, all of
+ * which already build a `RepoRef`. The other three had no repo and now use
+ * {@link getAccountProviders}.
  */
 export function getProviderForRepo(ref: RepoRef): GitProvider {
   if (factoryOverride) return factoryOverride(ref.provider, ref.host);
   return resolve(ref.provider, ref.host, installationFor(ref));
 }
 
+// `getProvider(provider, host)` — the env-token account-level factory — was removed
+// in #21. It had exactly three callers (the rate-limit probe, the health route, and
+// repo discovery), all of which assumed a single account-level credential exists.
+// Under a GitHub App none does. They now use `getAccountProviders()`. The env token
+// still reaches an adapter through `resolve(..., null)`, via that function and via
+// `getProviderForRepo()`'s fallback for a repo outside every installation.
+
+/** An adapter, and enough to name the credential behind it — never which one. */
+export interface AccountProvider {
+  /** `env` = a PAT; `app` = a GitHub App installation token. */
+  kind: "env" | "app";
+  /** An account login (`acme`), or the env var's name. Safe to render. */
+  label: string;
+  provider: GitProvider;
+}
+
 /**
- * Factory for an account-level call — one with no repo: the rate-limit probe
- * (`poller/scheduler.ts`, `routes/health.ts`) and repo discovery
- * (`routes/discover.ts`).
+ * One adapter per credential that can answer an account-level question (#21).
  *
- * These always use the env token. Under a GitHub App there is no account-level
- * credential at all — `discoverRepos()` would enumerate an *installation's*
- * repos — so rewiring them is its own ticket (#21), not this seam.
+ * A PAT belongs to a *user* and enumerates that user's repos. An installation
+ * token belongs to one *installation* and enumerates only its repos. So under a
+ * GitHub App there is no single "account-level provider" — there are N, and
+ * `discoverRepos()` / `getRateLimit()` must be asked of each and merged.
  *
- * A deployment with an App but no `GITHUB_TOKEN` therefore throws *here* — but only
- * here. Measured 2026-07-10: boot succeeds and the board serves, because nothing on
- * the per-repo path calls this. `routes/discover.ts` 502s, and `routes/health.ts`
- * reports `configured: false` while an App is registered. #21 owns all three.
+ * **The seam holds.** A caller receives a `label` (an account login — public, and
+ * already the owner half of every `RepoSummary.path`) and an opaque `GitProvider`.
+ * It never sees an installation id, and never learns that installations exist.
+ * That is ARCHITECTURE §5's rule, and it is why this returns `AccountProvider[]`
+ * rather than exposing the store.
+ *
+ * The env adapter is included **alongside** the App's when `GITHUB_TOKEN` is set:
+ * a repo outside every installation is reachable only through it, so dropping it
+ * would silently hide those repos from Discover. It is omitted when the token is
+ * unset — the case `requireEnv` must never see, and #21's exit criterion.
+ *
+ * Returns `[]` when there is no credential at all. Callers render an empty list or
+ * report `configured: false`. Nothing throws.
  */
-export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
-  if (factoryOverride) return factoryOverride(provider, host);
-  return resolve(provider, host, null);
+export function getAccountProviders(provider: ProviderId, host?: string | null): AccountProvider[] {
+  // Honour the test seam (T0-5). A suite that installs a fake factory expects every
+  // path through this module to route to it, not just the per-repo one.
+  if (factoryOverride) {
+    return [{ kind: "env", label: "test", provider: factoryOverride(provider, host) }];
+  }
+
+  if (provider === "gitlab") {
+    return process.env.GITLAB_TOKEN
+      ? [{ kind: "env", label: "GITLAB_TOKEN", provider: resolve(provider, host, null) }]
+      : [];
+  }
+
+  const accounts: AccountProvider[] = (installationStore?.list() ?? []).map((installation) => ({
+    kind: "app" as const,
+    label: installation.accountLogin,
+    provider: resolve(provider, host, installation),
+  }));
+
+  if (process.env.GITHUB_TOKEN) {
+    accounts.push({ kind: "env", label: "GITHUB_TOKEN", provider: resolve(provider, host, null) });
+  }
+  return accounts;
 }
 
 /** Drop memoized adapters (e.g. after a token/env change). Test + ops hook. */
