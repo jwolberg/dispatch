@@ -1,17 +1,36 @@
 # Build Plan v2 — Tiers 0–2
 
 **Status:** Tier 0 **complete** (10/10). Tier 1 **8/10** — only the onboarding
-track remains (T1-3, T1-4). Tier 2 not started.
+track remains (T1-3 in progress, T1-4 blocked on it). Tier 2 not started.
 **Supersedes:** nothing. `docs/BUILD_PLAN.md` covers v1 (Phases 1–6, complete).
 **Source:** assessment of 2026-07-09 (Dispatch vs. TerMinal vs. the 2026 orchestrator market).
 **Last updated:** 2026-07-10 — Tier 0 run in `docs/implementation.md`; Tier 1 run
 in `docs/implementation-notes.md`.
 
-**The one thing to read before picking up T1-3.** ADR-0006 [8]'s central claim —
-that a pull request opened with a GitHub App *installation token* triggers
-`pull_request` runs without approval — is still **inferred, not observed**. T1-3 and
-T1-4 are both shaped around it. T1-1 has now registered the machinery to check it;
-ticket **#22** is the check, and it should happen before T1-3, not after.
+**The gate on T1-3 is cleared.** ADR-0006 [8]'s central claim — that a pull request
+opened with a GitHub App *installation token* triggers `pull_request` runs without
+approval — was **inferred, not observed**, and T1-3 and T1-4 are both shaped around
+it. Ticket **#22** ran the check on 2026-07-10 and **the arm holds**: run
+[29065952153](https://github.com/jwolberg/cohort-bot/actions/runs/29065952153),
+`event: pull_request`, `conclusion: success`, no approval gate, `actor` =
+`triggering_actor` = `dispatch-jay[bot]`. `GH_PAT` stays deleted; T1-3 proceeds as
+written. ADR-0006 [8] and ADR-0002 [5] now record it as observed.
+
+**Two things the check turned up, both now fixed.** Neither was in any plan:
+
+- **#25 — `claude.yml` never ran.** ADR-0006 [2]'s "pushes a branch using the default
+  `GITHUB_TOKEN`" was implemented as *omitting* the `github_token` input. That input
+  has no default; omitting it makes `claude-code-action` mint a token from
+  *Anthropic's* Claude GitHub App, which 401s when it is not installed. It must be
+  named: `github_token: ${{ github.token }}`.
+- **#23 — every **Track** click inserted a duplicate row.** `UNIQUE (provider, host,
+  path)` never fired for GitHub, because `host` is `NULL` and SQLite treats each
+  `NULL` as distinct. Fixed with an expression index on `COALESCE(host, '')`.
+
+The lesson generalizes, and T1-3's AC 9 already encodes it: **sample, never infer.**
+Both bugs were mechanisms assumed from prose. AC 9's demand for a *real*
+`claude-code-action` run is what surfaced #25 — the run failed before it could push
+a branch, which was itself the finding.
 
 ---
 
@@ -185,7 +204,7 @@ first ship, for a user who cannot read a diff and has never minted a PAT.
 | T1-0 | #1 | **Spike:** GitHub App installation tokens and the anti-recursion rule | S | — | Complete (ADR-0002) |
 | T1-1 | #2 | GitHub App: manifest registration + OAuth install flow | L | T1-0 | Complete (PR #11) |
 | T1-2 | #3 | Per-repo credential resolution (replaces the global env token) | M | — (see below) | Complete (PR #10) |
-| T1-3 | #4 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 | **Open — next** |
+| T1-3 | #4 | `POST /api/repos/:id/setup` — write workflows + secrets via API | L | T1-1, T1-2 | **In progress** — stages 1–2 on PR #22 |
 | T1-4 | #5 | Canary verification: prove the build triggers, at setup time | M | T1-3 | Open |
 | T1-5 | #6 | Plain-language change summary on the card | M | T0-1 | Complete |
 | T1-6 | #7 | Preview-first card: hero preview + single verdict chip | S | T1-5 | Complete |
@@ -198,7 +217,10 @@ first ship, for a user who cannot read a diff and has never minted a PAT.
 | Ticket | Title | Why it exists |
 |---|---|---|
 | #21 | Account-level provider calls under an App | **Done (PR #13).** T1-2 could not resolve the rate-limit probe, health route, or `discoverRepos()` — they have no repo, so no installation. `getAccountProviders()` now returns one adapter per credential; Discover fans out and merges, health reports one entry per credential, and the env-only `getProvider()` factory is gone. `GITHUB_TOKEN` is optional. |
-| #22 | Live-verify the App path | T1-1's AC 6 and AC 13 need an App on a real account. Closes ADR-0006 [8]'s open inference. `hitl` — only the operator can register an App. |
+| #22 | Live-verify the App path | **Done (PR #15).** Both criteria observed on a real App. AC 6: with `GITHUB_TOKEN` corrupted, a repo under the installation still polled, at a rate-limit ceiling of 6950 (installation-scoped; a PAT is capped at 5000). AC 13: a PR opened by the installation token triggered `pull_request` with no approval gate. ADR-0006 [8] and ADR-0002 [5] moved from *inferred* to *observed*. |
+| #23 | `UNIQUE` never deduped GitHub repos | **Done (PR #16).** `host` is `NULL` for GitHub and SQLite treats each `NULL` as distinct, so every **Track** click appended a row. Expression index on `COALESCE(host, '')`; `POST /api/repos` is now idempotent (200 + existing row). |
+| #24 | Onboard `dispatch` with a compliant `claude.yml` | **Done (PR #18).** The repo card's ⚠ flag was correct — the repo had no Claude workflow. Made it false rather than hiding it, and stopped `install-claude-action.sh` re-introducing the `GH_PAT` ADR-0006 [2] deleted. |
+| #25 | `claude.yml` never ran | **Done (PR #21).** `github_token` has no default in `action.yml`; omitting it makes `claude-code-action` mint from *Anthropic's* Claude GitHub App and 401. Pass `${{ github.token }}` explicitly. Found by T1-3's AC 9, which forbids inferring the branch discriminator and forced a real run. |
 
 **T1-0 — Spike, and it gates the whole tier.**
 The claim I want verified before building on it: *events authenticated with a
@@ -212,18 +234,20 @@ tokens but we must keep minting a PAT, and T1-3 gets meaningfully uglier.
 Do not start T1-1 before this is settled. Timebox to half a day; the answer is a
 paragraph and a link.
 
-> **Done, and only half-settled — read this before T1-3 (2026-07-09/10).** The
-> spike produced ADR-0002 and ADR-0006. ADR-0006 [2] went further than the spike
-> asked: **the workflow no longer opens PRs at all.** `claude-code-action` pushes a
-> branch under the default `GITHUB_TOKEN`, and Dispatch's own server opens the pull
-> request with its installation token. That deletes the `gh pr create` post-step and
-> leaves `GH_PAT` with no caller.
+> **Done and fully settled (2026-07-09/10).** The spike produced ADR-0002 and
+> ADR-0006. ADR-0006 [2] went further than the spike asked: **the workflow no longer
+> opens PRs at all.** `claude-code-action` pushes a branch under the default
+> `GITHUB_TOKEN`, and Dispatch's own server opens the pull request with its
+> installation token. That deletes the `gh pr create` post-step and leaves `GH_PAT`
+> with no caller.
 >
-> But the arm this rests on — that a PR opened with an *installation token* triggers
-> `pull_request` runs without approval — was never observed. What was observed was a
-> fine-grained PAT. ADR-0006 [8] says so plainly. **T1-1 registered the first App;
-> #22 is the fifteen-minute check.** Do it before T1-3, because if the arm is false,
-> T1-3 is a different ticket.
+> The arm this rests on — that a PR opened with an *installation token* triggers
+> `pull_request` runs without approval — was inferred from a fine-grained PAT
+> observation. **#22 observed it directly on 2026-07-10 and it holds** (ADR-0006 [8]).
+> `GH_PAT` is gone for good, and T1-3 is the ticket it was always going to be.
+>
+> One correction from doing it: "uses the default `GITHUB_TOKEN`" means passing
+> `github_token: ${{ github.token }}`, not omitting the input. See #25.
 
 > **Corrected 2026-07-09 (SES-0001, shipped as PR #10).** This table and the graph
 > below drew `T1-1 ─► T1-2`, contradicting the prose immediately after it. T1-2 does
@@ -281,6 +305,41 @@ in `implementation-notes.md` on 2026-06-12: **when installing in OAuth mode,
 delete any existing `ANTHROPIC_API_KEY` repo secret**, because the API key
 outranks the OAuth token in Claude's auth precedence and would keep billing the
 metered API.
+
+> **In progress, staged (2026-07-10).** Six stages, plan in the ticket. Stages 1–2
+> are on PR #22.
+>
+> | # | Stage | State |
+> |---|---|---|
+> | 1 | Sample the branch discriminator (AC 9) | done |
+> | 1a | Stop the issue body telling Claude to open the PR | done |
+> | 2 | Seam: `listBranches`, `getCommitIdentity`, `createPullRequest` | done |
+> | 3 | Poller opens the PR for Claude's branch, never a human's | next |
+> | 4 | `POST /api/repos/:id/setup` + sealed-box secrets | |
+> | 5 | Templates embedded at build time | |
+> | 6 | UI affordance + docs | |
+>
+> **AC 9 is the load-bearing criterion, and it earned its keep.** It forbids
+> inferring the human-vs-Claude discriminator, because opening a PR from somebody's
+> work-in-progress branch is not recoverable. Forcing a real run surfaced #25 before
+> a line of T1-3 was written. The sample (`server/poller/__fixtures__/`) kills three
+> plausible rules:
+>
+> - `author.login === "claude[bot]"` **never matches** — GitHub resolves a commit's
+>   author by *email*, and Claude's noreply address carries `github-actions[bot]`'s
+>   numeric id, so that is the login reported.
+> - `author.type === "Bot"` alone also matches Dependabot and every other Actions
+>   commit.
+> - The commit message carries `Co-authored-by: <the issue author>`, so any "was a
+>   human involved" check says yes.
+>
+> The rule is both together: `author.type === "Bot" && commit.author.name === "claude[bot]"`.
+>
+> **GitLab has no equivalent to sample.** `claude-code-action` is GitHub-only, and
+> GitLab's commit payload resolves no account and reports no bot/user distinction. The
+> seam is implemented for parity, but `getCommitIdentity` returns `null` there rather
+> than a guess, and the poller's auto-open path stays GitHub-only. Inventing a GitLab
+> discriminator is the exact mistake AC 9 exists to prevent.
 
 **T1-4 — Canary, and the reason this tier is worth the money.**
 Writing a workflow file is not the same as the workflow running. The failure mode
@@ -417,12 +476,13 @@ which is why it depends on T2-6 landing first.
 
 1. ~~**T1-0 — GitHub App installation tokens vs. the anti-recursion rule.** Settle
    by spike, not by argument. Gates all of Tier 1.~~
-   **Half-resolved 2026-07-09/10.** The spike produced ADR-0002 and ADR-0006, and
+   **Fully resolved 2026-07-10.** The spike produced ADR-0002 and ADR-0006, and
    ADR-0006 [2] went further: the workflow stops opening PRs entirely, Dispatch's
-   server opens them, and `GH_PAT` loses its only caller. **But the load-bearing arm
-   was never observed** — what was tested was a fine-grained PAT, not an App
-   installation token (ADR-0006 [8], ADR-0002 [5]). T1-1 has now built the machinery
-   to check it. **#22 closes this, and it must precede T1-3.**
+   server opens them, and `GH_PAT` loses its only caller. The load-bearing arm — that
+   a PR opened by an *installation token* triggers `pull_request` runs without
+   approval — was inferred from a PAT observation, and **#22 observed it directly.
+   It holds.** `GH_PAT` is deleted for good; ADR-0006 [8] and ADR-0002 [5] now say
+   *observed*. Nothing gates T1-3.
 2. ~~**T1-7 — Revert mechanism.** Spike. Fallback (deep-link + track the resulting
    PR) is acceptable and should be assumed until the spike says otherwise.~~
    **Resolved 2026-07-09 — the spike said otherwise.** Both providers expose a

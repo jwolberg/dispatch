@@ -72,9 +72,15 @@ rather than silently reverting to `GITHUB_TOKEN`. To start over, delete the row:
 sqlite3 data/dispatch.db 'DELETE FROM installations; DELETE FROM github_app;'
 ```
 
-`GITHUB_TOKEN` must stay set. Three account-level calls (the rate-limit probe, the
-health route, `discoverRepos()`) have no installation to resolve against — that is
-ticket **#21**.
+**`GITHUB_TOKEN` is optional since #21 landed.** This runbook used to say it "must
+stay set", because the rate-limit probe, the health route and `discoverRepos()` have
+no repo and therefore no installation to resolve against. `getAccountProviders()`
+now asks *every* credential and merges, omitting the env entry when the variable is
+unset. Keep `GITHUB_TOKEN` only if you track a repo **outside** every installation
+(an installation token sees only its granted repos) or any GitLab repo.
+
+`requireEnv("GITHUB_TOKEN")` is reached from exactly one place — resolving a repo
+with no installation — so an App-only deployment never trips it.
 
 ## [3] Register and install
 
