@@ -60,7 +60,9 @@ onboarding, and it is about the operator's own account. It never leaves their
 hands (ADR-0006 [5]), which is exactly why an agent cannot do it.
 
 **No deploy is required.** `redirect_url` and `setup_url` are browser redirects, not
-server-to-server callbacks, and the manifest registers the webhook `active: false`.
+server-to-server callbacks, and the manifest omits the webhook entirely on a
+non-public host (GitHub rejects an unreachable `hook_attributes.url` even when
+`active: false` — observed 2026-07-10).
 The whole flow runs against `http://localhost:3001`.
 
 Step-by-step: **[`docs/runbooks/register-github-app-locally.md`](../../docs/runbooks/register-github-app-locally.md)**.
