@@ -115,19 +115,12 @@ export function getProviderForRepo(ref: RepoRef): GitProvider {
   return resolve(ref.provider, ref.host, installationFor(ref));
 }
 
-/**
- * Factory for a call with no repo, and therefore no installation.
- *
- * Always the env token. It remains the whole GitLab story, the credential for a
- * repo outside every installation, and the documented local path — but a GitHub
- * caller that wants to ask an *account-level* question should use
- * {@link getAccountProviders}, which does not assume a single account-level
- * credential exists. Under an App, it does not.
- */
-export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
-  if (factoryOverride) return factoryOverride(provider, host);
-  return resolve(provider, host, null);
-}
+// `getProvider(provider, host)` — the env-token account-level factory — was removed
+// in #21. It had exactly three callers (the rate-limit probe, the health route, and
+// repo discovery), all of which assumed a single account-level credential exists.
+// Under a GitHub App none does. They now use `getAccountProviders()`. The env token
+// still reaches an adapter through `resolve(..., null)`, via that function and via
+// `getProviderForRepo()`'s fallback for a repo outside every installation.
 
 /** An adapter, and enough to name the credential behind it — never which one. */
 export interface AccountProvider {
@@ -161,6 +154,12 @@ export interface AccountProvider {
  * report `configured: false`. Nothing throws.
  */
 export function getAccountProviders(provider: ProviderId, host?: string | null): AccountProvider[] {
+  // Honour the test seam (T0-5). A suite that installs a fake factory expects every
+  // path through this module to route to it, not just the per-repo one.
+  if (factoryOverride) {
+    return [{ kind: "env", label: "test", provider: factoryOverride(provider, host) }];
+  }
+
   if (provider === "gitlab") {
     return process.env.GITLAB_TOKEN
       ? [{ kind: "env", label: "GITLAB_TOKEN", provider: resolve(provider, host, null) }]

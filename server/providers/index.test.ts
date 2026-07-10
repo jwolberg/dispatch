@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import {
   getAccountProviders,
-  getProvider,
   getProviderForRepo,
   resetProviderCache,
   setInstallationStore,
+  setProviderFactory,
 } from "./index.js";
 import type { Installation, InstallationStore, RepoKey } from "./installations.js";
 import type { RepoRef } from "./types.js";
@@ -94,9 +94,10 @@ describe("getProvider / getProviderForRepo", () => {
   describe("fallback to the env token", () => {
     it("resolves a repo with no installation to the GITHUB_TOKEN adapter", () => {
       setInstallationStore(storeOf({}));
-      // Identity with the account-level adapter is what proves it is the env one.
+      // Identity with the env account's adapter is what proves it is the env one.
       // `not.toThrow()` would also pass if it silently built an App adapter.
-      expect(getProviderForRepo(repo("acme/widgets"))).toBe(getProvider("github"));
+      const env = getAccountProviders("github").find((a) => a.kind === "env")!;
+      expect(getProviderForRepo(repo("acme/widgets"))).toBe(env.provider);
     });
 
     it("resolves every repo to the env adapter when no store is injected at all", () => {
@@ -120,16 +121,33 @@ describe("getProvider / getProviderForRepo", () => {
     });
   });
 
-  describe("account-level getProvider (no repo in hand)", () => {
-    it("ignores the installation store entirely — an installed repo's adapter is a different one", () => {
-      // scheduler.ts, health.ts and discover.ts ask for a provider with no repo.
-      // Under an App there is no account-level token; rewiring them is #21.
-      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
-      expect(getProvider("github")).not.toBe(getProviderForRepo(repo("acme/widgets")));
+  describe("the account-level env factory is gone (#21)", () => {
+    it("routes an account-level ask through getAccountProviders, sharing the env adapter", () => {
+      // getProvider() was removed: its three callers all assumed a single
+      // account-level credential exists, and under an App none does. The env
+      // adapter is still shared with the per-repo fallback so the ETag cache holds.
+      const [envAccount] = getAccountProviders("github");
+      expect(envAccount.provider).toBe(getProviderForRepo(repo("unlisted/repo")));
     });
 
-    it("hands back the same adapter the env fallback uses, so the ETag cache is shared", () => {
-      expect(getProvider("github")).toBe(getProviderForRepo(repo("unlisted/repo")));
+    it("keeps an installed repo's adapter distinct from the env one", () => {
+      setInstallationStore(storeOf({ "acme/widgets": install(100) }));
+      const env = getAccountProviders("github").find((a) => a.kind === "env")!;
+      expect(env.provider).not.toBe(getProviderForRepo(repo("acme/widgets")));
+    });
+
+    it("honours the setProviderFactory test seam", () => {
+      // T0-5's fake factory must intercept every path through this module, or a
+      // suite that installs it silently talks to the real Octokit from discover.
+      const fake = {} as never;
+      setProviderFactory(() => fake);
+      try {
+        expect(getAccountProviders("github")).toEqual([
+          { kind: "env", label: "test", provider: fake },
+        ]);
+      } finally {
+        setProviderFactory(null);
+      }
     });
   });
 
@@ -142,7 +160,7 @@ describe("getProvider / getProviderForRepo", () => {
       const accounts = getAccountProviders("github");
       expect(accounts).toHaveLength(1);
       expect(accounts[0].kind).toBe("env");
-      expect(accounts[0].provider).toBe(getProvider("github"));
+      expect(accounts[0].provider).toBe(getProviderForRepo(repo("unlisted/repo")));
     });
 
     it("labels the env adapter by its environment variable", () => {
@@ -252,7 +270,7 @@ describe("getProvider / getProviderForRepo", () => {
 
     it("leaves the env adapter on /user/repos", async () => {
       const m = stubFetch([]);
-      await getProvider("github").discoverRepos();
+      await getProviderForRepo(repo("unlisted/repo")).discoverRepos();
       expect(nonMintUrls(m)[0]).toContain("/user/repos");
     });
   });

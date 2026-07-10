@@ -11,7 +11,7 @@ import {
 } from "./installations.js";
 import { ENCRYPTION_KEY_ENV, loadEncryptionKey } from "../lib/crypto.js";
 import { __resetRegisteredSecrets, safeMessage } from "../lib/redaction.js";
-import { getProvider, getProviderForRepo, setInstallationStore } from "../providers/index.js";
+import { getAccountProviders, getProviderForRepo, setInstallationStore } from "../providers/index.js";
 
 // #2 — the first CONFIDENTIAL table in schema.sql. Every other table here is
 // either disposable (rebuilt from the provider) or irreplaceable-but-public
@@ -328,9 +328,9 @@ describe("installations store", () => {
       store.saveInstallation(installation({ accountLogin: "acme" }));
       setInstallationStore(store);
 
-      // Same adapter instance as an account-level call → it is the env adapter.
+      // Same instance as the env account → it is the env adapter, not the App's.
       const outside = getProviderForRepo({ provider: "github", path: "someone-else/repo" });
-      expect(outside).toBe(getProvider("github"));
+      expect(outside).toBe(getAccountProviders("github").find((a) => a.kind === "env")!.provider);
     });
 
     it("does NOT hand an installed repo the env adapter", () => {
@@ -340,7 +340,7 @@ describe("installations store", () => {
       setInstallationStore(store);
 
       expect(getProviderForRepo({ provider: "github", path: "acme/widgets" })).not.toBe(
-        getProvider("github")
+        getAccountProviders("github").find((a) => a.kind === "env")!.provider
       );
     });
   });
