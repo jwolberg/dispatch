@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-10
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/26"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-4"
@@ -110,6 +109,11 @@ is the only thing preventing the PR. A test that passes because the discriminato
 rejected the branch proves nothing.
 
 ## Progress — 2026-07-10 (branch `feat/5-canary-verification`)
+
+**PR [#26](https://github.com/jwolberg/dispatch/pull/26) MERGED** (the three pure-logic
+slices below). It deliberately used no closing keyword — this ticket stays
+`in-progress` because the live orchestration remains. Scrubbed from `prs:` since it
+is no longer in flight; recorded here for provenance.
 
 Pure, unit-testable logic is built and green (`npm run verify`, 575 tests). Three
 commits, each TDD-first:
