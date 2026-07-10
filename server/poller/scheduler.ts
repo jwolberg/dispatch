@@ -3,8 +3,8 @@ import { listRepos } from "../db/repos.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile } from "./reconcile.js";
 import { discoverAllRepos } from "./discover.js";
-import { getProvider } from "../providers/index.js";
-import { isPaused, updateRateLimit } from "../lib/ratelimit.js";
+import { getAccountProviders } from "../providers/index.js";
+import { isPaused, leastRemaining, updateRateLimit } from "../lib/ratelimit.js";
 import { safeMessage } from "../lib/redaction.js";
 
 const ACTIVE_INTERVAL_MS = 20_000; // 20s for repos with active tickets (PRD F4.2)
@@ -27,14 +27,29 @@ function isActive(ticketId: number): boolean {
 
 // Refresh the rate-limit gauge before a cycle. GitHub's /rate_limit endpoint
 // is free (doesn't consume core quota), so this is cheap insurance (S3).
+//
+// Every credential has its own budget (#21): two App installations have two, and
+// each is exhausted independently. The gauge holds one number, so it holds the
+// binding one — the smallest remaining, which is the budget that will pause
+// polling first. Gating on `process.env.GITHUB_TOKEN` used to mean an App-only
+// deployment never fed the gauge at all.
 async function refreshRateLimit(): Promise<void> {
-  if (!process.env.GITHUB_TOKEN) return;
   if (!listRepos().some((r) => r.provider === "github")) return;
-  try {
-    updateRateLimit(await getProvider("github").getRateLimit());
-  } catch (err) {
-    console.warn(`[poller] rate-limit check failed: ${safeMessage(err)}`);
+
+  const accounts = getAccountProviders("github");
+  if (accounts.length === 0) return; // no credential; nothing to measure
+
+  const settled = await Promise.allSettled(accounts.map((a) => a.provider.getRateLimit()));
+  const measured = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      console.warn(`[poller] rate-limit check failed: ${safeMessage(result.reason)}`);
+    }
   }
+
+  const binding = leastRemaining(measured);
+  if (binding) updateRateLimit(binding);
 }
 
 async function pollActive(): Promise<void> {

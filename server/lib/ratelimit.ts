@@ -14,6 +14,33 @@ interface Gauge {
 
 const gauge: Gauge = { limit: null, remaining: null, reset: null, paused: false, reason: null };
 
+interface RateLimitLike {
+  limit: number | null;
+  remaining: number | null;
+  reset: string | null;
+}
+
+/**
+ * The binding constraint across several credentials (#21).
+ *
+ * Two GitHub App installations have two independent rate-limit budgets, and the
+ * banner shows one number. The honest reduction is the smallest *remaining* — the
+ * budget that will run out first, and therefore the one that will pause polling.
+ * Its `limit` and `reset` travel with it; mixing one account's remaining with
+ * another's reset would describe a budget that does not exist.
+ *
+ * Entries whose `remaining` is unknown are skipped rather than treated as zero,
+ * which would pause the poller over a credential that never reported.
+ */
+export function leastRemaining(entries: RateLimitLike[]): RateLimitLike | null {
+  let lowest: RateLimitLike | null = null;
+  for (const entry of entries) {
+    if (entry.remaining == null) continue;
+    if (lowest == null || entry.remaining < lowest.remaining!) lowest = entry;
+  }
+  return lowest;
+}
+
 export function updateRateLimit(rl: { limit: number | null; remaining: number | null; reset: string | null }): void {
   gauge.limit = rl.limit;
   gauge.remaining = rl.remaining;

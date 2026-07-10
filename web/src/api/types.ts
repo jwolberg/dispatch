@@ -1,14 +1,28 @@
 // Shared response shapes mirrored from the backend. Kept hand-synced rather
 // than imported so the web build stays decoupled from server code.
 
-export interface ProviderHealth {
-  provider: "github" | "gitlab";
-  configured: boolean;
+/** One credential behind a provider (#21). `label` is an account login or env var. */
+export interface AccountHealth {
+  label: string;
+  kind: "env" | "app";
   valid: boolean;
   remaining: number | null;
   limit: number | null;
   reset: string | null;
   error: string | null;
+}
+
+export interface ProviderHealth {
+  provider: "github" | "gitlab";
+  /** True when *any* credential exists — a GitHub App counts, not just an env token. */
+  configured: boolean;
+  valid: boolean;
+  /** The binding constraint: the smallest remaining budget across `accounts`. */
+  remaining: number | null;
+  limit: number | null;
+  reset: string | null;
+  error: string | null;
+  accounts: AccountHealth[];
 }
 
 export interface RateLimitGauge {

@@ -1,6 +1,20 @@
-import type { Health } from "../api/types.js";
+import type { Health, ProviderHealth } from "../api/types.js";
 
 // Footer surfaces DB status + provider rate-limit remaining (PRD F4.2 footer).
+
+/**
+ * The footer shows one number, but a deployment can hold several credentials —
+ * one per GitHub App installation, plus the env token (#21). The number shown is
+ * the *smallest* remaining, so name the account it belongs to rather than leaving
+ * the reader to guess whose budget is nearly gone.
+ */
+function budgetBreakdown(gh: ProviderHealth): string | undefined {
+  if (gh.accounts.length < 2) return undefined;
+  return gh.accounts
+    .map((a) => `${a.label}: ${a.valid ? `${a.remaining ?? "?"} / ${a.limit ?? "?"}` : a.error ?? "invalid"}`)
+    .join("\n");
+}
+
 export function HealthFooter({ health }: { health: Health | null }) {
   const gh = health?.providers.find((p) => p.provider === "github");
 
@@ -16,11 +30,17 @@ export function HealthFooter({ health }: { health: Health | null }) {
         GitHub:{" "}
         {gh?.configured ? (
           gh.valid ? (
-            <span className={gh.remaining != null && gh.remaining < 100 ? "text-status-wait" : "text-status-ok"}>
+            <span
+              title={budgetBreakdown(gh)}
+              className={gh.remaining != null && gh.remaining < 100 ? "text-status-wait" : "text-status-ok"}
+            >
               ● {gh.remaining ?? "?"} / {gh.limit ?? "?"} left
+              {gh.accounts.length > 1 && <span className="text-gray-500"> (lowest of {gh.accounts.length})</span>}
             </span>
           ) : (
-            <span className="text-status-fail">● token invalid</span>
+            <span className="text-status-fail" title={gh.error ?? undefined}>
+              ● no working credential
+            </span>
           )
         ) : (
           <span className="text-gray-500">not configured</span>
