@@ -9,7 +9,8 @@ type: chore
 source: .TerMinal/sessions/0002-github-app-manifest-install-flow/session.md
 created: 2026-07-09
 updated: 2026-07-09
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/15"
 refs:
   - "docs/runbooks/register-github-app-locally.md"
   - "SES-0002"
