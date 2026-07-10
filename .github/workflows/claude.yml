@@ -41,8 +41,12 @@ jobs:
         id: claude
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # `github_token` is intentionally unset: the action falls back to the
-          # default GITHUB_TOKEN. ADR-0006 [2] — the branch push is all this needs.
+          # Pass the default GITHUB_TOKEN *explicitly* (ADR-0006 [2]). This input has
+          # no default: omit it and claude-code-action performs an App token exchange
+          # against Anthropic's Claude GitHub App, which is not installed here and
+          # 401s — observed in run 29068754525, fixed by #25. `github.token` is all
+          # the branch push needs, and it writes no credential into this repo.
+          github_token: ${{ github.token }}
           #
           # Do NOT set `prompt:` here. A static prompt forces automation mode, which
           # IGNORES the @claude comment. Omitting it enables interactive (mention)

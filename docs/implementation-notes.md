@@ -1220,3 +1220,38 @@ Do not "fix" it by restoring the post-step.
 
 Also corrected ADR-0006 [8], whose *Observed* line cited the post-step by file and
 line number; those lines no longer exist.
+
+## 2026-07-10 — #25: "the default GITHUB_TOKEN" is not the same as omitting it
+
+#24's `claude.yml` omitted `github_token`, reading ADR-0006 [2]'s "pushes a branch
+using the default GITHUB_TOKEN" as "leave the input out." Every run 401'd in 27s:
+
+```
+App token exchange failed: 401 Unauthorized -
+Claude Code is not installed on this repository.
+```
+
+`claude-code-action`'s own `action.yml` gives `github_token` **no default** and
+describes it as "optional if using GitHub App." Omitting it opts the workflow into an
+App token exchange against *Anthropic's* Claude GitHub App — a third App, unrelated to
+Dispatch's `dispatch-jay`, and not installed. `jwolberg/situation` never hit this
+because its old workflow passed `secrets.GH_PAT`; deleting GH_PAT in #24 removed the
+token and silently enrolled the workflow in an App nobody had.
+
+Fix: `github_token: ${{ github.token }}`. Same intent, named explicitly.
+
+**Three GitHub Apps, and conflating any two produces a plausible wrong answer:**
+
+1. `dispatch-jay` — ours, mints installation tokens for Dispatch's server.
+2. `github.com/apps/claude` — Anthropic's, only used when `github_token` is absent.
+   Not installed, not wanted.
+3. There is no third credential in the target repo.
+
+Caught it because #4's AC 9 forbids inferring the branch discriminator and forced a
+real run. The run failed before it could push a branch — which is itself the finding.
+ADR-0006 [4]'s "sample it, do not infer it" applies to the action's *inputs* too, not
+just to branch identities. That is twice in two days an inferred mechanism was checked
+against reality; the first (ADR-0006 [8]'s pull_request arm, #22) held, this one did not.
+
+Also: for `issues` / `issue_comment` events GitHub reads the workflow from the
+**default branch**, never from a PR head — so this fix is untestable until it merges.

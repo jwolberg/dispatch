@@ -33,8 +33,17 @@ Both were settled on 2026-07-09.
 ## [2] Decision — Dispatch's server opens the pull request
 
 ADR-0002 [4](a). The workflow no longer opens PRs. `claude-code-action` pushes a
-branch using the default `GITHUB_TOKEN`; Dispatch's poller notices the branch and
+branch using the default `GITHUB_TOKEN`, **passed explicitly as
+`github_token: ${{ github.token }}`**; Dispatch's poller notices the branch and
 opens the pull request itself, authenticated with its App installation token.
+
+> **Corrected 2026-07-10 (#25).** "Uses the default `GITHUB_TOKEN`" was first read as
+> "omit the input." It is not. `github_token` has no default in `action.yml`, and
+> omitting it makes `claude-code-action` exchange for a token from *Anthropic's*
+> Claude GitHub App — a third App, unrelated to the one this ADR registers, and not
+> installed. #24 shipped the omission and every run 401'd
+> ([29068754525](https://github.com/jwolberg/dispatch/actions/runs/29068754525)).
+> The token must be named.
 
 Rejected: writing `APP_PRIVATE_KEY` into every onboarded repo so the workflow can
 mint its own token via `actions/create-github-app-token`. It ships fastest, and it

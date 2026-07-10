@@ -130,8 +130,12 @@ jobs:
         id: claude
         with:
           __CLAUDE_AUTH_INPUT__
-          # `github_token` is intentionally unset: the action falls back to the
-          # default GITHUB_TOKEN. ADR-0006 [2] — the branch push is all this needs.
+          # Pass the default GITHUB_TOKEN *explicitly* (ADR-0006 [2]). This input has
+          # no default: omit it and claude-code-action performs an App token exchange
+          # against Anthropic's Claude GitHub App, which most repos do not have
+          # installed, and 401s (observed — #25). `github.token` is all the branch
+          # push needs, and it writes no credential into the target repo.
+          github_token: ${{ github.token }}
           # Dispatch opens the PR with its App installation token, which triggers
           # on: pull_request CI without an approval gate (observed, ADR-0006 [8]).
           #
