@@ -163,6 +163,42 @@ export interface RateLimit {
   reset: string | null; // ISO timestamp
 }
 
+/** A branch and the commit it points at. */
+export interface BranchRef {
+  name: string;
+  sha: string;
+}
+
+/**
+ * Who authored a commit, as the provider reports it (#4 AC 9).
+ *
+ * Three fields because no one of them identifies Claude on its own — sampled from
+ * a real `claude-code-action` run, see `server/poller/__fixtures__/README.md`:
+ *
+ * - `authorName` is git-level (`claude[bot]`). The only field that separates Claude
+ *   from Dependabot and every other Actions bot.
+ * - `authorLogin` is resolved by the provider from the commit *email*. For Claude
+ *   that is `github-actions[bot]`, **not** `claude[bot]` — the noreply address
+ *   carries github-actions' numeric id.
+ * - `authorType` is `Bot` or `User` on GitHub. A human cannot set it from the git
+ *   client. GitLab reports no equivalent, so it is `null` there.
+ */
+export interface CommitIdentity {
+  authorName: string | null;
+  authorLogin: string | null;
+  authorType: "Bot" | "User" | null;
+}
+
+/** What Dispatch needs to open a pull request / merge request. */
+export interface NewPullRequest {
+  /** Source branch (GitHub `head`, GitLab `source_branch`). */
+  head: string;
+  /** Target branch (GitHub `base`, GitLab `target_branch`). */
+  base: string;
+  title: string;
+  body: string;
+}
+
 /** Where a steer comment goes (F4.5): the issue or its PR/MR. */
 export interface CommentTarget {
   repo: RepoRef;
@@ -200,6 +236,21 @@ export interface GitProvider {
   getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff>;
   getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]>;
   mergePR(repo: RepoRef, prNumber: number, method: MergeMethod): Promise<MergeResult>;
+
+  /** Every branch in the repo, with its tip sha (#4). */
+  listBranches(repo: RepoRef): Promise<BranchRef[]>;
+  /**
+   * Who authored `sha`. The poller uses this to tell Claude's branch from a
+   * human's before opening a pull request from it — a mistake that is not
+   * recoverable, so the rule is sampled, never inferred (#4 AC 9).
+   */
+  getCommitIdentity(repo: RepoRef, sha: string): Promise<CommitIdentity>;
+  /**
+   * Open a pull request. Dispatch does this, not the workflow: a PR authored by an
+   * App installation token triggers `pull_request` CI without an approval gate,
+   * which #22 observed directly (ADR-0006 [2], [8]).
+   */
+  createPullRequest(repo: RepoRef, input: NewPullRequest): Promise<PRRef>;
 }
 
 /** Provider-specific issue auto-close keyword (ARCH §5). */
