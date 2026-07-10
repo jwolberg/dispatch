@@ -8,7 +8,7 @@ hitl: false
 type: bug
 source: "observed while sampling for #4 AC 9"
 created: 2026-07-10
-updated: 2026-07-09
+updated: 2026-07-10
 prs: []
 refs:
   - ".github/workflows/claude.yml"

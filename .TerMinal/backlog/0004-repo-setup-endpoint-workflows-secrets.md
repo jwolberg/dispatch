@@ -1,14 +1,14 @@
 ---
 id: 4
 title: "POST /api/repos/:id/setup — write workflows + secrets via API"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: true
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-10
 prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
