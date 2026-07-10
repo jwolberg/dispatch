@@ -188,6 +188,23 @@ reports **one entry per installation** rather than a single labelled env-token l
 [2.4]'s API facts were verified against the OpenAPI description first — the rule
 [[verify-external-formats-before-encoding-them]] exists to enforce.
 
+### [4.2] 2026-07-10 — the exit criterion, driven against the real server
+
+Booted with `GITHUB_TOKEN` and `GITLAB_TOKEN` unset, from a cwd with no `.env`, with
+two installations seeded under a locally-generated (fake) App:
+
+| Surface | Before #21 | After |
+|---|---|---|
+| `/api/health` github | `configured: false` — while an App was registered | `configured: true`, both accounts listed by login |
+| `/api/discover` | 502 `Missing required environment variable: GITHUB_TOKEN` | 502 `installation token mint failed: 404`, **per account** |
+| `/api/board` | 200 | 200 |
+| `requireEnv` in the log | — | never reached |
+
+The remaining 502 is the *fake* App failing to mint against real GitHub, which is
+correct: the endpoint now fails for the right reason, and reports which credential
+failed. A real App returns 200. That is #22, and it is the honest boundary of what
+this session can prove.
+
 ## [5] Decisions
 
 *(none yet)*
