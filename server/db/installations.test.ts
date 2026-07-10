@@ -12,6 +12,7 @@ import {
 import { ENCRYPTION_KEY_ENV, loadEncryptionKey } from "../lib/crypto.js";
 import { __resetRegisteredSecrets, safeMessage } from "../lib/redaction.js";
 import { getProvider, getProviderForRepo, setInstallationStore } from "../providers/index.js";
+import { clearDirty, isDirty } from "./snapshot.js";
 
 // #2 — the first CONFIDENTIAL table in schema.sql. Every other table here is
 // either disposable (rebuilt from the provider) or irreplaceable-but-public
@@ -341,6 +342,50 @@ describe("installations store", () => {
       expect(getProviderForRepo({ provider: "github", path: "acme/widgets" })).not.toBe(
         getProvider("github")
       );
+    });
+  });
+
+  describe("durability — these tables are irreplaceable (#20)", () => {
+    // github_app and installations cannot be rebuilt from the provider: the private
+    // key exists nowhere else. Without markDirty(), snapshot.ts never uploads after
+    // a registration, and the next Cloud Run redeploy restores a snapshot that has
+    // never heard of the App. Dispatch then boots clean and silently uses
+    // GITHUB_TOKEN — the failure the boot gate exists to prevent, by another door.
+    beforeEach(() => clearDirty());
+    afterEach(() => clearDirty());
+
+    it("marks the database dirty when the App is registered", () => {
+      newStore().saveApp(APP);
+      expect(isDirty()).toBe(true);
+    });
+
+    it("marks the database dirty when an installation is recorded", () => {
+      newStore().saveApp(APP);
+      clearDirty();
+      newStore().saveInstallation(installation());
+      expect(isDirty()).toBe(true);
+    });
+
+    it("marks the database dirty when an installation is removed", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation());
+      clearDirty();
+
+      store.deleteInstallation(42);
+      expect(isDirty()).toBe(true);
+    });
+
+    it("does not mark the database dirty on a read", () => {
+      const store = newStore();
+      store.saveApp(APP);
+      store.saveInstallation(installation());
+      clearDirty();
+
+      store.getApp();
+      store.forRepo({ provider: "github", path: "acme/widgets" });
+      store.listInstallations();
+      expect(isDirty()).toBe(false);
     });
   });
 

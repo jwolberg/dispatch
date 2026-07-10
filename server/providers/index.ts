@@ -122,9 +122,10 @@ export function getProviderForRepo(ref: RepoRef): GitProvider {
  * credential at all — `discoverRepos()` would enumerate an *installation's*
  * repos — so rewiring them is its own ticket (#21), not this seam.
  *
- * That means a deployment with an App but no `GITHUB_TOKEN` still throws here.
- * #2 registers the App and resolves per-repo credentials; #21 is what finally
- * retires the env token from these three call sites.
+ * A deployment with an App but no `GITHUB_TOKEN` therefore throws *here* — but only
+ * here. Measured 2026-07-10: boot succeeds and the board serves, because nothing on
+ * the per-repo path calls this. `routes/discover.ts` 502s, and `routes/health.ts`
+ * reports `configured: false` while an App is registered. #21 owns all three.
  */
 export function getProvider(provider: ProviderId, host?: string | null): GitProvider {
   if (factoryOverride) return factoryOverride(provider, host);
