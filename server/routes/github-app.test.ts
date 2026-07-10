@@ -12,6 +12,7 @@ import {
   buildManifest,
   convertManifestCode,
   createGithubAppRouter,
+  isPubliclyReachable,
   manifestActionUrl,
 } from "./github-app.js";
 
@@ -82,7 +83,7 @@ describe("buildManifest", () => {
     expect(m.url).toBe("https://d.example.test");
     expect(m.redirect_url).toBe("https://d.example.test/api/github/callback");
     expect(m.setup_url).toBe("https://d.example.test/api/github/installed");
-    expect(m.hook_attributes.url).toBe("https://d.example.test/api/webhooks/github");
+    expect(m.hook_attributes?.url).toBe("https://d.example.test/api/webhooks/github");
   });
 
   it("tolerates a base URL with a trailing slash", () => {
@@ -96,8 +97,89 @@ describe("buildManifest", () => {
     expect(manifest().default_events).toEqual([]);
   });
 
-  it("leaves the webhook inactive until #17 can verify its signatures", () => {
-    expect(manifest().hook_attributes.active).toBe(false);
+  it("declares an inactive webhook when the deployment IS publicly reachable", () => {
+    // Declared so #17 can turn it on without re-registering; inactive because
+    // nothing verifies its signatures yet.
+    const m = buildManifest({ name: "n", baseUrl: "https://dispatch.example.com" });
+    expect(m.hook_attributes).toEqual({
+      url: "https://dispatch.example.com/api/webhooks/github",
+      active: false,
+    });
+  });
+
+  describe("localhost — GitHub rejects an unreachable hook url", () => {
+    // Observed 2026-07-10, registering from a laptop:
+    //
+    //   Error Hook url is not supported because it isn't reachable
+    //   over the public Internet (127.0.0.1)
+    //   Error Hook is invalid
+    //
+    // GitHub validates hook_attributes.url even when `active` is false. So a
+    // manifest that names a localhost webhook cannot be registered AT ALL — which
+    // would make the entire browser-native onboarding story untestable locally.
+
+    it("omits hook_attributes entirely for a localhost base url", () => {
+      expect(buildManifest({ name: "n", baseUrl: "http://localhost:3001" }).hook_attributes).toBeUndefined();
+    });
+
+    it("omits it for 127.0.0.1 — the address GitHub named in the error", () => {
+      expect(buildManifest({ name: "n", baseUrl: "http://127.0.0.1:3001" }).hook_attributes).toBeUndefined();
+    });
+
+    it("still produces a valid manifest without the webhook", () => {
+      const m = buildManifest({ name: "n", baseUrl: "http://localhost:3001" });
+      expect(m.url).toBe("http://localhost:3001");
+      expect(m.redirect_url).toBe("http://localhost:3001/api/github/callback");
+      expect(m.setup_url).toBe("http://localhost:3001/api/github/installed");
+      expect(m.default_permissions).toEqual(APP_PERMISSIONS);
+      expect("hook_attributes" in m).toBe(false);
+    });
+  });
+});
+
+describe("isPubliclyReachable", () => {
+  it("accepts a public https origin", () => {
+    expect(isPubliclyReachable("https://dispatch.example.com")).toBe(true);
+    expect(isPubliclyReachable("https://dispatch.example.com/")).toBe(true);
+  });
+
+  it("rejects loopback in every spelling GitHub would reject", () => {
+    for (const url of [
+      "http://localhost:3001",
+      "http://127.0.0.1:3001",
+      "http://127.1.2.3:8080",
+      "http://[::1]:3001",
+      "http://0.0.0.0:3001",
+    ]) {
+      expect(isPubliclyReachable(url), url).toBe(false);
+    }
+  });
+
+  it("rejects private and non-routable ranges a tunnel-less dev box would use", () => {
+    for (const url of [
+      "http://10.0.0.5:3001",
+      "http://192.168.1.20:3001",
+      "http://172.16.0.9:3001",
+      "http://172.31.255.1:3001",
+      "http://dispatch.local:3001",
+      "http://box.internal",
+    ]) {
+      expect(isPubliclyReachable(url), url).toBe(false);
+    }
+  });
+
+  it("does not mistake a public 172.x address for a private one", () => {
+    // 172.15 and 172.32 are outside the private 172.16.0.0/12 block.
+    expect(isPubliclyReachable("http://172.15.0.1")).toBe(true);
+    expect(isPubliclyReachable("http://172.32.0.1")).toBe(true);
+  });
+
+  it("does not mistake a hostname merely containing 'localhost' for loopback", () => {
+    expect(isPubliclyReachable("https://notlocalhost.example.com")).toBe(true);
+  });
+
+  it("treats an unparseable url as not reachable", () => {
+    expect(isPubliclyReachable("not a url")).toBe(false);
   });
 });
 

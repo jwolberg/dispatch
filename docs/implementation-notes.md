@@ -1078,3 +1078,27 @@ was stale and now points at #21.
 account. Until one exists, ADR-0006 [8]'s central inference — that a PR opened with
 an *App installation token* triggers `pull_request` runs without approval — remains
 inference. It is the reason #4 and #5 are shaped the way they are.
+
+---
+
+## 2026-07-10 — GitHub rejects an unreachable webhook url, `active: false` or not
+
+Found by clicking the button, not by reading. `buildManifest()` declared
+`hook_attributes: { url: "http://localhost:3001/api/webhooks/github", active: false }`,
+reasoning that an inactive webhook could not matter. GitHub validates the URL at
+**registration** time and refused the whole manifest:
+
+```
+Error Hook url is not supported because it isn't reachable over the public Internet (127.0.0.1)
+Error Hook is invalid
+```
+
+`hook_attributes` is now omitted entirely unless the base URL is publicly
+reachable. Nothing else in the flow needs a public URL — `redirect_url` and
+`setup_url` are browser redirects, every other call is outbound — so the webhook is
+the only casualty, and it was already inert until #17.
+
+**The general point, now in `docs/learnings/verify-external-formats-…`:** a schema
+tells you what a field *is*, never what the server will *do* with it. Three earlier
+format errors were caught by reading GitHub's OpenAPI description. This one could
+only be caught by a real registration attempt.

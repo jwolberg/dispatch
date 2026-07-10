@@ -76,6 +76,33 @@ Reintroducing the ADR's bug turns six tests red. A test that pins *what the exte
 system requires* survives the next person who reads the same prose and makes the same
 inference.
 
+## The fourth one, found by a human clicking the button (2026-07-10)
+
+Three of these were caught by reading GitHub's schema. The fourth was not, because
+**no schema describes it**: GitHub validates `hook_attributes.url` for public
+reachability at registration time, *even when `active` is `false`*.
+
+```
+Invalid GitHub App configuration
+ Error Hook url is not supported because it isn't reachable
+       over the public Internet (127.0.0.1)
+ Error Hook is invalid
+```
+
+The manifest was rejected outright. Declaring an inactive webhook pointing at
+`localhost` — which read as obviously harmless, and which I wrote a comment
+defending — made the entire browser-native onboarding story unregisterable on a
+laptop.
+
+The lesson underneath the lesson: **a schema tells you what a field *is*, never what
+the server will *do* with it.** Reading the OpenAPI description proved the field
+names and types. It could not have told me the URL is fetched, validated, and
+rejected. Only the button could.
+
+So the rule has two halves. Verify shapes against the schema *before* encoding them,
+and verify **behavior** against the real system *before* claiming it works. `#22`
+exists for exactly this reason on a much more expensive claim.
+
 ## Corollary: correct the ADR, don't silently route around it
 
 ADR-0006 [5] now carries a dated correction note; the original claim is left standing

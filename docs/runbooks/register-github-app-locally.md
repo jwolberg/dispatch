@@ -19,11 +19,28 @@ Every hop that touches Dispatch is either the **operator's own browser** or an
 | `GET /api/github/installed?installation_id=…` | GitHub redirects the **browser** | **no** |
 | `GET api.github.com/app/installations/{id}` | Dispatch → GitHub | no |
 | `POST …/access_tokens` (mint) | Dispatch → GitHub | no |
-| `POST /api/webhooks/github` | GitHub → Dispatch | would — but the manifest registers it `active: false` |
+| `POST /api/webhooks/github` | GitHub → Dispatch | would — so the manifest **omits it entirely** on a non-public host |
 
 `redirect_url` and `setup_url` are **browser redirects**, not server-to-server
-callbacks. The webhook is the only inbound hop and it is registered inactive until
-#17. That is what makes this runnable on a laptop.
+callbacks. The webhook is the only inbound hop, and it is the only thing dropped.
+
+> **Corrected 2026-07-10, from a live registration attempt.** This runbook first
+> said the webhook was safe because the manifest declared it `active: false`. It is
+> not. GitHub validates `hook_attributes.url` at registration time **regardless of
+> `active`**, and rejects the whole manifest:
+>
+> ```
+> Invalid GitHub App configuration
+>  Error Hook url is not supported because it isn't reachable
+>        over the public Internet (127.0.0.1)
+>  Error Hook is invalid
+> ```
+>
+> `buildManifest()` now omits `hook_attributes` unless the deployment is reachable
+> from the public internet. A laptop-registered App simply has no webhook — which is
+> correct, since nothing verifies its signatures until #17 anyway. When you later
+> deploy publicly, add the webhook URL in the App's settings on GitHub; you do not
+> need to re-register.
 
 ## [2] Prerequisites
 

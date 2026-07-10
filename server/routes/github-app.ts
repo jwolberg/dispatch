@@ -60,7 +60,8 @@ export const APP_PERMISSIONS = {
 export interface GitHubAppManifest {
   name: string;
   url: string;
-  hook_attributes: { url: string; active: boolean };
+  /** Omitted when the deployment is not publicly reachable — see {@link isPubliclyReachable}. */
+  hook_attributes?: { url: string; active: boolean };
   redirect_url: string;
   setup_url: string;
   description: string;
@@ -73,6 +74,50 @@ function trimSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+/** Loopback, link-local, and the RFC1918 blocks. */
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, ""); // strip IPv6 brackets
+
+  if (host === "localhost" || host === "::1" || host === "0.0.0.0") return true;
+  if (host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
+
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!v4) return false;
+
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  if (a === 127) return true; // 127.0.0.0/8, the whole loopback block
+  if (a === 10) return true; // 10.0.0.0/8
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 — NOT 172.15 or 172.32
+  if (a === 169 && b === 254) return true; // link-local
+  return false;
+}
+
+/**
+ * Can GitHub's servers POST to this origin?
+ *
+ * **Observed 2026-07-10**, registering from a laptop:
+ *
+ * > Error Hook url is not supported because it isn't reachable over the public
+ * > Internet (127.0.0.1) — Error Hook is invalid
+ *
+ * GitHub validates `hook_attributes.url` **even when `active` is false**. The
+ * manifest is rejected outright, so a localhost deployment could not register an
+ * App at all — which would make the whole browser-native onboarding story
+ * untestable without a tunnel.
+ *
+ * Nothing else in the flow needs a public URL: `redirect_url` and `setup_url` are
+ * browser redirects, and every other call is outbound. Only the webhook is inbound,
+ * and it is the only thing we drop.
+ */
+export function isPubliclyReachable(baseUrl: string): boolean {
+  try {
+    return !isPrivateHost(new URL(baseUrl).hostname);
+  } catch {
+    return false; // unparseable → assume we cannot be reached
+  }
+}
+
 /**
  * The manifest the operator's browser POSTs to GitHub.
  *
@@ -80,16 +125,19 @@ function trimSlash(url: string): string {
  * (`public: false`) — a public App could be installed by anyone on their own
  * repos, which is not what "register your own instance's App" means.
  *
- * The webhook is declared but left `active: false`: nothing verifies its
- * signatures until #17 lands, and an App delivering to an endpoint that does not
- * exist yet is just a queue of failed deliveries.
+ * `hook_attributes` is included **only when this deployment is reachable from the
+ * public internet**, because GitHub validates the hook URL at registration time
+ * regardless of `active` (see {@link isPubliclyReachable}). When present it is
+ * declared inactive: nothing verifies its signatures until #17 lands, and an App
+ * delivering to an endpoint that does not exist yet is a queue of failed
+ * deliveries. When absent the App simply has no webhook, which is exactly right
+ * for a laptop — and #17 can add one later without re-registering.
  */
 export function buildManifest(opts: { name: string; baseUrl: string; description?: string }): GitHubAppManifest {
   const base = trimSlash(opts.baseUrl);
-  return {
+  const manifest: GitHubAppManifest = {
     name: opts.name,
     url: base,
-    hook_attributes: { url: `${base}/api/webhooks/github`, active: false },
     redirect_url: `${base}/api/github/callback`,
     setup_url: `${base}/api/github/installed`,
     description: opts.description ?? "Dispatch — browser-native agent control plane.",
@@ -97,6 +145,11 @@ export function buildManifest(opts: { name: string; baseUrl: string; description
     default_events: [],
     default_permissions: APP_PERMISSIONS,
   };
+
+  if (isPubliclyReachable(base)) {
+    manifest.hook_attributes = { url: `${base}/api/webhooks/github`, active: false };
+  }
+  return manifest;
 }
 
 /**
