@@ -16,7 +16,9 @@
     "typecheck": "tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "check:seam": "bash scripts/check-seam.sh",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm run check:seam && npm run test"
+    "verify": "npm run typecheck && npm run check:seam && npm run check:templates && npm run test",
+    "embed:templates": "node scripts/embed-templates.mjs",
+    "check:templates": "node scripts/embed-templates.mjs --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

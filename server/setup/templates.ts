@@ -1,8 +1,4 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const SCRIPTS = resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts");
+import { EMBEDDED_TEMPLATES } from "./embedded.js";
 
 /** Which Claude credential the workflow reads. */
 export type AuthMode = "oauth" | "apikey";
@@ -28,7 +24,19 @@ export const SECRET_NAME: Record<AuthMode, string> = {
   apikey: "ANTHROPIC_API_KEY",
 };
 
-const read = (rel: string) => readFileSync(resolve(SCRIPTS, rel), "utf8");
+/**
+ * Templates are baked in at build time (#4 AC 11) rather than read from `scripts/`
+ * at runtime, which would tie the container image's layout to the repo's.
+ * `scripts/repo-ci/` and `scripts/repo-skills/` stay the single source; regenerate
+ * with `npm run embed:templates`, and `npm run verify` fails if the two diverge.
+ */
+function read(rel: string): string {
+  const content = EMBEDDED_TEMPLATES[rel];
+  if (content === undefined) {
+    throw new Error(`No embedded template for ${rel}. Run: npm run embed:templates`);
+  }
+  return content;
+}
 
 /**
  * `scripts/repo-ci/claude.yml` is the single source, shared with
