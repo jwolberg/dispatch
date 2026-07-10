@@ -5,7 +5,12 @@ import { CondCache, type CondCacheStore } from "./cond-cache.js";
 import type { TokenSource } from "./token-source.js";
 import { DIFF_MAX_FILES, mapGitHubFile } from "./diff.js";
 import { issueBody } from "./prompt.js";
+import { sealSecret } from "./sealed-box.js";
+import { registerSecret, unregisterSecret } from "../lib/redaction.js";
 import type {
+  RepoAutomationSetup,
+  PutFileResult,
+  PutFileInput,
   NewPullRequest,
   CommitIdentity,
   BranchRef,
@@ -662,6 +667,80 @@ export class GitHubProvider implements GitProvider {
       url: data.html_url,
       headBranch: data.head.ref,
       baseBranch: data.base.ref,
+    };
+  }
+
+  /**
+   * Onboarding writes (#4). Bound to one repo so the caller never re-supplies it,
+   * and so `null` from the GitLab adapter is a compile-time fact rather than a
+   * runtime surprise.
+   */
+  automationSetup(repo: RepoRef): RepoAutomationSetup {
+    const { owner, repo: name } = splitPath(repo.path);
+    const branch = repo.defaultBranch ?? undefined;
+    const octokit = this.octokit;
+
+    return {
+      putFile: async (input: PutFileInput): Promise<PutFileResult> => {
+        // Re-running setup must not append a commit to the operator's history on
+        // every click (AC 10). Compare content, not just existence.
+        let sha: string | undefined;
+        try {
+          const { data } = await octokit.repos.getContent({
+            owner,
+            repo: name,
+            path: input.path,
+            ref: input.branch ?? branch,
+          });
+          if (!Array.isArray(data) && data.type === "file") {
+            sha = data.sha;
+            const current = Buffer.from(data.content, "base64").toString("utf8");
+            if (current === input.content) return { committed: false, commitUrl: null };
+          }
+        } catch (err) {
+          if (!isNotFound(err)) throw err; // absent is the create path
+        }
+
+        const { data } = await octokit.repos.createOrUpdateFileContents({
+          owner,
+          repo: name,
+          path: input.path,
+          message: input.message,
+          content: Buffer.from(input.content, "utf8").toString("base64"),
+          branch: input.branch ?? branch,
+          ...(sha ? { sha } : {}), // omit on create; required on update or GitHub 409s
+        });
+        return { committed: true, commitUrl: data.commit?.html_url ?? null };
+      },
+
+      setSecret: async (secretName: string, value: string): Promise<void> => {
+        // The plaintext must never reach a log line, an error message, or GitHub's
+        // request body (AC 4, AC 13). Registering it makes `safeMessage()` redact it
+        // even if some transport error stringifies the request.
+        registerSecret(value);
+        try {
+          const { data: key } = await octokit.actions.getRepoPublicKey({ owner, repo: name });
+          await octokit.actions.createOrUpdateRepoSecret({
+            owner,
+            repo: name,
+            secret_name: secretName,
+            key_id: key.key_id,
+            encrypted_value: await sealSecret(key.key, value),
+          });
+        } finally {
+          unregisterSecret(value);
+        }
+      },
+
+      deleteSecret: async (secretName: string): Promise<boolean> => {
+        try {
+          await octokit.actions.deleteRepoSecret({ owner, repo: name, secret_name: secretName });
+          return true;
+        } catch (err) {
+          if (isNotFound(err)) return false; // nothing to remove is success, not failure
+          throw err;
+        }
+      },
     };
   }
 }

@@ -199,6 +199,40 @@ export interface NewPullRequest {
   body: string;
 }
 
+/** One file to commit into a target repo during onboarding (#4). */
+export interface PutFileInput {
+  path: string;
+  content: string;
+  /** Commit message. Unused when the file already has this exact content. */
+  message: string;
+  /** Defaults to the repo's default branch. */
+  branch?: string | null;
+}
+
+export interface PutFileResult {
+  /** False when the file already had this exact content — the re-run is a no-op. */
+  committed: boolean;
+  commitUrl: string | null;
+}
+
+/**
+ * Writing a repo's automation: workflow files, skills, and the Claude auth secret
+ * (#4). Obtained from {@link GitProvider.automationSetup}, which returns `null` for
+ * a provider that has no `claude-code-action` to install — that is GitLab, and the
+ * `null` is the type system carrying that fact rather than a thrown error at the
+ * bottom of a call stack.
+ *
+ * No method here returns a secret value, and none echoes one back (#4 AC 13).
+ */
+export interface RepoAutomationSetup {
+  /** Idempotent: identical content commits nothing (#4 AC 10). */
+  putFile(input: PutFileInput): Promise<PutFileResult>;
+  /** Sealed with the repo's public key before it leaves this process (#4 AC 4). */
+  setSecret(name: string, value: string): Promise<void>;
+  /** True if a secret was removed; false if it was not there. */
+  deleteSecret(name: string): Promise<boolean>;
+}
+
 /** Where a steer comment goes (F4.5): the issue or its PR/MR. */
 export interface CommentTarget {
   repo: RepoRef;
@@ -251,6 +285,13 @@ export interface GitProvider {
    * which #22 observed directly (ADR-0006 [2], [8]).
    */
   createPullRequest(repo: RepoRef, input: NewPullRequest): Promise<PRRef>;
+
+  /**
+   * How to write this repo's automation, or `null` when the provider has none to
+   * write. `claude-code-action` is GitHub-only, so the GitLab adapter returns
+   * `null` and callers render "not supported" instead of catching an exception.
+   */
+  automationSetup(repo: RepoRef): RepoAutomationSetup | null;
 }
 
 /** Provider-specific issue auto-close keyword (ARCH §5). */
