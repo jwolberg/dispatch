@@ -4,7 +4,7 @@ title: "POST /api/repos/:id/setup — write workflows + secrets via API"
 status: in-progress
 priority: high
 horizon: now
-hitl: false
+hitl: true
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
@@ -17,6 +17,7 @@ refs:
   - "ADR-0002"
   - "ADR-0006"
 depends_on: [2, 3]
+blocked_by: [26]
 acceptance:
   - "One POST commits .github/workflows/claude.yml, a stack-aware ci.yml from scripts/repo-ci/, and the plan/implement/debug skills from scripts/repo-skills/ into the target repo"
   - "The claude.yml template drops the `gh pr create` post-step and the GH_PAT secret entirely; claude-code-action pushes a branch under the default GITHUB_TOKEN and nothing else"

@@ -19,7 +19,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 const OUT = resolve(ROOT, "server/setup/embedded.ts");
 
-/** Every file under `scripts/repo-ci/` and `scripts/repo-skills/`, keyed by path relative to scripts/. */
+/**
+ * Every file under `scripts/repo-ci/` and `scripts/repo-skills/`, keyed by path relative
+ * to scripts/. Deliberately mirrors the directories rather than the subset the server
+ * currently reads: `deploy.yml` is installer-only today (`INSTALL_DEPLOY_GATE=1`), and a
+ * hand-maintained allow-list here is a second source of truth waiting to drift.
+ */
 function collect() {
   const files = {};
   for (const dir of ["repo-ci", "repo-skills"]) {
