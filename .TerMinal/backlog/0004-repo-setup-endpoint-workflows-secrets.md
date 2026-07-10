@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-09
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/22"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-3"
@@ -38,6 +37,14 @@ agent_kind: classic
 ---
 
 ## Staged plan — 2026-07-10
+
+**PRs so far** (deliberately NOT in `prs:` — `merge-sync` closes a ticket once every
+linked PR has merged, and this ticket has five stages left):
+
+- [#22](https://github.com/jwolberg/dispatch/pull/22) — stages 1 + 1a. Merged?
+  #4 stays `in-progress`.
+
+Only the final stage's PR goes in `prs:`.
 
 Too large for one PR. Each stage is independently verifiable; stages 2–6 are pure
 code, TDD-first. There is a human gate at stage 1 only.
