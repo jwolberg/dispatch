@@ -40,6 +40,13 @@ the whole board from the provider on the next poll.
 ```bash
 cp .env.example .env     # fill in the keys below
 npm install
+
+# Only needed if you'll register a GitHub App (recommended). Append ONLY if absent —
+# run the bare `>>` twice and .env holds two keys; dotenv takes the last, and the
+# first silently decrypts nothing.
+grep -q '^DISPATCH_ENCRYPTION_KEY=' .env \
+  || echo "DISPATCH_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+
 npm run dev              # starts backend (:3001) + Vite (:5173) together
 ```
 
@@ -57,7 +64,8 @@ see [`DEPLOY.md`](DEPLOY.md).
 | `ANTHROPIC_API_KEY` | for spec chat | Anthropic Messages API (spec refinement + ticket JSON) |
 | `ANTHROPIC_MODEL` | optional | Override the model (default `claude-sonnet-4-6`) |
 | `DISPATCH_DAILY_BUDGET_USD` | optional | Cap Anthropic spend per UTC day. Unset = no cap. Once the day's spend reaches the cap, chat and ticket generation return `429` until 00:00 UTC. Requires `ANTHROPIC_MODEL` to be priced in `server/anthropic/pricing.ts`. |
-| `GITHUB_TOKEN` | for GitHub repos | Fine-grained PAT ([permissions](#1-token)) |
+| `DISPATCH_ENCRYPTION_KEY` | once a GitHub App is registered | AES-256 key (base64, 32 bytes) encrypting the App's private key at rest. **If it is lost while an App is registered, Dispatch refuses to boot** rather than silently reverting to `GITHUB_TOKEN`. See [Connecting a repo](#1-credentials). |
+| `GITHUB_TOKEN` | see [below](#1-credentials) | Fine-grained PAT ([permissions](#option-b--a-fine-grained-pat)). Optional once a GitHub App covers every repo you track |
 | `GITLAB_TOKEN` | for GitLab repos | PAT with `api` scope |
 | `GITLAB_HOST` | self-hosted GitLab | Base URL (defaults to `https://gitlab.com`) |
 | `PORT` | optional | Backend port (default 3001) |
@@ -85,10 +93,39 @@ loop** on it, and (optionally) wire **preview deploys** so you can test a PR
 before shipping. Longer walkthrough with the workflow YAML details:
 [`docs/adding-a-repo.md`](docs/adding-a-repo.md).
 
-### 1. Token
+### 1. Credentials
 
-Tokens are resolved lazily, per provider — a GitHub-only setup never needs
-`GITLAB_TOKEN`, and vice versa (`server/providers/index.ts`).
+Credentials are resolved lazily, per repo and per provider — a GitHub-only setup
+never needs `GITLAB_TOKEN`, and vice versa (`server/providers/index.ts`).
+
+On GitHub there are two options. **Prefer the App.**
+
+#### Option A — a GitHub App (recommended, no shell)
+
+Open **Repos → GitHub App**, name it, leave *Organization* blank for your personal
+account, and confirm the permissions on GitHub's own page. Then **Install on
+repositories**. Repos under that account now authenticate with a minted
+*installation token* instead of `GITHUB_TOKEN`.
+
+There is no central Dispatch App — this repo is deployed by anyone, for themselves,
+so each deployment registers its own (ADR-0006 [5]). Nothing about it is shared.
+
+Set `DISPATCH_ENCRYPTION_KEY` **before** registering (see [Quick start](#quick-start-local-dev));
+the App's private key is written to SQLite and is encrypted at rest. The whole flow
+runs against `http://localhost:3001` — no deploy, no tunnel, no public URL, because
+every hop is either your browser or an outbound call. Step-by-step:
+[`docs/runbooks/register-github-app-locally.md`](docs/runbooks/register-github-app-locally.md).
+
+An installation token also carries a **higher rate limit** than a PAT's 5000/hr, and
+it is what lets Dispatch open pull requests that trigger your `on: pull_request` CI.
+
+`GITHUB_TOKEN` becomes optional. Keep it only if you track a repo **outside** every
+installation — an installation token sees only the repos it was granted — or any
+GitLab repo.
+
+#### Option B — a fine-grained PAT
+
+Still fully supported, and the only GitLab story.
 
 **GitHub** — a [fine-grained PAT](https://github.com/settings/personal-access-tokens/new)
 scoped to the repos you'll track:
@@ -131,17 +168,42 @@ issues onto the board.
 
 ### 3. Enable the build loop
 
-An `@claude` mention only builds something if `claude-code-action` is installed
-on the repo. Either run `/install-github-app` from Claude Code inside a clone, or
-use the API-only installer:
+An `@claude` mention only builds something if `claude-code-action` is installed on
+the repo. Tracking a repo in Dispatch writes **nothing** to it — tracked and
+onboarded are different states, which is what the ⚠ flag below distinguishes.
 
 ```bash
-GH_SETUP_TOKEN=github_pat_xxx ./scripts/install-claude-action.sh <owner>/<repo>
+CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
+GH_SETUP_TOKEN=github_pat_xxx \
+  ./scripts/install-claude-action.sh <owner>/<repo>
 ```
 
 The setup token needs **Contents, Workflows, and Secrets: write** — deliberately
-more than the Dispatch token above, which is `Contents: read`. Both paths are
-compared in [`docs/adding-a-repo.md`](docs/adding-a-repo.md).
+more than the Dispatch credential above. It is used *by* the installer and never
+written into the repo.
+
+**Exactly one secret is written: your Claude auth token.** Prefer
+`CLAUDE_CODE_OAUTH_TOKEN` (bills your Claude subscription) over `ANTHROPIC_API_KEY`
+(metered). The installer deletes a leftover `ANTHROPIC_API_KEY` because it *outranks*
+the OAuth token in Claude's auth precedence and would silently bill the API.
+
+No GitHub credential of any kind goes into the repo — no `GH_PAT`, no App private
+key. The workflow pushes a branch under the repo's own default `GITHUB_TOKEN`, and
+**Dispatch opens the pull request** with its App installation token, which is what
+makes `on: pull_request` CI actually run on it (ADR-0006 [2]; observed in #22).
+
+> **Two things that will bite you, both learned the hard way.**
+>
+> The workflow must pass `github_token: ${{ github.token }}` **explicitly**. That
+> input has no default: omit it and `claude-code-action` tries to mint a token from
+> *Anthropic's* Claude GitHub App (`github.com/apps/claude`) and fails with
+> `401 … not installed on this repository` (#25). The installer does this for you.
+>
+> **Dispatch cannot open the pull request yet** — that half is ticket #4. Until it
+> ships, `@claude` runs and pushes a branch, and no PR appears. Open it yourself, or
+> install the Claude GitHub App and let the action do it.
+
+Both onboarding paths are compared in [`docs/adding-a-repo.md`](docs/adding-a-repo.md).
 
 Until one is in place the repo card shows **⚠ No Claude automation detected**.
 That flag is a content check, not a guess: on GitHub a workflow file under
