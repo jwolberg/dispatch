@@ -229,3 +229,87 @@ describe("reconcileTicket — revert PR tracking", () => {
     expect(reverts).toHaveLength(1);
   });
 });
+
+// #4 stage 3 — the wiring, not just the helper. reconcileTicket must open the PR
+// for Claude's branch when nothing links to the issue yet, and the card must then
+// carry that PR. Tested here because openPRForClaudeBranch being correct in
+// isolation says nothing about whether reconcileTicket calls it.
+describe("reconcileTicket — opens the PR for Claude's branch (#4)", () => {
+  const CLAUDE_TIP = { authorName: "claude[bot]", authorLogin: "github-actions[bot]", authorType: "Bot" as const };
+  const HUMAN_TIP = { authorName: "Jay Wolberg", authorLogin: "jwolberg", authorType: "User" as const };
+
+  const openIssue: Issue = {
+    number: 1,
+    title: "Do it",
+    body: "",
+    state: "open",
+    labels: ["dispatch"],
+    comments: [],
+    url: "https://example.test/i/1",
+  };
+
+  function seed(): number {
+    const repo = insertRepo({
+      provider: "github",
+      path: "acme/widgets",
+      merge_method: "squash",
+      default_branch: "main", // load-bearing: no base branch, no PR
+    });
+    return createTicket(repo.id, 1, null, new Date().toISOString()).id;
+  }
+
+  function providerFor(tip: typeof CLAUDE_TIP | typeof HUMAN_TIP, branch: string) {
+    const createPullRequest = vi.fn(async () => ({
+      number: 31,
+      url: "https://example.test/pr/31",
+      headBranch: branch,
+      baseBranch: "main",
+    }));
+    const p = {
+      getIssue: async () => openIssue,
+      findLinkedPR: async () => null, // nothing links yet
+      listBranches: async () => [{ name: "main", sha: "m1" }, { name: branch, sha: "b1" }],
+      getCommitIdentity: async () => tip,
+      createPullRequest,
+      getPRStatus: async (): Promise<PRStatus> => pr({ number: 31, state: "open" }),
+      findRevertPR: async () => null,
+      getWorkflowRuns: async (): Promise<Run[]> => [],
+    } as unknown as GitProvider;
+    return { p, createPullRequest };
+  }
+
+  beforeEach(() => resetDb());
+  afterEach(() => setProviderFactory(null));
+
+  it("opens it, and the card then carries the PR", async () => {
+    const { p, createPullRequest } = providerFor(CLAUDE_TIP, "claude/issue-1-20260710");
+    setProviderFactory(() => p);
+
+    const payload = await reconcileTicket(getTicket(seed())!);
+
+    expect(createPullRequest).toHaveBeenCalledOnce();
+    expect(payload?.pr?.number).toBe(31);
+  });
+
+  it("leaves a human's branch alone, and the card stays PR-less", async () => {
+    const { p, createPullRequest } = providerFor(HUMAN_TIP, "fix-1");
+    setProviderFactory(() => p);
+
+    const payload = await reconcileTicket(getTicket(seed())!);
+
+    expect(createPullRequest).not.toHaveBeenCalled();
+    expect(payload?.pr).toBeNull();
+  });
+
+  it("a failure to open the PR does not fail the reconcile", async () => {
+    const { p } = providerFor(CLAUDE_TIP, "claude/issue-1");
+    (p as unknown as { listBranches: () => Promise<never> }).listBranches = async () => {
+      throw new Error("boom");
+    };
+    setProviderFactory(() => p);
+
+    const payload = await reconcileTicket(getTicket(seed())!);
+    expect(payload?.pr).toBeNull(); // reconciled anyway; the next poll retries
+    expect(payload?.column).toBeDefined();
+  });
+});
