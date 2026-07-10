@@ -9,7 +9,8 @@ type: feature
 source: SES-0001
 created: 2026-07-09
 updated: 2026-07-10
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/13"
 refs:
   - "ADR-0006"
   - "SES-0001"

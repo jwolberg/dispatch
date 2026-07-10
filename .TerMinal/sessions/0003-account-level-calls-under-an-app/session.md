@@ -8,8 +8,10 @@ started: 2026-07-10T01:50:26Z
 ended: null
 goal: "Land ticket #21 (account-level provider calls under a GitHub App): fan out Discover over installations, report rate limit per installation, and make Dispatch run end-to-end with GITHUB_TOKEN unset — without leaking installations past the provider seam"
 tickets: [21]
-branches: []
-prs: []
+branches:
+  - feat/21-account-level-calls-under-an-app
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/13"
 related_research: []
 related_docs:
   - docs/ARCHITECTURE.md
