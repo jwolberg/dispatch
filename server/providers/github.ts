@@ -1,10 +1,10 @@
 import { Octokit } from "@octokit/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
-import { autoCloseKeyword } from "./types.js";
 import { findLinked, findRevert } from "./linkage.js";
 import { CondCache, type CondCacheStore } from "./cond-cache.js";
 import type { TokenSource } from "./token-source.js";
 import { DIFF_MAX_FILES, mapGitHubFile } from "./diff.js";
+import { issueBody } from "./prompt.js";
 import type {
   Check,
   CheckState,
@@ -312,13 +312,10 @@ export class GitHubProvider implements GitProvider {
     const { owner, repo: name } = splitPath(repo.path);
     await this.ensureLabel(owner, name, DISPATCH_LABEL);
 
-    // The auto-close keyword is provider-specific and injected here so the core
-    // never branches on provider for ship semantics (F3.1, ARCH §5).
-    const keyword = autoCloseKeyword("github");
-    const body =
-      `${spec.body_markdown}\n\n---\n` +
-      `@claude please implement this. Open a PR referencing this issue ` +
-      `(use \`${keyword} #<this issue number>\` so it auto-closes on merge).`;
+    // The instruction — including the provider-specific auto-close keyword — is one
+    // shared string, so the two adapters cannot drift (F3.1, ARCH §5). ADR-0006 [2]:
+    // it must not ask Claude to open the PR; Dispatch does that.
+    const body = issueBody("github", spec.body_markdown);
     const labels = Array.from(new Set([...(spec.labels ?? []), DISPATCH_LABEL]));
 
     const { data } = await this.octokit.issues.create({

@@ -1,8 +1,8 @@
 import { Gitlab } from "@gitbeaker/rest";
 import { httpStatus, isNotFound } from "../lib/errors.js";
-import { autoCloseKeyword } from "./types.js";
 import { findLinked, findRevertOfCommit } from "./linkage.js";
 import { DIFF_MAX_FILES, mapGitLabDiff, type RawGitLabDiff } from "./diff.js";
+import { issueBody } from "./prompt.js";
 import type {
   Check,
   CheckState,
@@ -169,11 +169,10 @@ export class GitLabProvider implements GitProvider {
   }
 
   async createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef> {
-    const keyword = autoCloseKeyword("gitlab"); // "Closes"
-    const description =
-      `${spec.body_markdown}\n\n---\n` +
-      `@claude please implement this. Open an MR referencing this issue ` +
-      `(use \`${keyword} #<this issue number>\` so it auto-closes on merge).`;
+    // Shared with the GitHub adapter so the wording cannot drift; it carries
+    // GitLab's "Closes" keyword and "merge request" vocabulary. ADR-0006 [2]:
+    // Dispatch opens the merge request, not the pipeline.
+    const description = issueBody("gitlab", spec.body_markdown);
     // GitLab creates labels on the fly when applied to an issue.
     const labels = Array.from(new Set([...(spec.labels ?? []), DISPATCH_LABEL])).join(",");
     const issue = (await this.api.Issues.create(repo.path, spec.title, {
