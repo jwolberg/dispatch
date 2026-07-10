@@ -80,3 +80,54 @@ export function classifyCanaryRun(run: RawRun): CanaryVerdict {
       "It did not report success — inspect the run before trusting the setup.",
   };
 }
+
+export interface CanaryPollConfig {
+  /** Total time to wait for a terminal verdict. A cold runner is slow — be generous. */
+  windowMs: number;
+  /** Gap between polls. */
+  intervalMs: number;
+}
+
+export interface Clock {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+/**
+ * Poll for the canary's workflow_run until it reaches a terminal verdict or the
+ * window expires. `fetchRun` returns the matching run, or null when none exists
+ * yet. A terminal verdict (pass or fail) returns immediately; `pending` keeps
+ * waiting. Timeout is always a fail — never a hang — and the two timeout reasons
+ * are distinguished: nothing ever triggered, vs a run that never completed.
+ */
+export async function pollCanary(
+  fetchRun: () => Promise<RawRun | null>,
+  cfg: CanaryPollConfig,
+  clock: Clock
+): Promise<CanaryVerdict> {
+  const start = clock.now();
+  let sawRun = false;
+
+  for (;;) {
+    const run = await fetchRun();
+    if (run) {
+      sawRun = true;
+      const verdict = classifyCanaryRun(run);
+      if (verdict.outcome !== "pending") return verdict;
+    }
+
+    if (clock.now() - start >= cfg.windowMs) {
+      return { outcome: "fail", reason: timeoutReason(sawRun, cfg.windowMs) };
+    }
+    await clock.sleep(cfg.intervalMs);
+  }
+}
+
+function timeoutReason(sawRun: boolean, windowMs: number): string {
+  const secs = Math.round(windowMs / 1000);
+  return sawRun
+    ? `A workflow run started but did not complete within ${secs}s. It never finished — ` +
+        "the runner may be slow, or the job is stuck. Re-run the canary, or check the run directly."
+    : `No workflow run appeared within ${secs}s. The @claude mention did not trigger a run at all — ` +
+        "the workflow may be missing, misconfigured, or Actions may be disabled on the repo.";
+}
