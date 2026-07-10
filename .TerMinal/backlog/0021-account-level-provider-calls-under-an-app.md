@@ -1,16 +1,15 @@
 ---
 id: 21
 title: "Account-level provider calls have no credential under a GitHub App"
-status: in-progress
+status: closed
 priority: high
 horizon: next
 hitl: false
 type: feature
 source: SES-0001
 created: 2026-07-09
-updated: 2026-07-10
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/13"
+updated: 2026-07-09
+prs: []
 refs:
   - "ADR-0006"
   - "SES-0001"

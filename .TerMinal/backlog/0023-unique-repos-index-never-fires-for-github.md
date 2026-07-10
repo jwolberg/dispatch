@@ -1,16 +1,15 @@
 ---
 id: 23
 title: "UNIQUE (provider, host, path) never dedupes GitHub repos — every Track click inserts a row"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
 type: bug
 source: manual observation while verifying #22
 created: 2026-07-10
-updated: 2026-07-10
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/16"
+updated: 2026-07-09
+prs: []
 refs:
   - "server/db/repos.ts"
   - "server/db/migrate.ts"
