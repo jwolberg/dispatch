@@ -693,6 +693,9 @@ export class GitHubProvider implements GitProvider {
             ref: input.branch ?? branch,
           });
           if (!Array.isArray(data) && data.type === "file") {
+            // `createOnly` guards a file whose content we do not own (ci.yml): it
+            // exists, so leave it exactly as the operator wrote it.
+            if (input.createOnly) return { committed: false, commitUrl: null };
             sha = data.sha;
             const current = Buffer.from(data.content, "base64").toString("utf8");
             if (current === input.content) return { committed: false, commitUrl: null };

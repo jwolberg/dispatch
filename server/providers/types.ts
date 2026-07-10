@@ -207,6 +207,12 @@ export interface PutFileInput {
   message: string;
   /** Defaults to the repo's default branch. */
   branch?: string | null;
+  /**
+   * Write only when the path does not exist. For `ci.yml`, whose *content* we do
+   * not own — a repo's existing CI must never be clobbered by a re-run, even
+   * though its content differs from our template.
+   */
+  createOnly?: boolean;
 }
 
 export interface PutFileResult {
