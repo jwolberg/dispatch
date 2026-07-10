@@ -12,6 +12,10 @@ data/
 .env
 .env.local
 .env.*.local
+# Any local copy of .env is a copy of its secrets. `.env.example` is the one
+# tracked file here, so it is re-admitted below.
+.env.*
+!.env.example
 *.pem
 *.key
 
