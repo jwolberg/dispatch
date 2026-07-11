@@ -165,3 +165,10 @@ _Filled by /session-end._
 ## [8] Documentation
 
 _Filled by /session-end._
+
+### [4.3] 2026-07-11 — PR #32 opened; live gate parked
+
+All six code slices shipped to PR #32 (Closes #5). Asked the approval gate:
+decision = **merge first, run the live canary later**. No repo write, no spend
+this session. [3.5]'s live item stays open until after merge — resume it then,
+against a chosen repo, and record the observed `conclusion: success` here.
