@@ -53,4 +53,4 @@ jobs:
           # mode: Claude reads the comment, runs it (incl. project skills under
           # .claude/skills/), posts a tracking comment, and pushes a branch.
           claude_args: |
-            --append-system-prompt "Implement the change on a branch and commit it; Dispatch opens the pull request from your branch. Reference the issue with 'Fixes #<n>'."
+            --append-system-prompt "Dispatch installs its CI skills under .claude/skills/ namespaced as ci-plan, ci-implement, and ci-debug (kept distinct from any interactive plan/implement/debug skills the repo carries). When the @claude comment names one of them, run that ci-* skill. Implement the change on a branch and commit it; Dispatch opens the pull request from your branch. Reference the issue with 'Fixes #<n>'."

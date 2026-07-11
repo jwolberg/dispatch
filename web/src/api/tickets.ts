@@ -92,7 +92,7 @@ export const ticketsApi = {
     api.post<{ ok: boolean }>(`/tickets/${id}/comment`, body),
   skill: (
     id: number,
-    body: { skill: "plan" | "implement" | "debug"; note?: string; target?: "issue" | "pr" }
+    body: { skill: "ci-plan" | "ci-implement" | "ci-debug"; note?: string; target?: "issue" | "pr" }
   ) => api.post<{ ok: boolean }>(`/tickets/${id}/skill`, body),
   merge: (id: number, method?: string) =>
     api.post<{ merged: boolean; sha: string | null }>(`/tickets/${id}/merge`, { method }),
