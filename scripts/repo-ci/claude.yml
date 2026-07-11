@@ -30,6 +30,14 @@ jobs:
           # installed, and 401s (observed — #25). `github.token` is all the branch
           # push needs, and it writes no credential into the target repo.
           github_token: ${{ github.token }}
+          # Once this deployment registers a GitHub App, Dispatch files issues with the
+          # App installation token, so the issue is authored by `<app-slug>[bot]`
+          # (type: Bot) rather than the human PAT. claude-code-action refuses a
+          # bot-initiated trigger unless the bot is allow-listed, so the build fails
+          # immediately (#29). This line allow-lists THIS deployment's own App bot,
+          # injected from the registered App's slug. PAT-only deployments file issues
+          # as a human actor, and Dispatch omits this line entirely.
+          __ALLOWED_BOTS_INPUT__
           # Dispatch opens the PR with its App installation token, which triggers
           # on: pull_request CI without an approval gate (observed, ADR-0006 [8]).
           #

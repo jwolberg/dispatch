@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { getDb } from "./migrate.js";
 import {
   SqliteInstallationStore,
+  appBotLogin,
   clearInstallations,
   hasRegisteredApp,
   openInstallationStore,
@@ -84,6 +85,17 @@ describe("installations store", () => {
       expect(openInstallationStore({ [ENCRYPTION_KEY_ENV]: KEY_B64 }, () => {})).toBeInstanceOf(
         SqliteInstallationStore
       );
+    });
+  });
+
+  describe("appBotLogin — onboarding allow-list (#29)", () => {
+    it("returns null when no App is registered (PAT-only deployment)", () => {
+      expect(appBotLogin()).toBeNull();
+    });
+
+    it("returns `<slug>[bot]` once an App is registered", () => {
+      newStore().saveApp(APP);
+      expect(appBotLogin()).toBe("dispatch-acme[bot]");
     });
   });
 

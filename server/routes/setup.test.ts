@@ -5,6 +5,10 @@ import { setProviderFactory } from "../providers/index.js";
 import { reposRouter } from "./repos.js";
 import { insertRepo, updateRepoContext } from "../db/repos.js";
 import { detectStack, claudeWorkflow, SECRET_NAME } from "../setup/templates.js";
+import { SqliteInstallationStore } from "../db/installations.js";
+import { getDb } from "../db/migrate.js";
+import { loadEncryptionKey, ENCRYPTION_KEY_ENV } from "../lib/crypto.js";
+import { randomBytes } from "node:crypto";
 import type { GitProvider, PutFileInput } from "../providers/types.js";
 
 // #4 stage 4b — POST /api/repos/:id/setup. One POST commits the workflow, a
@@ -171,6 +175,29 @@ describe("POST /api/repos/:id/setup", () => {
     });
   });
 
+  it("provisions claude.yml with allowed_bots when an App is registered (#29)", async () => {
+    const { putFile } = harness();
+    const id = seedRepo(["package.json"]);
+
+    // Register an App so the setup route stamps its bot login into claude.yml.
+    const key = loadEncryptionKey({ [ENCRYPTION_KEY_ENV]: randomBytes(32).toString("base64") });
+    new SqliteInstallationStore(getDb(), key, () => {}).saveApp({
+      appId: 987654,
+      slug: "dispatch-acme",
+      name: "Dispatch (acme)",
+      clientId: "Iv1.abc",
+      clientSecret: "cs_secret",
+      privateKey: "-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----",
+      webhookSecret: null,
+      htmlUrl: null,
+    });
+
+    await withServer(app(), async (url) => post(url, id, { token: TOKEN, mode: "oauth" }));
+
+    const claude = putFile.mock.calls.map(([f]) => f).find((f) => f.path.endsWith("claude.yml"))!;
+    expect(claude.content).toContain('allowed_bots: "dispatch-acme[bot]"');
+  });
+
   it("clears the card warning: re-reads context so automation_detected flips to 1", async () => {
     // Without this the operator clicks "Set up automation", it succeeds, and the
     // "not onboarded" warning stays on screen because the row is still cached.
@@ -213,5 +240,17 @@ describe("templates", () => {
     expect(oauth).not.toContain("secrets.GH_PAT");
 
     expect(claudeWorkflow("apikey")).toContain("anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}");
+  });
+
+  it("stamps allowed_bots with the App bot login for an App-backed deployment (#29)", () => {
+    const wf = claudeWorkflow("oauth", "dispatch-acme[bot]");
+    expect(wf).toContain('allowed_bots: "dispatch-acme[bot]"');
+    expect(wf).not.toContain("__ALLOWED_BOTS_INPUT__");
+  });
+
+  it("omits allowed_bots on the PAT-only path — no placeholder, no empty input (#29)", () => {
+    const wf = claudeWorkflow("oauth");
+    expect(wf).not.toContain("allowed_bots");
+    expect(wf).not.toContain("__ALLOWED_BOTS_INPUT__");
   });
 });
