@@ -271,6 +271,14 @@ export interface GitProvider {
   getRateLimit(): Promise<RateLimit>;
   discoverRepos(): Promise<RepoSummary[]>;
   getRepoContext(repo: RepoRef, claudeMdPath?: string | null): Promise<RepoContext>;
+  /**
+   * A repo file's UTF-8 text, or null when it is missing or not decodable text
+   * (binary). Repo-scoped; spec-chat reads through this so the seam guard keeps
+   * the tool executor off Octokit/gitbeaker directly (#27).
+   */
+  readFile(repo: RepoRef, path: string): Promise<string | null>;
+  /** Entry names directly under a repo-relative directory (#27). */
+  listFiles(repo: RepoRef, path: string): Promise<string[]>;
   createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef>;
   postComment(target: CommentTarget, body: string): Promise<void>;
   getIssue(repo: RepoRef, issueNumber: number): Promise<Issue>;

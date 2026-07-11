@@ -7,7 +7,10 @@ import {
   GENERATE_TICKET_RETRY,
   type InjectableContext,
 } from "../anthropic/prompts.js";
-import { streamMessage, createMessage } from "../anthropic/client.js";
+import { streamChat, createMessage } from "../anthropic/client.js";
+import { makeToolRunner, SPEC_CHAT_TOOLS } from "../anthropic/tools.js";
+import { getProviderForRepo } from "../providers/index.js";
+import type { ProviderId, RepoRef } from "../providers/types.js";
 import { assertWithinBudget, BudgetExceededError } from "../anthropic/budget.js";
 import { safeMessage } from "../lib/redaction.js";
 import { tryParseTicket } from "../lib/ticket-json.js";
@@ -78,15 +81,36 @@ chatRouter.post("/", async (req, res) => {
 
   send({ type: "chat", chat_id: chat.id });
 
+  // Give the model read access to the repo so it grounds the spec in real code,
+  // not just filenames (#27). If the provider can't be resolved (no creds), fall
+  // back to a tool-less chat rather than failing the turn.
+  let toolOpts;
+  try {
+    const ref: RepoRef = {
+      provider: repo.provider as ProviderId,
+      host: repo.host,
+      path: repo.path,
+      defaultBranch: repo.default_branch,
+    };
+    const runner = makeToolRunner(getProviderForRepo(ref), ref);
+    toolOpts = { tools: SPEC_CHAT_TOOLS, runTool: runner.runTool };
+  } catch {
+    toolOpts = undefined;
+  }
+
   let text = "";
   let emitted = false;
   const runStream = async () => {
-    const stream = streamMessage(system, transcript);
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        text += event.delta.text;
+    for await (const event of streamChat(system, transcript, toolOpts)) {
+      if (event.type === "text") {
+        text += event.text;
         emitted = true;
-        send({ type: "delta", text: event.delta.text });
+        send({ type: "delta", text: event.text });
+      } else if (event.type === "tool") {
+        // Surface "reading configs/config_maet.py" so the UI does not appear to
+        // hang while a file is fetched. Not persisted — it is progress, not spec.
+        emitted = true;
+        send({ type: "tool", tool: event.tool, path: event.path });
       }
     }
   };

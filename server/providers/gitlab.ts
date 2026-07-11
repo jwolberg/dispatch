@@ -134,6 +134,28 @@ export class GitLabProvider implements GitProvider {
     };
   }
 
+  async readFile(repo: RepoRef, path: string): Promise<string | null> {
+    const ref = repo.defaultBranch ?? "main";
+    const text = await this.fetchFile(repo.path, path, ref);
+    if (text === null) return null;
+    // A NUL byte means it is not decodable text (binary) — return null like a miss.
+    return text.includes("\u0000") ? null : text;
+  }
+
+  async listFiles(repo: RepoRef, path: string): Promise<string[]> {
+    const ref = repo.defaultBranch ?? "main";
+    try {
+      const entries = (await this.api.Repositories.allRepositoryTrees(repo.path, {
+        path,
+        ref,
+      })) as Loose[];
+      return entries.map((e) => String(e.name));
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
+  }
+
   private async fetchFile(id: string, path: string, ref: string): Promise<string | null> {
     try {
       return (await this.api.RepositoryFiles.showRaw(id, path, ref)) as string;

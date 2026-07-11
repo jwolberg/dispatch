@@ -14,6 +14,8 @@ export interface Ticket {
 export interface StreamHandlers {
   onChatId?: (id: number) => void;
   onDelta: (text: string) => void;
+  /** The model is reading a repo file mid-turn (#27) — render "reading <path>". */
+  onTool?: (tool: string, path?: string) => void;
   onDone: () => void;
   onError: (message: string) => void;
 }
@@ -56,6 +58,7 @@ export async function streamChat(
       }
       if (data.type === "chat") h.onChatId?.(data.chat_id);
       else if (data.type === "delta") h.onDelta(data.text);
+      else if (data.type === "tool") h.onTool?.(data.tool, data.path);
       else if (data.type === "done") h.onDone();
       else if (data.type === "error") h.onError(data.message);
     }
