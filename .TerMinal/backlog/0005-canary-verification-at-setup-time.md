@@ -1,7 +1,7 @@
 ---
 id: 5
 title: "Canary verification: prove the build triggers, at setup time"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
 updated: 2026-07-11
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/32"
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T1-4"
