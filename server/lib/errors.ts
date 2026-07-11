@@ -10,8 +10,15 @@ export class ProviderError extends Error {
 
 export function httpStatus(err: unknown): number | undefined {
   if (err && typeof err === "object") {
-    const e = err as { status?: number; statusCode?: number };
-    return e.status ?? e.statusCode;
+    const e = err as {
+      status?: number;
+      statusCode?: number;
+      // gitbeaker (GitbeakerRequestError) hides the status on the cause's response,
+      // not on the error itself — without this the GitLab adapter's isNotFound
+      // guards never match a real 404.
+      cause?: { response?: { status?: number } };
+    };
+    return e.status ?? e.statusCode ?? e.cause?.response?.status;
   }
   return undefined;
 }

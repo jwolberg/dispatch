@@ -216,6 +216,20 @@ export class GitLabProvider implements GitProvider {
     };
   }
 
+  async closeIssue(repo: RepoRef, issueNumber: number): Promise<void> {
+    await this.api.Issues.edit(repo.path, issueNumber, { stateEvent: "close" });
+  }
+
+  async deleteBranch(repo: RepoRef, branch: string): Promise<void> {
+    try {
+      await this.api.Branches.remove(repo.path, branch);
+    } catch (err) {
+      // Idempotent cleanup: a branch that never existed is not an error.
+      if (isNotFound(err) || httpStatus(err) === 422) return;
+      throw err;
+    }
+  }
+
   async listOpenIssues(repo: RepoRef): Promise<IssueRef[]> {
     // MRs are a separate resource in GitLab, so this returns issues only.
     const issues = (await this.api.Issues.all({

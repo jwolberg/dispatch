@@ -371,6 +371,23 @@ export class GitHubProvider implements GitProvider {
     };
   }
 
+  async closeIssue(repo: RepoRef, issueNumber: number): Promise<void> {
+    const { owner, repo: name } = splitPath(repo.path);
+    await this.octokit.issues.update({ owner, repo: name, issue_number: issueNumber, state: "closed" });
+  }
+
+  async deleteBranch(repo: RepoRef, branch: string): Promise<void> {
+    const { owner, repo: name } = splitPath(repo.path);
+    try {
+      await this.octokit.git.deleteRef({ owner, repo: name, ref: `heads/${branch}` });
+    } catch (err) {
+      // 422/404 = the ref is already gone (or the canary never made one). Cleanup
+      // is idempotent by contract; only a real error propagates.
+      if (isNotFound(err) || httpStatus(err) === 422) return;
+      throw err;
+    }
+  }
+
   async listOpenIssues(repo: RepoRef): Promise<IssueRef[]> {
     const { owner, repo: name } = splitPath(repo.path);
     const issues = await this.octokit.paginate(this.octokit.issues.listForRepo, {

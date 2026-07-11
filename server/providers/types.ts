@@ -259,6 +259,13 @@ export interface GitProvider {
   createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef>;
   postComment(target: CommentTarget, body: string): Promise<void>;
   getIssue(repo: RepoRef, issueNumber: number): Promise<Issue>;
+  /** Close an issue — the canary closes its throwaway on both paths (#5). */
+  closeIssue(repo: RepoRef, issueNumber: number): Promise<void>;
+  /**
+   * Delete a branch. Idempotent: a missing branch is a no-op, not an error, so
+   * the canary can clean up whether or not a run produced a branch (#5).
+   */
+  deleteBranch(repo: RepoRef, branch: string): Promise<void>;
   /** Open issues in the repo (excludes PRs/MRs) — used to adopt existing work onto the board. */
   listOpenIssues(repo: RepoRef): Promise<IssueRef[]>;
   /** Excludes revert PRs — a revert of the ticket's PR is not the ticket's PR. */
