@@ -9,7 +9,8 @@ type: security
 source: "found while redeploying to Cloud Run on 2026-07-10"
 created: 2026-07-10
 updated: 2026-07-11
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/41"
 refs:
   - "server/lib/auth.ts"
   - "server/index.ts:68"
