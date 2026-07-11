@@ -8,8 +8,10 @@ started: 2026-07-11T00:00:00Z
 ended: null
 goal: "Canary verification (#5): after setup, prove the build actually triggers — file a throwaway dispatch-canary issue with @claude, poll for a workflow_run in a bounded window, pass only on conclusion:success, clean up on both paths, render pass/fail on the repo card"
 tickets: [5]
-branches: []
-prs: []
+branches:
+  - feat/5-canary-orchestrator
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/32"
 related_research: []
 related_docs:
   - docs/BUILD_PLAN-v2.md
