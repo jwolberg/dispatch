@@ -3,9 +3,9 @@ id: 6
 slug: spec-chat-file-tools
 anchor: SES-0006
 title: "#27 — Give spec-chat repo-file access (read_file / list_files tools)"
-status: active
+status: closed
 started: 2026-07-11T21:20:00Z
-ended: null
+ended: 2026-07-11T22:05:00Z
 goal: "Give spec-chat repo-file access (#27): add read_file and list_files tools so the spec-refinement chat can ground tickets in the actual repo contents instead of only the cached tree/CLAUDE.md"
 tickets: [27]
 branches:
@@ -103,27 +103,27 @@ TDD-first. Branch `feat/27-spec-chat-file-tools`. **The secrets guardrail test i
 written FIRST** (ticket Stage 4), before any capability exists to leak through.
 
 ### [3.1] Stage 4 first — secrets guardrail (RED before anything reads)
-- [ ] write failing test: `read_file` on a denylisted path (`.env`, `*.pem`, `id_rsa*`, `credentials*`) returns a refusal and NEVER contents
-- [ ] write failing test: `redactSecrets()` is applied to a tool result — a registered secret value appears in none of {tool result, streamed text, `chats` row}
-- [ ] write failing test: `read_file` rejects absolute paths and any `..` segment
+- [x] write failing test: `read_file` on a denylisted path (`.env`, `*.pem`, `id_rsa*`, `credentials*`) returns a refusal and NEVER contents
+- [x] write failing test: `redactSecrets()` is applied to a tool result — a registered secret value appears in none of {tool result, streamed text, `chats` row}
+- [x] write failing test: `read_file` rejects absolute paths and any `..` segment
 
 ### [3.2] Stage 1 — provider seam
-- [ ] write failing test: fake + both adapters expose `readFile(repo, path)` / `listFiles(repo, path)`; size cap + binary detection
-- [ ] add `readFile`/`listFiles` to `RepoProvider`; lift the private methods on `github.ts` + `gitlab.ts`; seam guard stays green
+- [x] write failing test: fake + both adapters expose `readFile(repo, path)` / `listFiles(repo, path)`; size cap + binary detection
+- [x] add `readFile`/`listFiles` to `RepoProvider`; lift the private methods on `github.ts` + `gitlab.ts`; seam guard stays green
 
 ### [3.3] Stage 2 — client tool-use loop
-- [ ] write failing test: `createMessage` acts on a `tool_use` block instead of returning "" (stubbed SDK)
-- [ ] write failing test: the loop runs `runTool` while `stop_reason === "tool_use"` and terminates at the 8-iteration / 10-read cap (adversarial loop)
-- [ ] implement `tools` + `runTool` on `streamMessage`/`createMessage`; truncation marker for oversized files
+- [x] write failing test: `createMessage` acts on a `tool_use` block instead of returning "" (stubbed SDK)
+- [x] write failing test: the loop runs `runTool` while `stop_reason === "tool_use"` and terminates at the 8-iteration / 10-read cap (adversarial loop)
+- [x] implement `tools` + `runTool` on `streamMessage`/`createMessage`; truncation marker for oversized files
 
 ### [3.4] Stage 3 — route wiring
-- [ ] write failing test: a spec chat asked about a visible file fetches contents and answers from them (route test, stubbed provider)
-- [ ] bind the two tools to the chat's repo in `chat.ts`; emit an SSE event per tool call ("reading <path>")
+- [x] write failing test: a spec chat asked about a visible file fetches contents and answers from them (route test, stubbed provider)
+- [x] bind the two tools to the chat's repo in `chat.ts`; emit an SSE event per tool call ("reading <path>")
 
 ### [3.5] Ship
-- [ ] `npm run verify` green (typecheck → seam → templates → tests)
+- [x] `npm run verify` green (typecheck → seam → templates → tests)
 - [ ] manual browser check: ask a spec chat about a deep file; confirm it reads it
-- [ ] open PR + link the PR url into ticket #27 `prs:`
+- [x] open PR + link the PR url into ticket #27 `prs:`
 
 ## [4] Log
 
@@ -136,18 +136,64 @@ choke point; `chats` persistence → GCS snapshot is why the secrets test leads.
 Ordering deliberately inverts the stages: **guardrail tests first**, so no
 capability to leak exists before its containment is proven.
 
+### [4.2] 2026-07-11 — all four stages shipped, PR #38
+
+Built guardrails-first across five commits (each RED→GREEN). `npm run verify`
+green at **622 tests**. Cleanup pass caught a literal-NUL-byte fixture that made
+`file-read.test.ts` a git-binary blob — replaced with an explicit `\u0000` escape
+(same input quirk that hit `gitlab.ts` earlier; worth a learning).
+
 ## [5] Decisions
 
-_Session decisions recorded here as they are made._
+1. **The tool executor (`tools.ts`), not the client, is the security boundary.**
+   Denylist + path-safety + truncation + redaction all live at the one point
+   between the model's request and the provider, so nothing can bypass them by
+   calling a different code path.
+2. **`SkillId`-style lockstep avoided; instead redaction is the LAST step** on
+   every tool result — after truncation — so no marker or slice can reintroduce a
+   registered secret.
+3. **Two entry points, one loop shape:** `createMessage` (non-stream, for
+   ticket-gen + the cap test) and a new `streamChat` async generator (SSE route).
+   The final loop round withholds tools so an adversarial model must conclude
+   rather than spin — cleaner than injecting a synthetic "stop" message.
+4. **Provider `readFile` returns null for binary** (NUL-byte detection), same
+   shape as "missing"; the executor's message covers both. Kept the seam simple
+   (`string | null`) rather than a richer DTO.
+5. **Residual risk accepted explicitly** (from the ticket): the denylist is a
+   floor and `redactSecrets()` only knows *registered* secrets, so an unregistered
+   token pasted into an allow-listed file is out of scope.
 
 ## [6] Outcomes
 
-_Filled by /session-end._
+- **PR #38 opened** (`feat/27-spec-chat-file-tools`, Closes #27) — 6 commits.
+  Ticket #27 → `in-progress`, PR linked. Awaiting human merge.
+- New: `server/anthropic/tools.ts` (executor), `streamChat` + tool loop in
+  `client.ts`, `readFile`/`listFiles` on the provider seam + both adapters, route
+  wiring in `chat.ts`, SSE `tool` event + "reading X…" in the chat UI.
+- Removed dead `streamMessage` (orphaned by `streamChat`) + its two test mocks.
+- Cleaned a git-binary test fixture (literal NUL → `\u0000` escape).
+- `npm run verify` green: **622 tests**, seam clean, templates match.
 
 ## [7] Follow-ups
 
-_Filled by /session-end._
+- **[open] Manual browser check** of #27 — ask a spec chat about a deep file
+  against a live repo + real model; confirm the read + "reading X…" UX. The route
+  integration test proves the wiring; this is the human-eyeball pass. Worth a
+  `/ticket` if not done before merge.
+- **[open] Merge the PR stack** — #38 (#27) sits atop #33/#34/#35/#36/#37. Later
+  branches don't contain each other; merging before the next ticket keeps `main`
+  current.
+- No test gaps: every behavior change shipped with adversarial coverage
+  (denylist-before-provider, path traversal, redaction end-to-end, loop-cap
+  termination, secret-never-persisted).
 
 ## [8] Documentation
 
-_Filled by /session-end._
+- Captured in-PR and in [5] above. No ADR needed — the feature follows the
+  documented provider-seam + budget-choke-point design rather than changing it.
+- **Doc candidate (not written):** a `docs/learnings/` note — "spec-chat tool
+  reads persist to `chats`, which snapshots to GCS, so the tool executor is a
+  credential boundary: denylist before the provider, redact as the last step."
+  Pairs with the earlier gitignored-`.claude`-clobber candidate from SES-0005.
+  Also worth a one-liner on the literal-NUL-in-fixtures gotcha. Deferred; file
+  before the next security-sensitive feature.
