@@ -3,9 +3,9 @@ id: 7
 slug: harden-password-gate
 anchor: SES-0007
 title: "#32 — Harden the shared-password gate (rate-limit + timing leak)"
-status: active
+status: closed
 started: 2026-07-11T22:30:00Z
-ended: null
+ended: 2026-07-11T23:00:00Z
 goal: "Harden the shared-password gate (#32): add inbound rate-limiting/lockout on failed Basic-auth, fix the non-constant-time safeEqual length leak, correct the misleading comment, and un-gate GET /api/health for uptime checks"
 tickets: [32]
 branches:
@@ -96,23 +96,23 @@ flight; it touches only ticket files, no conflict.
 TDD-first. Branch `fix/32-harden-password-gate`.
 
 ### [3.1] safeEqual timing leak + comment
-- [ ] write behaviour test: `safeEqual` accepts the exact password and rejects wrong ones of **equal and unequal length**, without throwing
-- [ ] hash both sides (sha256 → 32 bytes) before `timingSafeEqual`; drop the early length return
-- [ ] rewrite the line-7 comment to state what the code actually does
+- [x] write behaviour test: `safeEqual` accepts the exact password and rejects wrong ones of **equal and unequal length**, without throwing
+- [x] hash both sides (sha256 → 32 bytes) before `timingSafeEqual`; drop the early length return
+- [x] rewrite the line-7 comment to state what the code actually does
 
 ### [3.2] Rate-limit / lockout on failed auth
-- [ ] write failing test: after N consecutive failed auths from one IP within the window, the gate returns **429** (injected clock); a success before the cap resets the counter; the window expiring clears the block
-- [ ] implement an in-memory per-IP failure limiter (injected `now`), wire it into `basicAuthGate`; set `trust proxy` so `req.ip` is the client
-- [ ] a correct password is never rate-limited; 429 body is generic (no oracle)
+- [x] write failing test: after N consecutive failed auths from one IP within the window, the gate returns **429** (injected clock); a success before the cap resets the counter; the window expiring clears the block
+- [x] implement an in-memory per-IP failure limiter (injected `now`), wire it into `basicAuthGate`; set `trust proxy` so `req.ip` is the client
+- [x] a correct password is never rate-limited; 429 body is generic (no oracle)
 
 ### [3.3] Un-gate health
-- [ ] write failing test: `GET /api/health` returns 200 without credentials while another `/api/*` route still 401s when `DISPATCH_PASSWORD` is set
-- [ ] mount health ahead of the gate (or exempt its path); leave every other route gated
+- [x] write failing test: `GET /api/health` returns 200 without credentials while another `/api/*` route still 401s when `DISPATCH_PASSWORD` is set
+- [x] mount health ahead of the gate (or exempt its path); leave every other route gated
 
 ### [3.4] Ship
-- [ ] `npm run verify` green
-- [ ] note in the ticket: independently verify `dispatch-password` is high-entropy (operator action, out of scope but load-bearing)
-- [ ] open PR + link into ticket #32 `prs:`
+- [x] `npm run verify` green
+- [x] note in the ticket: independently verify `dispatch-password` is high-entropy (operator action, out of scope but load-bearing)
+- [x] open PR + link into ticket #32 `prs:`
 
 ## [4] Log
 
@@ -124,18 +124,53 @@ exists, `safeEqual` leaks length, health carries no secrets. Chose a hand-rolled
 limiter over a new dep (single-instance service). trust-proxy/XFF spoof caveat to
 document.
 
+### [4.2] 2026-07-11 — shipped, PR #41
+
+TDD-first: limiter → safeEqual+gate → health un-gate. `npm run verify` green at
+**638 tests**. No new dependency (hand-rolled limiter); no NUL-byte fixture
+issues this time.
+
 ## [5] Decisions
 
-_Session decisions recorded here as they are made._
+1. **Hand-rolled in-memory limiter over `express-rate-limit`.** The service runs
+   `--max-instances 1`, so a shared store buys nothing and a `Map` keyed on IP
+   (with an injected clock for tests) is enough — and avoids a new dependency
+   (global §engineering).
+2. **Only a *supplied wrong password* counts as a failure.** A credential-less
+   request is the browser's pre-prompt hit; counting it would lock out ordinary
+   page loads. This keeps the limiter aimed at actual guesses.
+3. **Block-first once over the cap:** a blocked IP 429s without its guess being
+   checked, so brute force truly stops rather than continuing to probe.
+4. **Un-gate health, not keep it gated** (the AC offered either): a public service
+   with no uptime check is the worse posture, and health leaks nothing.
+5. **`trust proxy: true`** so `req.ip` is the client behind Cloud Run — accepting
+   the documented XFF-spoof caveat, since OIDC (#16) is the real fix.
 
 ## [6] Outcomes
 
-_Filled by /session-end._
+- **PR #41 opened** (`fix/32-harden-password-gate`, Closes #32) — 2 commits.
+  Ticket #32 → `in-progress`, PR linked.
+- New: `server/lib/auth-limiter.ts` (+ test). Rewrote `server/lib/auth.ts`
+  (`safeEqual` hashes both sides; `makeBasicAuthGate` with limiter; exported for
+  tests) + `auth.test.ts`. `server/index.ts` sets `trust proxy` and mounts health
+  ungated. `health-gate.test.ts` proves the mount order.
+- `npm run verify` green: **638 tests**, seam clean, templates match.
 
 ## [7] Follow-ups
 
-_Filled by /session-end._
+- **[#19] Update DEPLOY.md** — #19 (the doc-truth ticket, HITL) should now also
+  document the rate-limit behavior and the ungated `/api/health`, alongside the
+  `DISPATCH_PASSWORD` threat model. Not touched here (kept out of #32's scope).
+- **[operator] Verify `dispatch-password` entropy** — load-bearing but out of
+  scope (an operator action, noted in the ticket).
+- **[#16] OIDC** remains the durable replacement for HTTP Basic; the XFF-spoof
+  limitation of the per-IP limiter is a reason it matters.
 
 ## [8] Documentation
 
-_Filled by /session-end._
+- Captured in the ticket's implementation note + PR #41. No ADR needed — this
+  hardens an existing control rather than changing the documented design.
+- **Doc candidate (deferred):** a `docs/learnings/` note — "a single-instance
+  Cloud Run service can rate-limit inbound auth with an in-memory per-IP Map; XFF
+  is client-spoofable so it's defense-in-depth, not a wall." Pairs with the
+  security-boundary learnings noted in SES-0006.
