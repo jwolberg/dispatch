@@ -69,4 +69,7 @@ export interface TrackedRepo {
   automation_detected: number | null;
   context_refreshed_at: string | null;
   structure_summary: { dir: string; count: number }[];
+  canary_verdict: string | null;
+  canary_reason: string | null;
+  canary_checked_at: string | null;
 }

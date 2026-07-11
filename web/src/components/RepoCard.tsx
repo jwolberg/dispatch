@@ -1,4 +1,6 @@
 import type { TrackedRepo } from "../api/types.js";
+import { canaryChip } from "../lib/canary.js";
+import { TONE_CLS } from "../lib/verdict.js";
 
 function freshness(iso: string | null): string {
   if (!iso) return "never";
@@ -26,6 +28,12 @@ export function RepoCard({
   onSetup: () => void;
 }) {
   const noAutomation = repo.automation_detected === 0;
+  const canary = canaryChip(
+    repo.canary_verdict,
+    repo.canary_reason,
+    repo.canary_checked_at,
+    repo.automation_detected
+  );
   // `claude-code-action` is GitHub-only; the setup route answers 501 for GitLab, so
   // do not offer a button that cannot work. The warning still tells the truth.
   const canSetUp = repo.provider === "github";
@@ -56,6 +64,23 @@ export function RepoCard({
         {repo.language && <span>{repo.language}</span>}
         <span>context: {freshness(repo.context_refreshed_at)}</span>
       </div>
+
+      {canary && (
+        <div
+          className={`mb-3 flex flex-wrap items-center gap-2 rounded border px-2.5 py-1.5 text-label ${TONE_CLS[canary.tone]}`}
+          title={canary.title}
+        >
+          <span>
+            {canary.icon} {canary.label}
+          </span>
+          {repo.canary_checked_at && (
+            <span className="opacity-70">verified {freshness(repo.canary_checked_at)}</span>
+          )}
+          {canary.tone === "fail" && repo.canary_reason && (
+            <span className="opacity-80">— {repo.canary_reason}</span>
+          )}
+        </div>
+      )}
 
       {noAutomation && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-status-wait/40 bg-status-wait/10 px-2.5 py-1.5 text-label text-status-wait">
