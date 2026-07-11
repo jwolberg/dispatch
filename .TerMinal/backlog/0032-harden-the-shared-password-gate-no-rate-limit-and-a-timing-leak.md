@@ -1,7 +1,7 @@
 ---
 id: 32
 title: "Harden the shared-password gate: it is the only control on a public, credential-holding service"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: security
 source: "found while redeploying to Cloud Run on 2026-07-10"
 created: 2026-07-10
 updated: 2026-07-11
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/41"
+prs: []
 refs:
   - "server/lib/auth.ts"
   - "server/index.ts:68"
