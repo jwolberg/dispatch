@@ -81,9 +81,15 @@ describe("POST /api/repos/:id/setup", () => {
     const paths = putFile.mock.calls.map(([f]) => f.path);
     expect(paths).toContain(".github/workflows/claude.yml");
     expect(paths).toContain(".github/workflows/ci.yml");
-    expect(paths).toContain(".claude/skills/plan/SKILL.md");
-    expect(paths).toContain(".claude/skills/implement/SKILL.md");
-    expect(paths).toContain(".claude/skills/debug/SKILL.md");
+    // #28: namespaced under ci-* so they coexist with a repo's own interactive
+    // plan/implement/debug skills instead of silently overwriting them.
+    expect(paths).toContain(".claude/skills/ci-plan/SKILL.md");
+    expect(paths).toContain(".claude/skills/ci-implement/SKILL.md");
+    expect(paths).toContain(".claude/skills/ci-debug/SKILL.md");
+    // And Dispatch must NEVER write the bare paths — that is the whole bug.
+    expect(paths).not.toContain(".claude/skills/plan/SKILL.md");
+    expect(paths).not.toContain(".claude/skills/implement/SKILL.md");
+    expect(paths).not.toContain(".claude/skills/debug/SKILL.md");
   });
 
   it("never clobbers an existing ci.yml", async () => {

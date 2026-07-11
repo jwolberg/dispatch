@@ -6,9 +6,13 @@ import { autoCloseKeyword, type ProviderId } from "../providers/index.js";
 // Code skill so the agent runs it when installed, and degrades to plain prose
 // otherwise.
 
-export type SkillId = "plan" | "implement" | "debug";
+// Namespaced `ci-*` (#28) so they never collide with a repo's own interactive
+// plan/implement/debug skills. The id, the prompt below, and the deployed
+// SKILL.md `name:` must stay identical or a console button posts a skill name
+// that does not exist in the repo.
+export type SkillId = "ci-plan" | "ci-implement" | "ci-debug";
 
-export const SKILLS: SkillId[] = ["plan", "implement", "debug"];
+export const SKILLS: SkillId[] = ["ci-plan", "ci-implement", "ci-debug"];
 
 export function isSkill(x: unknown): x is SkillId {
   return typeof x === "string" && (SKILLS as string[]).includes(x);
@@ -16,7 +20,7 @@ export function isSkill(x: unknown): x is SkillId {
 
 /** Debug targets the PR when one exists; plan/implement target the issue. */
 export function defaultTarget(skill: SkillId, hasPR: boolean): "issue" | "pr" {
-  return skill === "debug" && hasPR ? "pr" : "issue";
+  return skill === "ci-debug" && hasPR ? "pr" : "issue";
 }
 
 /**
@@ -32,23 +36,23 @@ export function skillPrompt(
 ): string {
   const extra = note && note.trim() ? `\n\nAdditional context: ${note.trim()}` : "";
   switch (skill) {
-    case "plan":
+    case "ci-plan":
       return (
-        `@claude use the **plan** skill for this issue. Read the relevant files and ` +
+        `@claude use the **ci-plan** skill for this issue. Read the relevant files and ` +
         `post a step-by-step implementation plan as a comment — phases, files to ` +
         `touch, and risks. Do not open a PR yet.${extra}`
       );
-    case "implement": {
+    case "ci-implement": {
       const keyword = autoCloseKeyword(provider); // "Fixes" (GitHub) / "Closes" (GitLab)
       return (
-        `@claude use the **implement** skill to build this. Open a pull request that ` +
+        `@claude use the **ci-implement** skill to build this. Open a pull request that ` +
         `references this issue (use \`${keyword} #${issueNumber}\` so it auto-closes ` +
         `on merge).${extra}`
       );
     }
-    case "debug":
+    case "ci-debug":
       return (
-        `@claude use the **debug** skill: reproduce the failure, find the root cause, ` +
+        `@claude use the **ci-debug** skill: reproduce the failure, find the root cause, ` +
         `then push a minimal fix and explain the cause in a comment.${extra}`
       );
   }

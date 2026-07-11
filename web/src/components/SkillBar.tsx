@@ -2,12 +2,13 @@ import { useState } from "react";
 import { ticketsApi } from "../api/tickets.js";
 import { ApiError } from "../api/client.js";
 
-type Skill = "plan" | "implement" | "debug";
+// ci-* ids (#28) — must match the deployed skill name: and the server SkillId.
+type Skill = "ci-plan" | "ci-implement" | "ci-debug";
 
 const SKILLS: { id: Skill; label: string; hint: string }[] = [
-  { id: "plan", label: "Plan", hint: "Post a step-by-step plan first — no PR yet" },
-  { id: "implement", label: "Implement", hint: "Build it and open a PR (promotes Queued → Building)" },
-  { id: "debug", label: "Debug", hint: "Reproduce, root-cause, then push a minimal fix" },
+  { id: "ci-plan", label: "Plan", hint: "Post a step-by-step plan first — no PR yet" },
+  { id: "ci-implement", label: "Implement", hint: "Build it and open a PR (promotes Queued → Building)" },
+  { id: "ci-debug", label: "Debug", hint: "Reproduce, root-cause, then push a minimal fix" },
 ];
 
 // Drive a Claude Code skill on this ticket. Each posts a tailored @claude comment
@@ -34,7 +35,8 @@ export function SkillBar({
     try {
       await ticketsApi.skill(ticketId, { skill, note: note.trim() || undefined });
       setNote("");
-      setMsg(`${skill[0].toUpperCase()}${skill.slice(1)} requested — Claude picks it up in CI.`);
+      const label = SKILLS.find((s) => s.id === skill)?.label ?? skill;
+      setMsg(`${label} requested — Claude picks it up in CI.`);
       onRan();
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : String(err));
@@ -65,7 +67,7 @@ export function SkillBar({
             onClick={() => void run(s.id)}
             disabled={busy != null}
             className={`rounded px-3 py-1.5 text-label font-medium disabled:opacity-50 ${
-              s.id === "implement"
+              s.id === "ci-implement"
                 ? "bg-blue-600 text-white hover:bg-blue-500"
                 : "border border-border text-gray-200 hover:bg-surface-2"
             }`}

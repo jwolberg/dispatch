@@ -89,7 +89,9 @@ export function detectStack(fileTree: string[]): Stack {
   return "unknown";
 }
 
-const SKILLS = ["plan", "implement", "debug"] as const;
+// Namespaced ci-* (#28): the deploy path and source dir are both `ci-<skill>`,
+// so Dispatch never overwrites a repo's own interactive plan/implement/debug.
+const SKILLS = ["ci-plan", "ci-implement", "ci-debug"] as const;
 
 /**
  * Everything setup commits. `claude.yml` and the skills are ours and are kept at
