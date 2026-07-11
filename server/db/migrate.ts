@@ -29,9 +29,24 @@ export function getDb(): Database.Database {
   conn.exec(schema);
   dropLegacyEtagColumn(conn);
   migrateRepoIdentity(conn);
+  addCanaryColumns(conn);
 
   db = conn;
   return db;
+}
+
+/**
+ * #5: the setup-time canary records its verdict on the repo row. schema.sql adds
+ * these columns for fresh databases; this back-fills any created before the
+ * canary shipped. Idempotent — guarded on table_info, so booting an already-
+ * migrated database is a no-op. Exported for the migration test.
+ */
+export function addCanaryColumns(conn: Database.Database): void {
+  const columns = (conn.pragma("table_info(repos)") as { name: string }[]).map((c) => c.name);
+  if (!columns.includes("canary_verdict")) conn.exec("ALTER TABLE repos ADD COLUMN canary_verdict TEXT");
+  if (!columns.includes("canary_reason")) conn.exec("ALTER TABLE repos ADD COLUMN canary_reason TEXT");
+  if (!columns.includes("canary_checked_at"))
+    conn.exec("ALTER TABLE repos ADD COLUMN canary_checked_at TEXT");
 }
 
 /**

@@ -68,6 +68,9 @@ function presentRepo(row: RepoRow) {
     automation_detected: row.automation_detected,
     context_refreshed_at: row.context_refreshed_at,
     structure_summary: summarizeTree(row.file_tree_cache),
+    canary_verdict: row.canary_verdict,
+    canary_reason: row.canary_reason,
+    canary_checked_at: row.canary_checked_at,
   };
 }
 

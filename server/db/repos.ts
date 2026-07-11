@@ -18,6 +18,9 @@ export interface RepoRow {
   file_tree_cache: string | null;
   automation_detected: number | null;
   context_refreshed_at: string | null;
+  canary_verdict: string | null;
+  canary_reason: string | null;
+  canary_checked_at: string | null;
 }
 
 export interface NewRepo {
@@ -123,4 +126,23 @@ export function updateRepoContext(id: number, ctx: RepoContextCache): void {
         ctx.automation_detected === undefined ? null : ctx.automation_detected,
       context_refreshed_at: ctx.context_refreshed_at ?? null,
     });
+}
+
+export interface CanaryVerdictRecord {
+  verdict: "pass" | "fail";
+  reason: string;
+  checkedAt: string;
+}
+
+/** Persist the setup-time canary verdict on the repo row (#5). */
+export function updateCanaryVerdict(id: number, rec: CanaryVerdictRecord): void {
+  getDb()
+    .prepare(
+      `UPDATE repos SET
+         canary_verdict = @verdict,
+         canary_reason = @reason,
+         canary_checked_at = @checked_at
+       WHERE id = @id`
+    )
+    .run({ id, verdict: rec.verdict, reason: rec.reason, checked_at: rec.checkedAt });
 }
