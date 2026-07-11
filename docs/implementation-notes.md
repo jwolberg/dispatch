@@ -1301,3 +1301,36 @@ The button is GitHub-only, because the server would 501 on GitLab.
 
 **Still unproven.** AC 12 — end-to-end from the browser — is implemented but has never
 run against a real repo. #22 refused to close AC 13 on a fake; this deserves the same.
+
+---
+
+## #29 — Onboarding claude.yml omits allowed_bots (2026-07-10)
+
+Once a deployment registers a GitHub App, Dispatch files issues with the App
+installation token, so the issue is authored by `<app-slug>[bot]`. `claude-code-action`
+rejects a bot-initiated trigger unless allow-listed, so the issue files (201) but the
+build fails immediately — invisible in Dispatch's logs (the provider error returns as
+JSON before the logging middleware).
+
+**Approach.** Added a second placeholder `__ALLOWED_BOTS_INPUT__` to the single-source
+template `scripts/repo-ci/claude.yml`, substituted the same way the auth line already
+was. `claudeWorkflow(mode, appBotLogin?)` injects `allowed_bots: "<slug>[bot]"` when a
+slug is passed and **drops the line entirely** (newline included) on the PAT-only path —
+no empty `allowed_bots`. The slug comes from `appBotLogin()`, a new helper that reads the
+plaintext `slug` column directly, so the setup route needs no encryption key to resolve
+it. Wired through `templatesFor()` → `POST /api/repos/:id/setup`.
+
+**Decision — slug format.** Verified against `claude-code-action`'s `isAllowedBot()`:
+it lowercases and strips `[bot]` from both the actor and each allow-list entry, so
+`"slug"` and `"slug[bot]"` are equivalent. Used `<slug>[bot]` to match the ticket AC and
+read unambiguously.
+
+**Decision — the manual installer.** `install-claude-action.sh` has no access to
+Dispatch's DB, so it can't resolve the slug. Rather than duplicate DB reads into a shell
+script, it honors an optional `DISPATCH_APP_SLUG` env var (documented in DEPLOY.md §3.6);
+unset → the line is dropped, same as a PAT-only deployment. This matches the AC's
+"document the required manual edit" fallback.
+
+**Tests.** `claudeWorkflow` unit tests (App-backed stamps the login / PAT-only omits it),
+an `appBotLogin` unit test, and a `POST /setup` route test that registers an App and
+asserts the committed `claude.yml` carries `allowed_bots: "dispatch-acme[bot]"`.

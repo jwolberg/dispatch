@@ -18,6 +18,8 @@ const AUTH_LINE: Record<AuthMode, string> = {
   apikey: "          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}",
 };
 
+const ALLOWED_BOTS_PLACEHOLDER = "__ALLOWED_BOTS_INPUT__";
+
 /** The secret name each mode writes into the target repo. */
 export const SECRET_NAME: Record<AuthMode, string> = {
   oauth: "CLAUDE_CODE_OAUTH_TOKEN",
@@ -43,12 +45,30 @@ function read(rel: string): string {
  * `install-claude-action.sh` (#4 AC 11). Duplicating it in TypeScript is how the
  * two copies drift — the same mistake stage 1a fixed for the issue prompt.
  */
-export function claudeWorkflow(mode: AuthMode): string {
+export function claudeWorkflow(mode: AuthMode, appBotLogin?: string | null): string {
   const template = read("repo-ci/claude.yml");
   if (!template.includes(AUTH_PLACEHOLDER)) {
     throw new Error(`repo-ci/claude.yml no longer contains ${AUTH_PLACEHOLDER}`);
   }
-  return template.replace(new RegExp(`^.*${AUTH_PLACEHOLDER}.*$`, "m"), AUTH_LINE[mode]);
+  if (!template.includes(ALLOWED_BOTS_PLACEHOLDER)) {
+    throw new Error(`repo-ci/claude.yml no longer contains ${ALLOWED_BOTS_PLACEHOLDER}`);
+  }
+
+  let out = template.replace(new RegExp(`^.*${AUTH_PLACEHOLDER}.*$`, "m"), AUTH_LINE[mode]);
+
+  // An App-backed deployment files issues as `<slug>[bot]`, which claude-code-action
+  // rejects unless allow-listed (#29). Inject the bot login; on the PAT-only path the
+  // issue is human-authored, so drop the placeholder line — including its newline —
+  // rather than emit an empty `allowed_bots`.
+  if (appBotLogin) {
+    out = out.replace(
+      new RegExp(`^.*${ALLOWED_BOTS_PLACEHOLDER}.*$`, "m"),
+      `          allowed_bots: ${JSON.stringify(appBotLogin)}`
+    );
+  } else {
+    out = out.replace(new RegExp(`^.*${ALLOWED_BOTS_PLACEHOLDER}.*\\r?\\n`, "m"), "");
+  }
+  return out;
 }
 
 export type Stack = "node" | "python" | "unknown";
@@ -75,11 +95,11 @@ const SKILLS = ["plan", "implement", "debug"] as const;
  * Everything setup commits. `claude.yml` and the skills are ours and are kept at
  * our content; `ci.yml` is created only if absent.
  */
-export function templatesFor(mode: AuthMode, stack: Stack): Template[] {
+export function templatesFor(mode: AuthMode, stack: Stack, appBotLogin?: string | null): Template[] {
   const files: Template[] = [
     {
       path: ".github/workflows/claude.yml",
-      content: claudeWorkflow(mode),
+      content: claudeWorkflow(mode, appBotLogin),
       message: "ci: install claude-code-action (Dispatch)",
     },
   ];

@@ -243,6 +243,29 @@ Dispatch then opens the pull request with its **App installation token**, which 
 what makes `on: pull_request` CI run on it without an approval gate — observed
 directly in #22, not inferred (ADR-0006 [8]).
 
+**App-filed issues need `allowed_bots` (#29).** Once a deployment registers a GitHub
+App, Dispatch files issues with the App installation token, so the issue is authored
+by `<app-slug>[bot]` (type: Bot) rather than a human PAT. `claude-code-action` refuses
+a bot-initiated trigger unless the bot is allow-listed, and the symptom is nasty: the
+issue files fine (201) but the build step fails immediately with *"Workflow initiated
+by non-human actor … Add bot to allowed_bots list"* — the board just shows "opened a
+ticket and it failed." The browser onboarding path (**§3.6**, the `POST /setup` route)
+resolves the slug from the registered App and stamps `allowed_bots: "<app-slug>[bot]"`
+into `claude.yml` automatically. The manual `install-claude-action.sh` path cannot see
+Dispatch's database, so **export your App's slug first** so it injects the same line:
+
+```bash
+DISPATCH_APP_SLUG=<your-app-slug> \
+CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
+GH_SETUP_TOKEN=github_pat_xxx \
+  ./scripts/install-claude-action.sh <owner>/<repo>
+```
+
+PAT-only deployments (no App registered) file issues as a human actor, so `DISPATCH_APP_SLUG`
+is unset and the line is omitted. If you onboarded before this fix and hit a failed
+build, add `allowed_bots: "<app-slug>[bot]"` under the `claude-code-action@v1` step's
+`with:` in the repo's `.github/workflows/claude.yml`, or re-run onboarding.
+
 > **Not shipped yet.** The PR-opening half is ticket **#4**. Until it lands, `@claude`
 > runs and pushes a branch, and no pull request appears. This is the one place where
 > a production deployment is not yet end-to-end.

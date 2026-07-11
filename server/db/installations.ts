@@ -286,6 +286,21 @@ export function hasRegisteredApp(db: Database.Database = getDb()): boolean {
   return row !== undefined;
 }
 
+/**
+ * This deployment's App bot login (`<slug>[bot]`), or null when it is PAT-only.
+ *
+ * Onboarding stamps this into the provisioned `claude.yml` so claude-code-action
+ * allow-lists App-filed issues (#29). Reads the *plaintext* `slug` column directly,
+ * so it needs no encryption key and the setup route can call it without opening the
+ * store.
+ */
+export function appBotLogin(db: Database.Database = getDb()): string | null {
+  const row = db.prepare("SELECT slug FROM github_app WHERE id = 1").get() as
+    | { slug: string }
+    | undefined;
+  return row?.slug ? `${row.slug}[bot]` : null;
+}
+
 /** Test + ops hook. Drops the App and every installation. */
 export function clearInstallations(db: Database.Database = getDb()): void {
   db.exec("DELETE FROM installations; DELETE FROM github_app;");

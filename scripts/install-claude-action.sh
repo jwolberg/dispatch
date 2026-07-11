@@ -110,6 +110,17 @@ cp "$(dirname "$0")/repo-ci/claude.yml" "$TMP"
 # so AUTH_LINE's ${{ ... }} is emitted verbatim; AUTH_LINE carries its own indent.
 awk -v repl="$AUTH_LINE" 'index($0,"__CLAUDE_AUTH_INPUT__"){print repl; next} {print}' "$TMP" > "$TMP.auth" && mv "$TMP.auth" "$TMP"
 
+# If this deployment registered a GitHub App, Dispatch files issues as
+# `<app-slug>[bot]`, and claude-code-action rejects the bot trigger unless it is
+# allow-listed (#29). Set DISPATCH_APP_SLUG to your App's slug to inject the
+# allow-list; leave it unset on a PAT-only deployment to drop the line entirely.
+if [ -n "${DISPATCH_APP_SLUG:-}" ]; then
+  BOTS_LINE="          allowed_bots: \"${DISPATCH_APP_SLUG}[bot]\""
+else
+  BOTS_LINE=""
+fi
+awk -v repl="$BOTS_LINE" 'index($0,"__ALLOWED_BOTS_INPUT__"){ if (repl != "") print repl; next } {print}' "$TMP" > "$TMP.bots" && mv "$TMP.bots" "$TMP"
+
 CONTENT="$(base64 < "$TMP" | tr -d '\n')"
 SHA="$(gh api "/repos/$REPO/contents/$WF" --jq .sha 2>/dev/null || true)"
 

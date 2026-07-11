@@ -14,6 +14,7 @@ import { discoverTickets } from "../poller/discover.js";
 import { safeMessage, registerSecret, unregisterSecret } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
 import { detectStack, templatesFor, SECRET_NAME, type AuthMode } from "../setup/templates.js";
+import { appBotLogin } from "../db/installations.js";
 
 export const reposRouter = Router();
 
@@ -228,10 +229,13 @@ reposRouter.post("/:id/setup", async (req, res) => {
   registerSecret(token);
   try {
     const stack = detectStack(JSON.parse(repo.file_tree_cache ?? "[]") as string[]);
+    // When this deployment has registered an App, issues it files are authored by
+    // the App bot, which claude-code-action rejects unless allow-listed (#29). Stamp
+    // the bot login into claude.yml; null (PAT-only) omits the input.
     const files: { path: string; committed: boolean; commitUrl: string | null }[] = [];
     // Serial, not parallel: each write is a commit on the same branch, and
     // concurrent createOrUpdateFileContents calls race on the branch tip and 409.
-    for (const t of templatesFor(mode, stack)) {
+    for (const t of templatesFor(mode, stack, appBotLogin())) {
       const result = await setup.putFile({
         path: t.path,
         content: t.content,
