@@ -253,6 +253,8 @@ Rebuild rule: `tickets` rows plus the GitHub API are sufficient to reconstruct t
 - Local test daemon: a companion process that checks out a PR branch and restarts a local dev server on request from the dashboard
 - Agent SDK mode: run Claude Code headless on the user's own machine/server as an alternative to the Actions runner, streaming progress directly into the UI
 - Cost telemetry: per-ticket Actions minutes + token spend
+- `/goal` — a durable objective the operator states once that Dispatch decomposes into and tracks across multiple issues/builds, above the flat one-issue-one-PR unit (ticket #30)
+- `/workflows` — chained, conditional, or fan-out orchestration across builds (e.g. build B on A's merge; parallel-then-review; auto-fix on a failed check), layered on the same build-state edges the board already derives (ticket #31)
 
 ---
 
