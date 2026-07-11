@@ -69,36 +69,6 @@ export interface ChatTurn {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Stream a spec-chat turn. The route pipes these events to the client as SSE.
- *
- * T1-9: the budget is checked *before* the request, so being over budget never
- * costs another call to discover. Usage arrives only on the final message —
- * a stream has no usage until it drains — so recording is attached here rather
- * than at the call site, keeping every Anthropic call on one choke point.
- */
-export function streamMessage(system: string, messages: ChatTurn[]) {
-  assertWithinBudget(new Date());
-
-  const stream = getClient().messages.stream({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system,
-    messages,
-  });
-
-  stream.finalMessage().then(
-    (msg) => recordCall("chat", msg.usage),
-    () => {
-      // The stream failed. Anthropic bills tokens already streamed, but a
-      // failed stream reports no usage, so there is nothing to record. The
-      // error itself surfaces through the route's own iteration of `stream`.
-    },
-  );
-
-  return stream;
-}
-
-/**
  * Non-streaming completion (used for ticket generation and change summaries).
  * Retries once with backoff on transient Anthropic errors (overloaded / 5xx /
  * rate limit), per S4.

@@ -16,6 +16,7 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [draft, setDraft] = useState<Ticket | null>(null);
+  const [toolStatus, setToolStatus] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +54,8 @@ export function ChatPage() {
       { repo_id: repoId, chat_id: chatId ?? undefined, message: text },
       {
         onChatId: (id) => setChatId(id),
-        onDelta: (delta) =>
+        onDelta: (delta) => {
+          setToolStatus(null); // text is flowing again — clear "reading …"
           setMessages((m) => {
             const next = [...m];
             next[next.length - 1] = {
@@ -61,10 +63,16 @@ export function ChatPage() {
               content: next[next.length - 1].content + delta,
             };
             return next;
-          }),
-        onDone: () => setStreaming(false),
+          });
+        },
+        onTool: (tool, path) => setToolStatus(path ? `reading ${path}…` : `${tool}…`),
+        onDone: () => {
+          setStreaming(false);
+          setToolStatus(null);
+        },
         onError: (msg) => {
           setStreaming(false);
+          setToolStatus(null);
           setError(msg);
           setInput(text); // S4: never lose the user's typed message
           setMessages((m) => m.slice(0, -2)); // drop the optimistic user+assistant pair
@@ -136,6 +144,9 @@ export function ChatPage() {
                   <div className="whitespace-pre-wrap text-body text-gray-100">
                     {m.content || (streaming && i === messages.length - 1 ? "…" : "")}
                   </div>
+                  {toolStatus && streaming && i === messages.length - 1 && (
+                    <div className="mt-1 font-mono text-label text-gray-500">↳ {toolStatus}</div>
+                  )}
                 </div>
               ))
             )}

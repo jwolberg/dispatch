@@ -11,7 +11,6 @@ import { createChat } from "../db/chats.js";
 const createMessage = vi.hoisted(() => vi.fn());
 vi.mock("../anthropic/client.js", () => ({
   createMessage,
-  streamMessage: vi.fn(),
   MODEL: "test-model",
 }));
 
