@@ -15,6 +15,7 @@ import { safeMessage, registerSecret, unregisterSecret } from "../lib/redaction.
 import { httpStatus } from "../lib/errors.js";
 import { detectStack, templatesFor, SECRET_NAME, type AuthMode } from "../setup/templates.js";
 import { appBotLogin } from "../db/installations.js";
+import { runCanaryForRepo } from "./canary-trigger.js";
 
 export const reposRouter = Router();
 
@@ -280,6 +281,14 @@ reposRouter.post("/:id/setup", async (req, res) => {
       // Names only. Never a value.
       secrets: { set: [SECRET_NAME[mode]], deleted },
     });
+
+    // Writing claude.yml is not the same as it running (#5). Prove it triggers:
+    // file a throwaway @claude canary and record the verdict on the card. Runs in
+    // the background — the poll window is minutes — and only when the workflow is
+    // now present. runCanaryForRepo never throws; a failure becomes a fail verdict.
+    if (ctx.automationDetected) {
+      void runCanaryForRepo(getRepo(repo.id)!, { provider: getProviderForRepo(ref) });
+    }
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
   } finally {
