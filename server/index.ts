@@ -63,8 +63,18 @@ if (installations) {
 }
 
 const app = express();
+// Behind Cloud Run's proxy the client IP arrives in X-Forwarded-For; trust it so
+// req.ip is the client, which the failed-auth limiter keys on (#32). The leftmost
+// XFF hop is client-influenced — a known limitation, raised in auth-limiter.ts.
+app.set("trust proxy", true);
+
+// Health is reachable WITHOUT the password so an external uptime check can watch
+// the public service (#32). It exposes only booleans + rate-limit counts — no
+// secrets — so it is mounted ahead of the gate; everything else stays gated.
+app.use("/api/health", healthRouter);
+
 // Shared-password gate (no-op unless DISPATCH_PASSWORD is set) — runs before
-// everything so unauthenticated requests never reach routes or static assets.
+// everything else so unauthenticated requests never reach routes or static assets.
 app.use(basicAuthGate);
 app.use(express.json());
 // Upload a snapshot before acking any request that changed irreplaceable state.
@@ -72,7 +82,6 @@ app.use(express.json());
 app.use(snapshotMiddleware());
 
 const api = express.Router();
-api.use("/health", healthRouter);
 api.use("/discover", discoverRouter);
 api.use("/repos", reposRouter);
 api.use("/chat", chatRouter);

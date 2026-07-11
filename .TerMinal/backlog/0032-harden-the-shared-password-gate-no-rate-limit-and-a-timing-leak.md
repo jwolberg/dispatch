@@ -1,14 +1,14 @@
 ---
 id: 32
 title: "Harden the shared-password gate: it is the only control on a public, credential-holding service"
-status: open
+status: in-progress
 priority: high
 horizon: now
 hitl: false
 type: security
 source: "found while redeploying to Cloud Run on 2026-07-10"
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-11
 prs: []
 refs:
   - "server/lib/auth.ts"
@@ -125,3 +125,26 @@ settles #19's fork toward "correct the doc." It also means this ticket is now th
 Rotating `dispatch-password` to a high-entropy value. That is an operator action,
 not a code change — but this ticket is worth little if the password is guessable.
 Verify it independently.
+
+## Implementation note (2026-07-11, PR pending)
+
+Fixed in code:
+- **Rate limiting** — `server/lib/auth-limiter.ts`, an in-memory per-IP failed-auth
+  limiter (10 failures / 15 min → 429). No new dependency; the service is
+  single-instance. Only a *supplied wrong password* counts — a credential-less
+  first request (browser pre-prompt) does not, so ordinary page loads never lock
+  out. A correct password resets the IP.
+- **Timing leak** — `safeEqual` now sha256-hashes both sides to a fixed 32 bytes
+  before `timingSafeEqual`; the early length-return is gone, and the comment
+  states what the code does.
+- **Health** — `GET /api/health` mounted ahead of the gate (ungated); it exposes
+  only booleans + rate-limit counts. `trust proxy` is set so the limiter keys on
+  the real client IP behind Cloud Run.
+
+**Documented caveat:** the leftmost `X-Forwarded-For` hop is client-influenced, so
+a determined attacker can rotate the limiter key. This raises brute-force cost; it
+is not the durable fix — that is OIDC (#16).
+
+**Still an operator action (out of scope, but load-bearing):** independently
+verify `dispatch-password` is high-entropy. The gate hardening is worth little
+against a guessable password.
