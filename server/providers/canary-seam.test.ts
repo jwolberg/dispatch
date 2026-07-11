@@ -66,6 +66,48 @@ describe("GitHubProvider.deleteBranch", () => {
   });
 });
 
+describe("GitHubProvider.getWorkflowRunsRaw", () => {
+  it("preserves action_required instead of collapsing it (the canary's whole point)", async () => {
+    stubFetch({
+      workflow_runs: [
+        {
+          id: 555,
+          status: "completed",
+          conclusion: "action_required",
+          head_branch: "main",
+          head_sha: "abc",
+          event: "issues",
+          created_at: "2026-07-11T00:00:05Z",
+        },
+      ],
+    });
+    const runs = await gh().getWorkflowRunsRaw(REPO, "main");
+
+    // getWorkflowRuns would map this to "neutral"; the raw fetch must not.
+    expect(runs).toEqual([
+      {
+        id: "555",
+        status: "completed",
+        conclusion: "action_required",
+        headBranch: "main",
+        event: "issues",
+        createdAt: "2026-07-11T00:00:05Z",
+      },
+    ]);
+  });
+
+  it("filters to the requested ref by head_branch or head_sha", async () => {
+    stubFetch({
+      workflow_runs: [
+        { id: 1, status: "completed", conclusion: "success", head_branch: "main", head_sha: "s1", event: "issues", created_at: "t1" },
+        { id: 2, status: "completed", conclusion: "success", head_branch: "other", head_sha: "s2", event: "push", created_at: "t2" },
+      ],
+    });
+    const runs = await gh().getWorkflowRunsRaw(REPO, "main");
+    expect(runs.map((r) => r.id)).toEqual(["1"]);
+  });
+});
+
 describe("GitLabProvider parity", () => {
   it("closeIssue PUTs a close state event", async () => {
     const mock = stubFetch({ iid: 7, state: "closed" });
