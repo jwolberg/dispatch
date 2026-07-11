@@ -1,16 +1,15 @@
 ---
 id: 29
 title: "Onboarding claude.yml omits allowed_bots, so App-filed issues fail claude-code-action"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
 type: bug
 source: feedback
 created: 2026-07-10
-updated: 2026-07-11
-prs:
-  - https://github.com/jwolberg/dispatch/pull/29
+updated: 2026-07-10
+prs: []
 refs: []
 depends_on: []
 agent_id: 1000x-ai-engineer
