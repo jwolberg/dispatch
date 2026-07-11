@@ -3,9 +3,9 @@ id: 4
 slug: canary-verification
 anchor: SES-0004
 title: "#5 — Canary verification: prove the build triggers at setup time"
-status: active
+status: closed
 started: 2026-07-11T00:00:00Z
-ended: null
+ended: 2026-07-11T20:30:00Z
 goal: "Canary verification (#5): after setup, prove the build actually triggers — file a throwaway dispatch-canary issue with @claude, poll for a workflow_run in a bounded window, pass only on conclusion:success, clean up on both paths, render pass/fail on the repo card"
 tickets: [5]
 branches:
@@ -150,25 +150,64 @@ Six commits, each RED→GREEN, full `npm run verify` green (602 tests):
 Decisions logged in `docs/implementation-notes.md` (2026-07-11 entry). **Live run
 NOT fired — held at the approval gate ([3.5]).**
 
+### [4.3] 2026-07-11 — PR #32 opened, merged; live gate parked
+
+All six code slices shipped to PR #32 (Closes #5), **merged** to main. Asked the
+approval gate: decision = **merge first, run the live canary later**. No repo
+write, no spend this session. [3.5]'s live item stays open until run — resume it
+then, against a chosen repo, and record the observed `conclusion: success` here.
+
 ## [5] Decisions
 
-_Session decisions recorded here as they are made._
+1. **`httpStatus` reads gitbeaker's `cause.response.status`.** `GitbeakerRequestError`
+   hides its HTTP status on the cause, so the GitLab adapter's `isNotFound` guards
+   never matched a real 404. Fixing `httpStatus` corrects that latent bug and lets
+   `deleteBranch` be idempotent on GitLab. ADR-worthy? No — a helper fix, captured
+   as a learning candidate ([8]).
+2. **Canary run matched by timestamp, not identity.** An `issues`-event run carries
+   no link to the issue number; matched newest-on-default-branch created ≥ start
+   with a 30s skew grace. Tradeoff (a second canary within ~30s could mis-match)
+   accepted at one-shot setup time.
+3. **Cleanup deletes branches without a Claude-authorship check.** Deletion isn't
+   the irreversible action #4 AC 9 guards, and only branches linking to the just-
+   created throwaway issue are matched — so the identity call is skipped.
+4. **Canary fires fire-and-forget from `POST /setup`**, never throws (a provider
+   error becomes a `fail` verdict), so the card always resolves to an answer.
+5. **Live-fire deferred to an explicit approval gate** (writes to a user repo,
+   spends a real Claude run) — per the decision protocol's escalating-cost rule.
+
+Full reasoning in `docs/implementation-notes.md` (2026-07-11 entry).
 
 ## [6] Outcomes
 
-_Filled by /session-end._
+- **PR #32 merged** — the canary orchestrator, across 6 TDD-first commits
+  (`852b070`…`4f63ce5` + docs). Closes ticket #5; **BUILD_PLAN-v2 Tier 1 complete.**
+- **Ticket #5 → closed** via reconcile PR #33 (open, awaiting human merge).
+- New seam: `closeIssue`, `deleteBranch`, `getWorkflowRunsRaw` on `GitProvider`
+  + both adapters. New modules: `server/poller/canary-run.ts`,
+  `server/routes/canary-trigger.ts`, `web/src/lib/canary.ts`. DB columns
+  `canary_verdict`/`reason`/`checked_at` + idempotent migration.
+- `npm run verify` green at HEAD: **602 tests**, seam clean, templates match.
+- Housekeeping this session: filed future tickets #30 (`/goal`) + #31
+  (`/workflows`) with a PRD §10 note (PR #31, merged); fixed a duplicate-id
+  collision by renumbering the harden-password ticket #26 → **#32** (PR #34, open).
+- Branch `feat/5-canary-orchestrator` merged; pruned locally.
 
 ## [7] Follow-ups
 
-_Filled by /session-end._
+- **[open] Live canary run (task #8 / ticket #5 [3.5])** — unblocked now #32 is
+  merged; run against a chosen repo, confirm `conclusion: success`, record here.
+  Needs a repo choice + go-ahead (writes + spends).
+- **[open] Merge reconcile PRs #33 and #34** to fully clean the board.
+- **[candidate] Next build ticket: #28** (namespace CI skills) — starting now.
+- No test gaps: every behavior change shipped with an adversarial test (the #25
+  and `action_required` fail fixtures, cleanup-on-both-paths, provider-throws).
 
 ## [8] Documentation
 
-_Filled by /session-end._
-
-### [4.3] 2026-07-11 — PR #32 opened; live gate parked
-
-All six code slices shipped to PR #32 (Closes #5). Asked the approval gate:
-decision = **merge first, run the live canary later**. No repo write, no spend
-this session. [3.5]'s live item stays open until after merge — resume it then,
-against a chosen repo, and record the observed `conclusion: success` here.
+- Captured this session: `docs/implementation-notes.md` (2026-07-11 entry) — all
+  five decisions above with reasoning.
+- **Doc candidate (not yet written):** a `docs/learnings/` note on the gitbeaker
+  error shape (`err.cause.response.status`) — a cross-cutting gotcha that silently
+  disabled the GitLab `isNotFound` guards. Worth a learning; deferred so as not to
+  block starting #28. Sibling to `docs/learnings/verify-external-formats-before-encoding-them.md`.
