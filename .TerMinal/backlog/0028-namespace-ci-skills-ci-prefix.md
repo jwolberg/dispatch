@@ -1,7 +1,7 @@
 ---
 id: 28
 title: "Namespace Dispatch CI skills as ci-plan/ci-implement/ci-debug so they coexist with repos' interactive plan/implement/debug"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: bug
 source: feedback
 created: 2026-07-10
 updated: 2026-07-11
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/36"
+prs: []
 refs: []
 depends_on: []
 agent_id: 1000x-ai-engineer

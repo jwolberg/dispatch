@@ -1,7 +1,7 @@
 ---
 id: 27
 title: "Spec-chat cannot read repo files — give it read_file and list_files tools"
-status: in-progress
+status: closed
 priority: high
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: "observed on a spec chat against jwolberg/situation, 2026-07-10"
 created: 2026-07-10
 updated: 2026-07-11
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/38"
+prs: []
 refs:
   - "server/anthropic/prompts.ts"
   - "server/anthropic/client.ts"

@@ -8,7 +8,7 @@ hitl: false
 type: bug
 source: feedback
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-11
 prs: []
 refs: []
 depends_on: []
@@ -19,7 +19,7 @@ agent_run_id: da6ebb37-1694-496d-8f6d-2d13933897ef
 agent_run_source: session
 agent_session_id: da6ebb37-1694-496d-8f6d-2d13933897ef
 agent_run_started_at: 2026-07-11T00:57:50.402Z
-agent_run_status: completed
+agent_run_status: failed
 ---
 
 ## Description
