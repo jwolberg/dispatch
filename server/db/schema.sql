@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS repos (
   file_tree_cache      TEXT,                             -- disposable cache (JSON)
   automation_detected  INTEGER,                          -- 0/1, NULL = unknown
   context_refreshed_at TEXT,
+  canary_verdict       TEXT,                             -- 'pass' | 'fail', NULL = never run (#5)
+  canary_reason        TEXT,                             -- actionable message on a fail
+  canary_checked_at    TEXT,                             -- ISO timestamp of the last canary
   UNIQUE (provider, host, path)
 );
 

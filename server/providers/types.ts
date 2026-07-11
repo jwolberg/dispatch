@@ -150,6 +150,21 @@ export interface Run {
   createdAt: string;
 }
 
+/**
+ * A workflow run with its RAW provider status/conclusion, unlike `Run` whose
+ * `mapRun` collapses `action_required` into `in_progress`/`neutral`. The canary
+ * needs the raw pair to tell "parked awaiting approval" (a fail) from a real
+ * pass (#5), plus enough metadata to match its own run and clean up its branch.
+ */
+export interface RawWorkflowRun {
+  id: string;
+  status: string | null;
+  conclusion: string | null;
+  headBranch: string | null;
+  event: string | null;
+  createdAt: string;
+}
+
 export interface MergeResult {
   merged: boolean;
   message: string | null;
@@ -259,6 +274,13 @@ export interface GitProvider {
   createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef>;
   postComment(target: CommentTarget, body: string): Promise<void>;
   getIssue(repo: RepoRef, issueNumber: number): Promise<Issue>;
+  /** Close an issue — the canary closes its throwaway on both paths (#5). */
+  closeIssue(repo: RepoRef, issueNumber: number): Promise<void>;
+  /**
+   * Delete a branch. Idempotent: a missing branch is a no-op, not an error, so
+   * the canary can clean up whether or not a run produced a branch (#5).
+   */
+  deleteBranch(repo: RepoRef, branch: string): Promise<void>;
   /** Open issues in the repo (excludes PRs/MRs) — used to adopt existing work onto the board. */
   listOpenIssues(repo: RepoRef): Promise<IssueRef[]>;
   /** Excludes revert PRs — a revert of the ticket's PR is not the ticket's PR. */
@@ -275,6 +297,12 @@ export interface GitProvider {
   /** Changed files + patches for a PR/MR. Bounded by the provider (T1-5). */
   getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff>;
   getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]>;
+  /**
+   * Workflow runs on `ref` with raw status/conclusion preserved. The canary
+   * polls this instead of `getWorkflowRuns` because the latter erases
+   * `action_required` — the exact state it must fail on (#5, ADR-0002).
+   */
+  getWorkflowRunsRaw(repo: RepoRef, ref: string): Promise<RawWorkflowRun[]>;
   mergePR(repo: RepoRef, prNumber: number, method: MergeMethod): Promise<MergeResult>;
 
   /** Every branch in the repo, with its tip sha (#4). */

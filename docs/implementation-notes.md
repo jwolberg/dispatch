@@ -1334,3 +1334,41 @@ unset → the line is dropped, same as a PAT-only deployment. This matches the A
 **Tests.** `claudeWorkflow` unit tests (App-backed stamps the login / PAT-only omits it),
 an `appBotLogin` unit test, and a `POST /setup` route test that registers an App and
 asserts the committed `claude.yml` carries `allowed_bots: "dispatch-acme[bot]"`.
+
+## 2026-07-11 — #5 canary verification (live orchestrator)
+
+Resumed after PR #26 (pure logic). Built the live orchestrator across six TDD
+slices on `feat/5-canary-orchestrator`. Decisions not spelled out in the ticket:
+
+**`httpStatus` now reads gitbeaker's status.** `GitbeakerRequestError` hides the
+HTTP status at `err.cause.response.status`, not `.status`/`.statusCode`, so the
+GitLab adapter's existing `isNotFound(err)` guards never matched a real 404.
+Extended `httpStatus` to read the cause path — fixes the latent bug and lets
+`deleteBranch` tolerate a missing branch on GitLab.
+
+**Run matching is by timestamp, not identity.** A workflow_run triggered by an
+`issues` event carries no field linking it to the issue number, so the canary
+matches "newest run on the default branch created at/after we started," with a
+30s grace margin (`RUN_MATCH_GRACE_MS`) absorbing host↔GitHub clock skew.
+Tradeoff: a second canary within ~30s could match the wrong run. Acceptable at
+setup time (one-shot on a fresh repo); documented in `canary-run.ts`.
+
+**Cleanup deletes branches without a Claude-authorship check.** `openPRForClaudeBranch`
+verifies authorship because opening a PR from a human branch is irreversible
+(#4 AC 9). Deletion is not that — and the canary only matches branches linking
+to a just-created throwaway issue number — so cleanup skips the identity call.
+
+**Setup fires the canary fire-and-forget.** The poll window is minutes; blocking
+the setup response on it is wrong. `POST /setup` responds, then triggers
+`runCanaryForRepo` in the background (only when automation is now detected).
+That function never throws — a provider error becomes a `fail` verdict — so the
+card always resolves to an answer rather than a blank.
+
+**The card's null-verdict state reads "Build unverified."** With `automation_detected=1`
+and `canary_verdict=null`, the chip can't distinguish "canary in flight" from
+"onboarded before the canary existed"; both honestly read as unverified, with a
+"run setup to confirm" hint.
+
+**Deferred to the approval gate:** the first *live* canary run against a real
+repo is not fired here — it writes to a user repo and spends a real Claude run
+(escalating-cost per the decision protocol). Held for explicit go-ahead.

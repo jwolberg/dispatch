@@ -31,6 +31,7 @@ import type {
   RepoRef,
   RepoSummary,
   Run,
+  RawWorkflowRun,
   SpecInput,
 } from "./types.js";
 
@@ -371,6 +372,23 @@ export class GitHubProvider implements GitProvider {
     };
   }
 
+  async closeIssue(repo: RepoRef, issueNumber: number): Promise<void> {
+    const { owner, repo: name } = splitPath(repo.path);
+    await this.octokit.issues.update({ owner, repo: name, issue_number: issueNumber, state: "closed" });
+  }
+
+  async deleteBranch(repo: RepoRef, branch: string): Promise<void> {
+    const { owner, repo: name } = splitPath(repo.path);
+    try {
+      await this.octokit.git.deleteRef({ owner, repo: name, ref: `heads/${branch}` });
+    } catch (err) {
+      // 422/404 = the ref is already gone (or the canary never made one). Cleanup
+      // is idempotent by contract; only a real error propagates.
+      if (isNotFound(err) || httpStatus(err) === 422) return;
+      throw err;
+    }
+  }
+
   async listOpenIssues(repo: RepoRef): Promise<IssueRef[]> {
     const { owner, repo: name } = splitPath(repo.path);
     const issues = await this.octokit.paginate(this.octokit.issues.listForRepo, {
@@ -612,6 +630,27 @@ export class GitHubProvider implements GitProvider {
         createdAt: r.created_at,
       }));
   }
+  async getWorkflowRunsRaw(repo: RepoRef, ref: string): Promise<RawWorkflowRun[]> {
+    const { owner, repo: name } = splitPath(repo.path);
+    // Not conditional/ETag-cached: the canary is a one-shot bounded poll, and a
+    // cached body would hide the status transition it is watching for.
+    const { data } = await this.octokit.actions.listWorkflowRunsForRepo({
+      owner,
+      repo: name,
+      per_page: 30,
+    });
+    return data.workflow_runs
+      .filter((r) => r.head_branch === ref || r.head_sha === ref)
+      .map((r) => ({
+        id: String(r.id),
+        status: r.status ?? null,
+        conclusion: r.conclusion ?? null,
+        headBranch: r.head_branch ?? null,
+        event: r.event ?? null,
+        createdAt: r.created_at,
+      }));
+  }
+
   async mergePR(repo: RepoRef, prNumber: number, method: MergeMethod): Promise<MergeResult> {
     const { owner, repo: name } = splitPath(repo.path);
     // Errors (conflicts, branch protection) propagate so the route can surface

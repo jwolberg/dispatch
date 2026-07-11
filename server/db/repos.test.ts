@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getDb, migrateRepoIdentity } from "./migrate.js";
-import { insertRepo, listRepos, findRepoByIdentity, getRepo } from "./repos.js";
+import { getDb, migrateRepoIdentity, addCanaryColumns } from "./migrate.js";
+import { insertRepo, listRepos, findRepoByIdentity, getRepo, updateCanaryVerdict } from "./repos.js";
 import { resetDb } from "../test/helpers.js";
 
 // #23 — `UNIQUE (provider, host, path)` never fired for GitHub repos.
@@ -51,6 +51,40 @@ describe("repo identity is unique, even when host is NULL", () => {
     expect(findRepoByIdentity("github", undefined, "acme/widgets")?.id).toBe(row.id);
     expect(findRepoByIdentity("github", null, "acme/other")).toBeUndefined();
     expect(findRepoByIdentity("gitlab", null, "acme/widgets")).toBeUndefined();
+  });
+});
+
+describe("canary verdict persistence (#5)", () => {
+  beforeEach(() => resetDb());
+
+  it("round-trips verdict, reason, and timestamp on the repo row", () => {
+    const repo = insertRepo({ provider: "github", path: "acme/widgets" });
+    updateCanaryVerdict(repo.id, {
+      verdict: "fail",
+      reason: "parked awaiting approval",
+      checkedAt: "2026-07-11T00:00:00Z",
+    });
+
+    const row = getRepo(repo.id)!;
+    expect(row.canary_verdict).toBe("fail");
+    expect(row.canary_reason).toBe("parked awaiting approval");
+    expect(row.canary_checked_at).toBe("2026-07-11T00:00:00Z");
+  });
+
+  it("back-fills a pre-canary database and is idempotent on re-run", () => {
+    const db = getDb();
+    // Manufacture a database created before this column existed.
+    db.exec("ALTER TABLE repos DROP COLUMN canary_verdict");
+    db.exec("ALTER TABLE repos DROP COLUMN canary_reason");
+    db.exec("ALTER TABLE repos DROP COLUMN canary_checked_at");
+
+    addCanaryColumns(db);
+    addCanaryColumns(db); // boot runs this every time; the second call must be a no-op
+
+    const cols = (db.pragma("table_info(repos)") as { name: string }[]).map((c) => c.name);
+    expect(cols).toEqual(
+      expect.arrayContaining(["canary_verdict", "canary_reason", "canary_checked_at"])
+    );
   });
 });
 

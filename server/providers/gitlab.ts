@@ -25,6 +25,7 @@ import type {
   RepoSummary,
   RevertRef,
   Run,
+  RawWorkflowRun,
   SpecInput,
 } from "./types.js";
 
@@ -216,6 +217,20 @@ export class GitLabProvider implements GitProvider {
     };
   }
 
+  async closeIssue(repo: RepoRef, issueNumber: number): Promise<void> {
+    await this.api.Issues.edit(repo.path, issueNumber, { stateEvent: "close" });
+  }
+
+  async deleteBranch(repo: RepoRef, branch: string): Promise<void> {
+    try {
+      await this.api.Branches.remove(repo.path, branch);
+    } catch (err) {
+      // Idempotent cleanup: a branch that never existed is not an error.
+      if (isNotFound(err) || httpStatus(err) === 422) return;
+      throw err;
+    }
+  }
+
   async listOpenIssues(repo: RepoRef): Promise<IssueRef[]> {
     // MRs are a separate resource in GitLab, so this returns issues only.
     const issues = (await this.api.Issues.all({
@@ -366,6 +381,22 @@ export class GitLabProvider implements GitProvider {
       title: p.ref ?? null, // pipelines have no display title; the ref is the closest "what"
       state: mapRun(p.status),
       url: p.web_url ?? null,
+      createdAt: p.created_at,
+    }));
+  }
+
+  async getWorkflowRunsRaw(repo: RepoRef, ref: string): Promise<RawWorkflowRun[]> {
+    // GitLab pipelines carry a single status and no separate conclusion, and no
+    // `action_required` concept — so the raw view maps status straight through
+    // and leaves conclusion null. `claude-code-action` is GitHub-only, so the
+    // canary never actually polls this; it exists to keep the seam total.
+    const pipelines = (await this.api.Pipelines.all(repo.path, { ref })) as Loose[];
+    return pipelines.slice(0, 20).map((p) => ({
+      id: String(p.id),
+      status: p.status ?? null,
+      conclusion: null,
+      headBranch: p.ref ?? ref,
+      event: p.source ?? null,
       createdAt: p.created_at,
     }));
   }
