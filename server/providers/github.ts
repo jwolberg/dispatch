@@ -228,6 +228,34 @@ export class GitHubProvider implements GitProvider {
     };
   }
 
+  async readFile(repo: RepoRef, path: string): Promise<string | null> {
+    const { owner, repo: name } = splitPath(repo.path);
+    try {
+      const { data } = await this.octokit.repos.getContent({ owner, repo: name, path });
+      if (Array.isArray(data) || !("content" in data) || !data.content) return null;
+      const buf = Buffer.from(data.content, "base64");
+      // A NUL byte means it is not decodable text — spec-chat wants source, not
+      // a base64 blob of a PNG. Treat binary like "not readable text".
+      if (buf.includes(0)) return null;
+      return buf.toString("utf8");
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async listFiles(repo: RepoRef, path: string): Promise<string[]> {
+    const { owner, repo: name } = splitPath(repo.path);
+    try {
+      const { data } = await this.octokit.repos.getContent({ owner, repo: name, path });
+      if (!Array.isArray(data)) return [];
+      return data.map((e) => e.name);
+    } catch (err) {
+      if (isNotFound(err)) return [];
+      throw err;
+    }
+  }
+
   private async fetchFileText(
     owner: string,
     repo: string,
