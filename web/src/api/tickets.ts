@@ -50,6 +50,32 @@ export interface SummaryResponse {
   summary: ChangeSummary | null;
   unavailable: SummaryUnavailable | null;
 }
+
+/** T2-1 — one changed file in the in-app diff view. `patch` is null for binary. */
+export interface DiffFile {
+  path: string;
+  status: "added" | "removed" | "modified" | "renamed";
+  additions: number;
+  deletions: number;
+  patch: string | null;
+  /** True when `patch` is a prefix of the real patch, clipped to the view budget. */
+  patchTruncated: boolean;
+}
+
+export interface Diff {
+  files: DiffFile[];
+  /** A patch was clipped, or the provider itself capped the file list. */
+  truncated: boolean;
+  bytesUsed: number;
+}
+
+/** Why there is no diff. The route degrades rather than erroring. */
+export type DiffUnavailable = "no-pr" | "error";
+
+export interface DiffResponse {
+  diff: Diff | null;
+  unavailable: DiffUnavailable | null;
+}
 export interface Run {
   id: string;
   name: string;
@@ -88,6 +114,10 @@ export const ticketsApi = {
   // Generated lazily on first call and cached server-side per head SHA. Do NOT
   // poll this: a summary the model failed to produce would re-bill every tick.
   summary: (id: number) => api.get<SummaryResponse>(`/tickets/${id}/summary`),
+  // The PR's unified diff, bounded server-side. Fetched once per head SHA like
+  // the summary — the server bounds it, and re-reading an unchanged PR hits the
+  // provider's conditional-request cache (T2-1).
+  diff: (id: number) => api.get<DiffResponse>(`/tickets/${id}/diff`),
   comment: (id: number, body: { body: string; target: "issue" | "pr" }) =>
     api.post<{ ok: boolean }>(`/tickets/${id}/comment`, body),
   skill: (
