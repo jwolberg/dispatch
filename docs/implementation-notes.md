@@ -2,6 +2,32 @@
 
 Running log of decisions, deviations, and tradeoffs for human review.
 
+## 2026-07-11 — T2-5 / #15 (Review-artifact contract + Ship gated on verdict)
+
+- **Split the ticket.** #15 delivers the **consumption + gate** side (ACs 2–7);
+  the **CI emission** (AC 1 — a `pull_request` workflow that writes the artifact
+  triple into the repo) is carved into **#34**. Rationale: emission is a
+  substantial standalone build that runs in the *user's* CI and writes a workflow
+  + review credential into user repos (a careful external surface, and my
+  standing prior is to be cautious with user-repo writes), with its own
+  anti-recursion/auth concerns the fail-closed gate does not need to be correct.
+  Until #34 lands the gate stays closed for every PR — the safe direction.
+- **Fail-closed is the whole property.** `parseReviewArtifact` returns `null`
+  for anything less than a complete, well-formed artifact (no md, missing
+  `verdict`/`test_status`, bad enum, absent/unparseable findings.json), and
+  `evaluateShipGate(null)` blocks. "Absent" is the normal post-onboarding state,
+  so this path is exercised in production. Pinned by `artifact.test.ts`.
+- **Server re-validates; the button is not the gate (AC 5).** `POST /merge`
+  fetches + parses + evaluates the gate before `mergePR`, after the existing
+  checks gate. Every refusal branch has an integration test in `tickets.test.ts`
+  (missing / non-approve / not-pass / open-medium / unparseable), plus the
+  legacy `.reviews/` layout and the full-bar success.
+- **No cross-import (AC 6).** Dispatch only *reads* files matching the
+  code-review agent's schema via the `readFile` seam — no dependency on TerMinal.
+  The schema is the entire interface.
+- **Minimal YAML.** No YAML dependency added; a tiny frontmatter reader pulls the
+  two scalar fields the gate needs (`verdict`, `test_status`).
+
 ## 2026-07-11 — T2-4 / #14 (Per-ticket cost telemetry)
 
 - **Tokens from the spend ledger, Actions minutes from provider timing.**

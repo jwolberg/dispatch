@@ -65,6 +65,26 @@ function seed(pr: PRStatus | null, mergeMethod = "squash"): number {
 const mergePR = vi.fn<(...a: unknown[]) => Promise<MergeResult>>();
 const getRevertUrl = vi.fn<(...a: unknown[]) => Promise<string>>();
 
+// T2-5 — the review artifact the merge gate reads. Default is the full passing
+// bar; individual tests below mutate `reviewFiles` to exercise each refusal.
+// prStatus().headSha is 40 zeros, so short_sha is "0000000".
+const SHORT_SHA = "0000000";
+function reviewMd(over: Record<string, string> = {}): string {
+  const fields = { verdict: "approve", test_status: "pass", ...over };
+  const body = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n");
+  return `---\npr: acme/widgets#7\n${body}\n---\n\n## Summary\nlgtm\n`;
+}
+function findingsJson(list: { severity: string; status: string }[] = []): string {
+  return JSON.stringify({ pr: "acme/widgets#7", updated_at: "", findings: list });
+}
+let reviewFiles: Record<string, string | null>;
+function passingReview(): Record<string, string | null> {
+  return {
+    [`.TerMinal/reviews/7/${SHORT_SHA}.md`]: reviewMd(),
+    ".TerMinal/reviews/7/findings.json": findingsJson(),
+  };
+}
+
 /** A fake provider: mergePR is the assertion target; the rest feeds safeReconcile. */
 function fakeProvider(mergedAfter = true): GitProvider {
   return {
@@ -87,6 +107,7 @@ function fakeProvider(mergedAfter = true): GitProvider {
       baseBranch: "main",
     }),
     getPRStatus: async (): Promise<PRStatus> => prStatus({ merged: mergedAfter }),
+    readFile: async (_ref: unknown, path: string): Promise<string | null> => reviewFiles[path] ?? null,
     getWorkflowRuns: async (): Promise<Run[]> => [],
     getRateLimit: async () => ({ limit: null, remaining: null, reset: null }),
     discoverRepos: async () => [],
@@ -128,6 +149,7 @@ describe("POST /api/tickets/:id/merge — the ship gate", () => {
     resetDb();
     mergePR.mockReset();
     mergePR.mockResolvedValue({ merged: true, message: null, sha: "abc123" });
+    reviewFiles = passingReview();
     setProviderFactory(() => fakeProvider());
   });
 
@@ -186,6 +208,75 @@ describe("POST /api/tickets/:id/merge — the ship gate", () => {
       const { status } = await merge(seed(prStatus({ mergeable: null })));
       expect(status).toBe(200);
       expect(mergePR).toHaveBeenCalledTimes(1);
+    });
+
+    // T2-5 — the review gate is re-validated server-side. Each branch below is a
+    // way the gate could wrongly OPEN; all must refuse the merge and never call
+    // mergePR. Fail-closed is the whole security property.
+    describe("review gate (T2-5)", () => {
+      it("409s when no review artifact exists — the normal post-onboarding state", async () => {
+        reviewFiles = {}; // provider.readFile returns null for every path
+        const { status, body } = await merge(seed(prStatus()));
+        expect(status).toBe(409);
+        expect(body.error).toMatch(/review/i);
+        expect(mergePR).not.toHaveBeenCalled();
+      });
+
+      it("409s when the review verdict is not approve", async () => {
+        reviewFiles = passingReview();
+        reviewFiles[`.TerMinal/reviews/7/${SHORT_SHA}.md`] = reviewMd({ verdict: "request-changes" });
+        const { status } = await merge(seed(prStatus()));
+        expect(status).toBe(409);
+        expect(mergePR).not.toHaveBeenCalled();
+      });
+
+      it("409s when the review test_status is not pass", async () => {
+        reviewFiles = passingReview();
+        reviewFiles[`.TerMinal/reviews/7/${SHORT_SHA}.md`] = reviewMd({ test_status: "fail" });
+        const { status } = await merge(seed(prStatus()));
+        expect(status).toBe(409);
+        expect(mergePR).not.toHaveBeenCalled();
+      });
+
+      it("409s when an open finding is medium or above", async () => {
+        reviewFiles = passingReview();
+        reviewFiles[".TerMinal/reviews/7/findings.json"] = findingsJson([
+          { severity: "medium", status: "open" },
+        ]);
+        const { status, body } = await merge(seed(prStatus()));
+        expect(status).toBe(409);
+        expect(body.error).toMatch(/finding/i);
+        expect(mergePR).not.toHaveBeenCalled();
+      });
+
+      it("409s when the artifact is present but unparseable — never falls through to allowed", async () => {
+        reviewFiles = passingReview();
+        reviewFiles[".TerMinal/reviews/7/findings.json"] = "{ not json";
+        const { status } = await merge(seed(prStatus()));
+        expect(status).toBe(409);
+        expect(mergePR).not.toHaveBeenCalled();
+      });
+
+      it("reads the legacy .reviews/ layout too", async () => {
+        reviewFiles = {
+          [`.reviews/7/${SHORT_SHA}.md`]: reviewMd(),
+          ".reviews/7/findings.json": findingsJson(),
+        };
+        const { status } = await merge(seed(prStatus()));
+        expect(status).toBe(200);
+        expect(mergePR).toHaveBeenCalledTimes(1);
+      });
+
+      it("merges on the full bar: approve + pass + only a resolved/low finding", async () => {
+        reviewFiles = passingReview();
+        reviewFiles[".TerMinal/reviews/7/findings.json"] = findingsJson([
+          { severity: "high", status: "resolved" },
+          { severity: "low", status: "open" },
+        ]);
+        const { status } = await merge(seed(prStatus()));
+        expect(status).toBe(200);
+        expect(mergePR).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

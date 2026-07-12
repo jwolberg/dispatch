@@ -51,6 +51,25 @@ export interface SummaryResponse {
   unavailable: SummaryUnavailable | null;
 }
 
+/** T2-5 — the code-review artifact the ship gate reads. */
+export interface ReviewArtifact {
+  verdict: "approve" | "request-changes" | "blocked";
+  testStatus: "pass" | "fail" | "partial" | "error" | "missing";
+  openFindings: { critical: number; high: number; medium: number; low: number };
+}
+
+/** T2-5 — whether Ship is allowed, and why not. Re-validated server-side on merge. */
+export interface ShipGate {
+  allowed: boolean;
+  reason: string | null;
+}
+
+export interface ReviewResponse {
+  review: ReviewArtifact | null;
+  gate: ShipGate;
+  unavailable: "no-pr" | null;
+}
+
 /** T2-4 — the token half of a ticket's build cost. */
 export interface TicketTokens {
   usd: number;
@@ -110,6 +129,9 @@ export const ticketsApi = {
   // Generated lazily on first call and cached server-side per head SHA. Do NOT
   // poll this: a summary the model failed to produce would re-bill every tick.
   summary: (id: number) => api.get<SummaryResponse>(`/tickets/${id}/summary`),
+  // The code-review artifact + ship gate for the current head. The gate here is
+  // for display; the merge route re-validates it server-side (T2-5).
+  review: (id: number) => api.get<ReviewResponse>(`/tickets/${id}/review`),
   // Derived per-ticket build cost: tokens (spend ledger) + Actions minutes
   // (provider timing). Fetched on card open, not polled; timing is cond-cached.
   cost: (id: number) => api.get<CostResponse>(`/tickets/${id}/cost`),
