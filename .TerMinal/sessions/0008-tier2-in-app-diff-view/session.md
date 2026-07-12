@@ -7,9 +7,13 @@ status: active
 started: 2026-07-11T00:00:00Z
 ended: null
 goal: "Tier 2 track — start with #11 (in-app diff view)"
-tickets: [11]
-branches: [feat/11-in-app-diff-view]
-prs: ["https://github.com/jwolberg/dispatch/pull/44"]
+tickets: [11, 13, 14, 15]
+branches: [feat/11-in-app-diff-view, feat/13-merged-deployed-split, feat/14-cost-telemetry, feat/15-review-gate]
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/44"
+  - "https://github.com/jwolberg/dispatch/pull/45"
+  - "https://github.com/jwolberg/dispatch/pull/46"
+  - "https://github.com/jwolberg/dispatch/pull/47"
 related_research: []
 related_docs:
   - "docs/BUILD_PLAN-v2.md"
@@ -139,11 +143,33 @@ payload. Flat-cost constant; revisit if real PRs trip it.
 
 ## [6] Outcomes
 
-_(filled by /session-end)_
+Tier 2 opened. Four tickets built TDD-first, each `npm run verify` green, four
+PRs open (human merges). #11 is independent (PR #44); #13→#14→#15 are a stack
+per the user's "stack the independent 3" choice.
+
+| Ticket | PR | Base | What landed |
+|---|---|---|---|
+| #11 (T2-1) | [#44](https://github.com/jwolberg/dispatch/pull/44) | main | In-app diff view — `GET /tickets/:id/diff` (bounded via `boundDiff`, cond-cached) + lazy CardDetail `DiffSection` over pure `parsePatch` |
+| #13 (T2-3) | [#45](https://github.com/jwolberg/dispatch/pull/45) | main | Split Shipped → Merged/Deployed in `deriveColumn`; reuses fetched deploy runs; precedence table extended |
+| #14 (T2-4) | [#46](https://github.com/jwolberg/dispatch/pull/46) | feat/13 | Per-ticket cost — `ticketSpend()` + `getRunTiming()` seam (GitHub billed ms; GitLab→null) + `GET /cost`; unknown≠$0 |
+| #15 (T2-5) | [#47](https://github.com/jwolberg/dispatch/pull/47) | feat/14 | Fail-closed Ship gate — pure `evaluateShipGate`, server re-validated in `POST /merge`, render + gate on button |
+
+Stack merges bottom-up: #45 → #46 → #47. #44 merges independently.
+
+**Remaining this session:** Phase 2 batch code-review of the four PRs to the bar
+(user asked for it); then human merges; then `/merge-sync` closes the tickets.
 
 ## [7] Follow-ups
 
-_(filled by /session-end)_
+- **#33** (future) — precise deploy-run identification vs main-branch CI (from #13;
+  current heuristic: any successful default-branch run = deploy signal).
+- **#34** (next, high) — CI review step that emits the artifact triple (the AC-1
+  half of #15, split out; runs in the user's CI). #15's gate is fail-closed until
+  it lands.
+- **#12** (T2-2, deferred) — inline diff comments as `@claude` steer; depends on
+  #11 merging first. Not started this session by design.
+- **Auth track (#16 OIDC → #17):** design-first per the user — write an ADR/design
+  for OIDC before any code. Not started; see [[auth-sensitive-design-first]].
 
 ## [8] Documentation
 
