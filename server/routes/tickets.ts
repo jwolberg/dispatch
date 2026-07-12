@@ -10,6 +10,8 @@ import type { CommentTarget, MergeMethod, ProviderId, RepoRef } from "../provide
 import { isSkill, skillPrompt, defaultTarget } from "../lib/skills.js";
 import { safeMessage } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
+import { fetchReview } from "../review/fetch.js";
+import { evaluateShipGate, type ReviewArtifact } from "../review/artifact.js";
 
 export const ticketsRouter = Router();
 
@@ -286,15 +288,31 @@ ticketsRouter.post("/:id/merge", async (req, res) => {
     return;
   }
 
-  const method = (
-    ["squash", "merge", "rebase"].includes(req.body?.method) ? req.body.method : repo.merge_method
-  ) as MergeMethod;
   const ref: RepoRef = {
     provider: repo.provider as ProviderId,
     host: repo.host,
     path: repo.path,
     defaultBranch: repo.default_branch,
   };
+
+  // Server-side re-validation of the review gate (T2-5, AC): the button being
+  // hidden client-side is not a gate. Fail-closed — a missing or unreadable
+  // artifact refuses the merge rather than falling through to allowed.
+  let review: ReviewArtifact | null = null;
+  try {
+    review = await fetchReview(getProviderForRepo(ref), ref, pr.number, pr.headSha);
+  } catch (err) {
+    console.warn(`[merge] review fetch failed for ticket ${ticket.id}: ${safeMessage(err)}`);
+  }
+  const gate = evaluateShipGate(review);
+  if (!gate.allowed) {
+    res.status(409).json({ error: gate.reason, pr_url: pr.url });
+    return;
+  }
+
+  const method = (
+    ["squash", "merge", "rebase"].includes(req.body?.method) ? req.body.method : repo.merge_method
+  ) as MergeMethod;
 
   try {
     const result = await getProviderForRepo(ref).mergePR(
@@ -313,7 +331,7 @@ ticketsRouter.post("/:id/merge", async (req, res) => {
       url: pr.url,
       occurred_at: new Date().toISOString(),
     });
-    await safeReconcile(ticket); // flip to Shipped without waiting for the next poll
+    await safeReconcile(ticket); // flip to Merged/Deployed without waiting for the next poll
     res.json({ merged: true, sha: result.sha });
   } catch (err) {
     // Surface the provider error verbatim with a PR link (F6.4).

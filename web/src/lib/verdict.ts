@@ -14,7 +14,8 @@ export const COLUMNS = [
   "Queued",
   "Building",
   "Ready to test",
-  "Shipped",
+  "Merged",
+  "Deployed",
   "Blocked",
 ] as const;
 
@@ -38,7 +39,8 @@ const VERDICTS: Record<Column, Verdict> = {
   Queued: { tone: "pending", label: "Not started", icon: "•" },
   Building: { tone: "pending", label: "Still running", icon: "◐" },
   "Ready to test": { tone: "pass", label: "Checks passed", icon: "✓" },
-  Shipped: { tone: "pass", label: "Shipped", icon: "🚀" },
+  Merged: { tone: "pass", label: "Merged", icon: "🔀" },
+  Deployed: { tone: "pass", label: "Deployed", icon: "🚀" },
   Blocked: { tone: "fail", label: "Something failed", icon: "✕" },
 };
 

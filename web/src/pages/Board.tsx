@@ -15,7 +15,8 @@ export function BoardPage() {
   const navigate = useNavigate();
   const { data, error } = usePolling(() => boardApi.get(), 10_000);
 
-  const columns = data?.columns ?? ["Spec", "Queued", "Building", "Ready to test", "Shipped", "Blocked"];
+  const columns =
+    data?.columns ?? ["Spec", "Queued", "Building", "Ready to test", "Merged", "Deployed", "Blocked"];
   const cards = data?.cards ?? [];
 
   function open(card: BoardCard) {

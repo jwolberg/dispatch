@@ -339,9 +339,21 @@ Spec          local draft chat, not yet filed
 Queued        issue open, no linked PR, no in-progress run
 Building      run in progress, OR linked PR with pending checks
 Ready to test PR open, all checks green
-Shipped       PR merged / issue closed
+Merged        PR merged / issue closed, no successful deploy run yet
+Deployed      merged AND a default-branch deploy run has succeeded
 Blocked       run failed, OR any PR check failed
 ```
+
+**Merged vs Deployed** (T2-3, #13): merging is not deploying. On merge/close a
+card lands in `Merged`; it advances to `Deployed` only once a **successful**
+default-branch workflow run is observed (the deploy runs are already fetched for
+this case — the poller switches the runs ref to the default branch — so this
+costs no extra API call). A repo with no default-branch deploy pipeline has no
+such run and **terminates at `Merged`** by design, rather than hanging mid-board;
+a failed or in-progress deploy also stays `Merged`. Dispatch treats a successful
+default-branch run as the deploy signal — distinguishing a genuine deploy
+workflow from main-branch CI would need a per-repo deploy-workflow selector
+(follow-up).
 
 **PR linkage** (F4.4): a PR links to a ticket if its body contains `#<issue_number>`
 (Fixes/Closes/refs) or its branch name contains the issue number. Linkage is recomputed each
@@ -356,8 +368,9 @@ poll, never cached as truth.
 
 A single background scheduler reconciles provider state into `status_cache` (PRD F4.2):
 
-- **Cadence:** every **20s** for repos with active (non-Shipped) tickets; every **5 min**
-  otherwise.
+- **Cadence:** every **20s** for repos with active (non-terminal) tickets — terminal
+  being `Merged` or `Deployed`; every **5 min** otherwise (the 5-min sweep also
+  advances `Merged` → `Deployed` once the deploy lands).
 - **Conditional requests:** store and replay ETags (`etag_map_json`) to avoid burning rate
   limit on unchanged resources.
 - **Rate-limit safety (S3):** honor `Retry-After` and secondary-limit responses with
@@ -414,7 +427,8 @@ Ship ──POST /api/tickets/:id/merge──▶ provider.mergePR(method)        
    │   enabled only when: PR open + all required checks green + mergeable
    │   confirmation modal (repo, PR title, diff stats, target branch)
    ▼
-merged → issue auto-closes → poller surfaces prod deploy run → column = Shipped
+merged → issue auto-closes → column = Merged → poller surfaces a successful
+         default-branch deploy run → column = Deployed
 ```
 
 **Steer** (F4.5): `POST /api/tickets/:id/comment` posts to the issue or PR; a comment

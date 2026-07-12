@@ -76,6 +76,47 @@ export interface DiffResponse {
   diff: Diff | null;
   unavailable: DiffUnavailable | null;
 }
+
+/** T2-5 — the code-review artifact the ship gate reads. */
+export interface ReviewArtifact {
+  verdict: "approve" | "request-changes" | "blocked";
+  testStatus: "pass" | "fail" | "partial" | "error" | "missing";
+  openFindings: { critical: number; high: number; medium: number; low: number };
+}
+
+/** T2-5 — whether Ship is allowed, and why not. Re-validated server-side on merge. */
+export interface ShipGate {
+  allowed: boolean;
+  reason: string | null;
+}
+
+export interface ReviewResponse {
+  review: ReviewArtifact | null;
+  gate: ShipGate;
+  unavailable: "no-pr" | null;
+}
+
+/** T2-4 — the token half of a ticket's build cost. */
+export interface TicketTokens {
+  usd: number;
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+}
+
+/** T2-4 — the Actions half. `unknownRuns` were billed but we could not price them. */
+export interface ActionsCost {
+  minutes: number;
+  usd: number;
+  unknownRuns: number;
+}
+
+export interface CostResponse {
+  tokens: TicketTokens;
+  /** null when the provider has no GitHub-Actions billing (GitLab). */
+  actions: ActionsCost | null;
+  runnerAssumption: "standard-linux";
+}
 export interface Run {
   id: string;
   name: string;
@@ -118,6 +159,12 @@ export const ticketsApi = {
   // the summary — the server bounds it, and re-reading an unchanged PR hits the
   // provider's conditional-request cache (T2-1).
   diff: (id: number) => api.get<DiffResponse>(`/tickets/${id}/diff`),
+  // The code-review artifact + ship gate for the current head. The gate here is
+  // for display; the merge route re-validates it server-side (T2-5).
+  review: (id: number) => api.get<ReviewResponse>(`/tickets/${id}/review`),
+  // Derived per-ticket build cost: tokens (spend ledger) + Actions minutes
+  // (provider timing). Fetched on card open, not polled; timing is cond-cached.
+  cost: (id: number) => api.get<CostResponse>(`/tickets/${id}/cost`),
   comment: (id: number, body: { body: string; target: "issue" | "pr" }) =>
     api.post<{ ok: boolean }>(`/tickets/${id}/comment`, body),
   skill: (

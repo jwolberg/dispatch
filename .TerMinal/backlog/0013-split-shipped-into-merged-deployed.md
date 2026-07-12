@@ -1,15 +1,16 @@
 ---
 id: 13
 title: "Split Shipped into Merged → Deployed"
-status: open
+status: in-progress
 priority: medium
 horizon: next
 hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-09
-prs: []
+updated: 2026-07-11
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/45"
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T2-3"

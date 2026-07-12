@@ -2,6 +2,75 @@
 
 Running log of decisions, deviations, and tradeoffs for human review.
 
+## 2026-07-11 — T2-5 / #15 (Review-artifact contract + Ship gated on verdict)
+
+- **Split the ticket.** #15 delivers the **consumption + gate** side (ACs 2–7);
+  the **CI emission** (AC 1 — a `pull_request` workflow that writes the artifact
+  triple into the repo) is carved into **#34**. Rationale: emission is a
+  substantial standalone build that runs in the *user's* CI and writes a workflow
+  + review credential into user repos (a careful external surface, and my
+  standing prior is to be cautious with user-repo writes), with its own
+  anti-recursion/auth concerns the fail-closed gate does not need to be correct.
+  Until #34 lands the gate stays closed for every PR — the safe direction.
+- **Fail-closed is the whole property.** `parseReviewArtifact` returns `null`
+  for anything less than a complete, well-formed artifact (no md, missing
+  `verdict`/`test_status`, bad enum, absent/unparseable findings.json), and
+  `evaluateShipGate(null)` blocks. "Absent" is the normal post-onboarding state,
+  so this path is exercised in production. Pinned by `artifact.test.ts`.
+- **Server re-validates; the button is not the gate (AC 5).** `POST /merge`
+  fetches + parses + evaluates the gate before `mergePR`, after the existing
+  checks gate. Every refusal branch has an integration test in `tickets.test.ts`
+  (missing / non-approve / not-pass / open-medium / unparseable), plus the
+  legacy `.reviews/` layout and the full-bar success.
+- **No cross-import (AC 6).** Dispatch only *reads* files matching the
+  code-review agent's schema via the `readFile` seam — no dependency on TerMinal.
+  The schema is the entire interface.
+- **Minimal YAML.** No YAML dependency added; a tiny frontmatter reader pulls the
+  two scalar fields the gate needs (`verdict`, `test_status`).
+
+## 2026-07-11 — T2-4 / #14 (Per-ticket cost telemetry)
+
+- **Tokens from the spend ledger, Actions minutes from provider timing.**
+  `ticketSpend()` sums the `spend` table by `ticket_id`; `getRunTiming()` (new
+  seam method) reads GitHub's `getWorkflowRunUsage` — the **billed** duration
+  (`billable[os].total_ms`), not wall-clock. `GET /tickets/:id/cost` combines
+  them. Derived + disposable: nothing new is stored, it recomputes from the
+  spend table + provider on each read (AC).
+- **`unknown` ≠ `$0`.** A run whose timing we cannot fetch (403/404, or the call
+  throws) is counted as `unknownRuns`, never folded in as zero — same failure
+  shape as #10's unpriceable-model rule. A run that billed a real 0 ms
+  (skipped/cached) is a known zero and is counted. Pinned in `run-cost.test.ts`.
+- **Standard-runner assumption, stated.** Actions priced at $0.008/min (standard
+  Linux). Larger/macOS/Windows runners bill a multiplier; rather than model
+  per-runner pricing, the card labels the figure "assumes the standard Linux
+  runner" (AC's explicit alternative to quietly under-reporting).
+- **GitLab degrades to tokens-only.** `GitLabProvider.getRunTiming` returns null
+  and the route returns `actions: null` — GitLab CI minutes are a different unit,
+  so the card shows tokens only instead of a wrong-unit number.
+- **Lazy, cond-cached.** Fetched on card open (not polled); the per-run timing
+  calls go through the provider conditional-request cache, so re-opens cost 304s.
+
+## 2026-07-11 — T2-3 / #13 (Split Shipped into Merged → Deployed)
+
+- **Renamed the terminal `Shipped` column into two: `Merged` and `Deployed`.**
+  `deriveColumn` returns `Deployed` iff a default-branch run succeeded, else
+  `Merged` (covers no deploy pipeline, in-progress, and failed deploys). The
+  merged/closed branch is still checked first, so a failing post-merge run never
+  drags a card to `Blocked` — the T0-2 precedence table is extended, not
+  reordered.
+- **Deploy signal = any successful default-branch run.** The poller already
+  switches the runs ref to the default branch when shipped, so this reuses those
+  runs — no extra API call (AC). Limitation: a repo whose main-branch CI (not a
+  deploy) passes will read as `Deployed`. Distinguishing a true deploy workflow
+  from main CI needs a per-repo deploy-workflow selector — **filed as a
+  follow-up** (horizon: future). Documented in architecture.md §7.
+- **`Merged` is terminal for the fast poll.** Scheduler's `isActive` now treats
+  both `Merged` and `Deployed` as terminal, so a no-deploy repo doesn't fast-poll
+  forever; the 5-min `pollAll` sweep still advances `Merged` → `Deployed`.
+- **Board order:** `… Ready to test → Merged → Deployed → Blocked`. Column list
+  is hand-synced across server (`board.ts`), web fallback (`Board.tsx`), and
+  `verdict.ts` COLUMNS, as the existing convention requires.
+
 ## 2026-07-11 — T2-1 / #11 (In-app diff view)
 
 - **Reused `boundDiff` for AC #3's byte cap** rather than adding a new byte-cap

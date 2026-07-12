@@ -16,7 +16,8 @@ import { verdictFor, COLUMNS, type Column } from "./verdict.js";
 describe("verdictFor — pending is its own state, never green", () => {
   it("reports a green verdict only for columns where nothing is outstanding", () => {
     expect(verdictFor("Ready to test").tone).toBe("pass");
-    expect(verdictFor("Shipped").tone).toBe("pass");
+    expect(verdictFor("Merged").tone).toBe("pass");
+    expect(verdictFor("Deployed").tone).toBe("pass");
   });
 
   it("reports a red verdict when a check or run failed", () => {
@@ -43,7 +44,7 @@ describe("verdictFor — pending is its own state, never green", () => {
 
   it("never returns pass for any column that is not explicitly a success state", () => {
     const passing = COLUMNS.filter((c) => verdictFor(c).tone === "pass");
-    expect(passing).toEqual(["Ready to test", "Shipped"]);
+    expect(passing).toEqual(["Ready to test", "Merged", "Deployed"]);
   });
 });
 

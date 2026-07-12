@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Page } from "../components/Page.js";
 import { usePolling } from "../hooks/usePolling.js";
-import { ticketsApi, type Check, type TicketDetail } from "../api/tickets.js";
+import { ticketsApi, type Check, type ReviewResponse, type TicketDetail } from "../api/tickets.js";
 import { ChangeSummaryCard } from "../components/ChangeSummaryCard.js";
+import { ReviewCard } from "../components/ReviewCard.js";
 import { VerdictChip } from "../components/VerdictChip.js";
 import type { Column } from "../lib/verdict.js";
 import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
 import { RevertButton } from "../components/RevertButton.js";
+import { TicketCost } from "../components/TicketCost.js";
 import { DiffView } from "../components/DiffView.js";
 import { ago } from "../lib/time.js";
 
@@ -43,8 +45,10 @@ type Status = NonNullable<TicketDetail["status"]>;
 function nextHint(s: Status): string {
   const running = s.runs.some((r) => r.state === "queued" || r.state === "in_progress");
   switch (s.column) {
-    case "Shipped":
-      return "Merged and closed — nothing left to do.";
+    case "Deployed":
+      return "Merged and deployed — nothing left to do.";
+    case "Merged":
+      return "Merged. Waiting on the default-branch deploy to finish.";
     case "Ready to test":
       return "Checks are green. Preview the PR, then Ship.";
     case "Blocked":
@@ -110,6 +114,23 @@ export function CardDetailPage() {
   const ticketId = Number(id);
   const { data, error, refetch } = usePolling(() => ticketsApi.get(ticketId), 10_000);
 
+  // The review artifact + ship gate (T2-5). Fetched when the head SHA changes,
+  // not polled — a new commit means a new review. The server re-validates the
+  // gate on merge, so this is display + button-enable only.
+  const headSha = data?.status?.pr?.headSha ?? null;
+  const [review, setReview] = useState<ReviewResponse | null>(null);
+  useEffect(() => {
+    let active = true;
+    setReview(null);
+    ticketsApi
+      .review(ticketId)
+      .then((r) => active && setReview(r))
+      .catch(() => active && setReview(null));
+    return () => {
+      active = false;
+    };
+  }, [ticketId, headSha]);
+
   if (error) {
     return (
       <Page title="Ticket">
@@ -166,6 +187,7 @@ export function CardDetailPage() {
               <span className="text-label text-gray-400">{nextHint(status)}</span>
             </div>
             <ChangeSummaryCard ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
+            <TicketCost ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
           </section>
 
           <section className="rounded-lg border border-border bg-surface p-4">
@@ -180,6 +202,10 @@ export function CardDetailPage() {
             ) : (
               <p className="text-body text-gray-500">No progress comment yet.</p>
             )}
+          </section>
+
+          <section className="rounded-lg border border-border bg-surface p-4">
+            <ReviewCard data={review} />
           </section>
 
           <section className="rounded-lg border border-border bg-surface p-4">
@@ -245,6 +271,7 @@ export function CardDetailPage() {
                   repoPath={repo.path}
                   mergeMethod={repo.merge_method}
                   ready={status.column === "Ready to test"}
+                  gate={review?.gate}
                   onMerged={() => void refetch()}
                 />
                 {/* Recovery, not a second way to ship: only once the PR merged (T1-8). */}
@@ -267,7 +294,9 @@ export function CardDetailPage() {
 
           <section className="rounded-lg border border-border bg-surface p-4">
             <h2 className="mb-2 text-body font-semibold text-gray-200">
-              {status.column === "Shipped" ? "Deploy runs" : "Workflow runs"}
+              {status.column === "Merged" || status.column === "Deployed"
+                ? "Deploy runs"
+                : "Workflow runs"}
             </h2>
             {status.runs.length ? (
               <ul className="flex flex-col gap-1.5">

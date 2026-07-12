@@ -14,12 +14,20 @@ let activeTimer: NodeJS.Timeout | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
 let busy = false;
 
-/** A ticket is "active" until its cached column reaches Shipped. */
+// Terminal columns: once a ticket is here, the fast 20s tick stops and the 5min
+// pollAll takes over. Merged is terminal too (T2-3) even though a deploy may
+// still be pending — otherwise a repo with no deploy pipeline would fast-poll
+// forever. The pollAll sweep still flips Merged → Deployed within ≤5min, and
+// catches reopened/reverted cards (S6).
+const TERMINAL_COLUMNS = new Set(["Merged", "Deployed"]);
+
+/** A ticket is "active" (fast-polled) until its cached column is terminal. */
 function isActive(ticketId: number): boolean {
   const row = getStatus(ticketId);
   if (!row) return true; // never polled → poll it
   try {
-    return (JSON.parse(row.payload_json) as { column?: string }).column !== "Shipped";
+    const column = (JSON.parse(row.payload_json) as { column?: string }).column;
+    return !column || !TERMINAL_COLUMNS.has(column);
   } catch {
     return true;
   }

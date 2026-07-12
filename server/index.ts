@@ -16,6 +16,8 @@ import { chatRouter } from "./routes/chat.js";
 import { ticketsRouter } from "./routes/tickets.js";
 import { summaryRouter } from "./routes/summary.js";
 import { diffRouter } from "./routes/diff.js";
+import { costRouter } from "./routes/cost.js";
+import { reviewRouter } from "./routes/review.js";
 import { startPoller } from "./poller/scheduler.js";
 import { boardRouter } from "./routes/board.js";
 import { safeMessage } from "./lib/redaction.js";
@@ -89,6 +91,8 @@ api.use("/chat", chatRouter);
 api.use("/tickets", ticketsRouter);
 api.use("/tickets", summaryRouter); // T1-5: GET /tickets/:id/summary
 api.use("/tickets", diffRouter); // T2-1: GET /tickets/:id/diff
+api.use("/tickets", costRouter); // T2-4: GET /tickets/:id/cost
+api.use("/tickets", reviewRouter); // T2-5: GET /tickets/:id/review
 api.use("/board", boardRouter);
 api.use("/activity", activityRouter);
 api.use("/github", githubAppRouter); // #2: manifest registration + install callback
