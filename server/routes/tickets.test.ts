@@ -108,6 +108,12 @@ function fakeProvider(mergedAfter = true): GitProvider {
     }),
     getPRStatus: async (): Promise<PRStatus> => prStatus({ merged: mergedAfter }),
     readFile: async (_ref: unknown, path: string): Promise<string | null> => reviewFiles[path] ?? null,
+    // fetchReview lists the review dir at the PR head ref, then reads each .md (#34).
+    listFiles: async (_ref: unknown, path: string): Promise<string[]> =>
+      Object.keys(reviewFiles)
+        .filter((p) => p.startsWith(`${path}/`))
+        .map((p) => p.slice(path.length + 1))
+        .filter((n) => n.length > 0 && !n.includes("/")),
     getWorkflowRuns: async (): Promise<Run[]> => [],
     getRateLimit: async () => ({ limit: null, remaining: null, reset: null }),
     discoverRepos: async () => [],

@@ -1,14 +1,14 @@
 ---
 id: 34
 title: "CI review step emits the review-artifact triple into the repo"
-status: open
+status: in-progress
 priority: high
 horizon: next
 hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-11
-updated: 2026-07-11
+updated: 2026-07-12
 prs: []
 refs:
   - "T2-5"

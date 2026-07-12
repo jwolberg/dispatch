@@ -286,11 +286,13 @@ export interface GitProvider {
   /**
    * A repo file's UTF-8 text, or null when it is missing or not decodable text
    * (binary). Repo-scoped; spec-chat reads through this so the seam guard keeps
-   * the tool executor off Octokit/gitbeaker directly (#27).
+   * the tool executor off Octokit/gitbeaker directly (#27). `ref` reads at a
+   * branch/tag/sha instead of the default branch — the review gate reads a PR's
+   * artifact off the PR head, which is not yet on the default branch (#34).
    */
-  readFile(repo: RepoRef, path: string): Promise<string | null>;
-  /** Entry names directly under a repo-relative directory (#27). */
-  listFiles(repo: RepoRef, path: string): Promise<string[]>;
+  readFile(repo: RepoRef, path: string, ref?: string): Promise<string | null>;
+  /** Entry names directly under a repo-relative directory (#27); `ref` as readFile (#34). */
+  listFiles(repo: RepoRef, path: string, ref?: string): Promise<string[]>;
   createIssue(repo: RepoRef, spec: SpecInput): Promise<IssueRef>;
   postComment(target: CommentTarget, body: string): Promise<void>;
   getIssue(repo: RepoRef, issueNumber: number): Promise<Issue>;

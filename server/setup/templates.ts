@@ -45,16 +45,30 @@ function read(rel: string): string {
  * `install-claude-action.sh` (#4 AC 11). Duplicating it in TypeScript is how the
  * two copies drift — the same mistake stage 1a fixed for the issue prompt.
  */
+/** Swap the auth placeholder for the mode's `with:` credential line. */
+function substituteAuth(template: string, file: string, mode: AuthMode): string {
+  if (!template.includes(AUTH_PLACEHOLDER)) {
+    throw new Error(`${file} no longer contains ${AUTH_PLACEHOLDER}`);
+  }
+  return template.replace(new RegExp(`^.*${AUTH_PLACEHOLDER}.*$`, "m"), AUTH_LINE[mode]);
+}
+
+/**
+ * `scripts/repo-ci/review.yml` — the pull_request review gate (T2-5 emission,
+ * #34). Reuses the same auth secret as claude.yml; it has no `@claude`-mention
+ * bot-author gate (it runs on every PR), so no allowed_bots substitution.
+ */
+export function reviewWorkflow(mode: AuthMode): string {
+  return substituteAuth(read("repo-ci/review.yml"), "repo-ci/review.yml", mode);
+}
+
 export function claudeWorkflow(mode: AuthMode, appBotLogin?: string | null): string {
   const template = read("repo-ci/claude.yml");
-  if (!template.includes(AUTH_PLACEHOLDER)) {
-    throw new Error(`repo-ci/claude.yml no longer contains ${AUTH_PLACEHOLDER}`);
-  }
   if (!template.includes(ALLOWED_BOTS_PLACEHOLDER)) {
     throw new Error(`repo-ci/claude.yml no longer contains ${ALLOWED_BOTS_PLACEHOLDER}`);
   }
 
-  let out = template.replace(new RegExp(`^.*${AUTH_PLACEHOLDER}.*$`, "m"), AUTH_LINE[mode]);
+  let out = substituteAuth(template, "repo-ci/claude.yml", mode);
 
   // An App-backed deployment files issues as `<slug>[bot]`, which claude-code-action
   // rejects unless allow-listed (#29). Inject the bot login; on the PAT-only path the
@@ -91,7 +105,7 @@ export function detectStack(fileTree: string[]): Stack {
 
 // Namespaced ci-* (#28): the deploy path and source dir are both `ci-<skill>`,
 // so Dispatch never overwrites a repo's own interactive plan/implement/debug.
-const SKILLS = ["ci-plan", "ci-implement", "ci-debug"] as const;
+const SKILLS = ["ci-plan", "ci-implement", "ci-debug", "ci-review"] as const;
 
 /**
  * Everything setup commits. `claude.yml` and the skills are ours and are kept at
@@ -103,6 +117,12 @@ export function templatesFor(mode: AuthMode, stack: Stack, appBotLogin?: string 
       path: ".github/workflows/claude.yml",
       content: claudeWorkflow(mode, appBotLogin),
       message: "ci: install claude-code-action (Dispatch)",
+    },
+    {
+      // T2-5 / #34 — the PR review gate that emits the artifact Ship reads.
+      path: ".github/workflows/review.yml",
+      content: reviewWorkflow(mode),
+      message: "ci: install Dispatch review gate",
     },
   ];
 

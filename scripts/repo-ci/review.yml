@@ -1,0 +1,63 @@
+# Dispatch review gate — emit the code-review artifact Dispatch's Ship gate reads.
+#
+# On every pull request, run the ci-review skill and commit the artifact triple
+#   .TerMinal/reviews/<pr>/<short_sha>.md   (verdict + test_status frontmatter)
+#   .TerMinal/reviews/<pr>/findings.json    (per-finding state)
+#   .TerMinal/reviews/<pr>/suggestions.json (non-blocking notes)
+# into the PR branch, matching the code-review agent contract. Dispatch reads
+# these at the PR head and refuses Ship unless verdict=approve, test_status=pass,
+# and there are zero open findings at medium or above (T2-5 / #15).
+#
+# Anti-recursion: `paths-ignore` on `.TerMinal/reviews/**` means the artifact
+# commit this workflow pushes does NOT re-trigger a review, and the commit itself
+# carries `[skip ci]`. The credential is the same secret setup already installed
+# (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY) — nothing new is written to the
+# repo.
+name: Dispatch Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - ".TerMinal/reviews/**"
+permissions:
+  contents: write # commit the artifact back to the PR branch
+  pull-requests: read
+concurrency:
+  # One review per PR; a new push cancels an in-flight review of the old commit.
+  group: dispatch-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Check out the PR head branch (not the detached merge ref) so the
+          # artifact commit can be pushed back to it, with full history so the
+          # review can diff against the base.
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        id: review
+        with:
+          __CLAUDE_AUTH_INPUT__
+          # Explicit default token (ADR-0006 [2]) — all the artifact commit needs.
+          github_token: ${{ github.token }}
+          # A static prompt runs claude-code-action in automation mode: it executes
+          # the ci-review skill non-interactively rather than waiting for an
+          # @claude mention. The skill writes the artifact files; it does not open
+          # a PR (Dispatch does that) and does not merge.
+          claude_args: |
+            --append-system-prompt "Run the ci-review skill in .claude/skills/ci-review to review pull request #${{ github.event.pull_request.number }} at head commit ${{ github.event.pull_request.head.sha }}. Write the review artifact triple under .TerMinal/reviews/${{ github.event.pull_request.number }}/ and nothing else. Do not open a pull request and do not merge."
+      - name: Commit the review artifact
+        run: |
+          git config user.name "dispatch-review[bot]"
+          git config user.email "dispatch-review[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain .TerMinal/reviews)" ]; then
+            git add .TerMinal/reviews
+            git commit -m "review: artifact for ${{ github.event.pull_request.head.sha }} [skip ci]"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          else
+            echo "ci-review produced no artifact changes to commit."
+          fi
