@@ -2,6 +2,24 @@
 
 Running log of decisions, deviations, and tradeoffs for human review.
 
+## 2026-07-12 — T2-2 / #12 (Inline diff comments as @claude steer)
+
+- **Reuses `POST /comment`, no second path (AC).** Clicking a diff line opens an
+  inline composer in `DiffView` that posts through `ticketsApi.comment(id, {
+  target: "pr" })` — the same route SteerBox uses. The resulting `@claude` run
+  surfaces on the card like any other run (no new run plumbing).
+- **The anchor can't silently retarget (the design note's whole point).** The
+  pure `web/src/lib/steerAnchor.ts` computes the new-file line number from the
+  hunk headers and formats an `@claude` comment that quotes the code AND names
+  the short sha it was made against. So a later push that renumbers lines leaves
+  the agent looking at the exact code the reviewer meant, at a named commit —
+  never a different line. `isAnchorOutdated` marks a comment stale once the head
+  moves. All three are unit-tested (`steerAnchor.test.ts`); the `DiffView`
+  wiring is verified by typecheck + eye per the suite's no-jsdom convention.
+- **Deletions anchor to the file, not a phantom new-file line** — a `-` line has
+  no line in the new file, so `newLineNumberAt` returns null and the composer
+  anchors to `file:0` with the removed code quoted.
+
 ## 2026-07-12 — T2-5 emission / #34 (CI emits the review-artifact triple)
 
 - **Found and fixed a latent gap in #15's read path.** `readFile` read the
