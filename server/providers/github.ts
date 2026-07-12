@@ -32,6 +32,7 @@ import type {
   RepoSummary,
   Run,
   RawWorkflowRun,
+  RunTiming,
   SpecInput,
 } from "./types.js";
 
@@ -658,6 +659,30 @@ export class GitHubProvider implements GitProvider {
         createdAt: r.created_at,
       }));
   }
+  async getRunTiming(repo: RepoRef, runId: string): Promise<RunTiming | null> {
+    const { owner, repo: name } = splitPath(repo.path);
+    const id = Number(runId);
+    if (!Number.isFinite(id)) return null;
+    try {
+      // The billing endpoint reports `billable[OS].total_ms` — GitHub's own
+      // billed duration, summed across runner OSes. This is what the user pays
+      // for, unlike run_duration_ms (wall-clock incl. queue time). Conditional so
+      // a re-open of a settled run's cost costs a 304, not a fresh call.
+      const data = await this.cond(`runusage:${owner}/${name}#${id}`, (headers) =>
+        this.octokit.actions.getWorkflowRunUsage({ owner, repo: name, run_id: id, headers })
+      );
+      const billable = (data.billable ?? {}) as Record<string, { total_ms?: number }>;
+      const billableMs = Object.values(billable).reduce((sum, os) => sum + (os.total_ms ?? 0), 0);
+      return { runId, billableMs };
+    } catch (err) {
+      // A run whose usage we cannot read is `unknown` (null), never zero. 404 on
+      // a purged run, 403 where the token lacks the Actions permission — both are
+      // "we don't know", which the cost view renders as unknown, not $0.
+      if (isNotFound(err) || httpStatus(err) === 403) return null;
+      throw err;
+    }
+  }
+
   async getWorkflowRunsRaw(repo: RepoRef, ref: string): Promise<RawWorkflowRun[]> {
     const { owner, repo: name } = splitPath(repo.path);
     // Not conditional/ETag-cached: the canary is a one-shot bounded poll, and a
