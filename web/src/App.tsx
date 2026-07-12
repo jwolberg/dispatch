@@ -23,9 +23,9 @@ export function App() {
   const { data: health } = usePolling(() => api.get<Health>("/health"), 30_000);
   return (
     <div className="flex min-h-full flex-col">
-      <header className="flex items-center gap-6 border-b border-border bg-surface px-5 py-3">
+      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-border bg-surface px-5 py-3">
         <span className="text-[15px] font-semibold tracking-tight text-white">Dispatch</span>
-        <nav className="flex gap-1">
+        <nav className="flex flex-wrap gap-1">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
