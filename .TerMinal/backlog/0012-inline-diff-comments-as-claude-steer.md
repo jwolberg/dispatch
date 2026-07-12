@@ -1,14 +1,14 @@
 ---
 id: 12
 title: "Inline diff comments that post as @claude steer comments"
-status: open
+status: in-progress
 priority: medium
 horizon: next
 hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-12
 prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
