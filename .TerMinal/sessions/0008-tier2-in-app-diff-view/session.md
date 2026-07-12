@@ -3,13 +3,23 @@ id: 8
 slug: tier2-in-app-diff-view
 anchor: SES-0008
 title: "Tier 2 kickoff — #11 in-app diff view"
-status: active
+status: closed
 started: 2026-07-11T00:00:00Z
-ended: null
+ended: 2026-07-12T14:30:00Z
 goal: "Tier 2 track — start with #11 (in-app diff view)"
-tickets: [11]
-branches: [feat/11-in-app-diff-view]
-prs: ["https://github.com/jwolberg/dispatch/pull/44"]
+tickets: [11, 13, 14, 15, 34, 12]
+branches:
+  - feat/11-in-app-diff-view
+  - feat/13-merged-deployed-split
+  - feat/14-cost-telemetry
+  - feat/15-review-gate
+  - feat/34-ci-review-emit
+  - feat/12-inline-diff-steer
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/44"
+  - "https://github.com/jwolberg/dispatch/pull/48"
+  - "https://github.com/jwolberg/dispatch/pull/50"
+  - "https://github.com/jwolberg/dispatch/pull/51"
 related_research: []
 related_docs:
   - "docs/BUILD_PLAN-v2.md"
@@ -106,7 +116,7 @@ needed before starting.
 
 - [x] commit per ticket
 - [x] push branch, open PR #44, link url into #11 `prs:`
-- [ ] (after human merge) `/merge-sync` to close #11
+- [x] merged (#44) + `/merge-sync` closed #11
 
 ## [4] Log
 
@@ -139,12 +149,52 @@ payload. Flat-cost constant; revisit if real PRs trip it.
 
 ## [6] Outcomes
 
-_(filled by /session-end)_
+The session grew from "start #11" into the whole Tier 2 opening: **six tickets
+shipped, all merged to `main`**, each built TDD-first and `npm run verify` green.
+
+| Ticket | PR | What shipped |
+|---|---|---|
+| #11 (T2-1) | #44 | In-app diff view — `GET /tickets/:id/diff` (bounded via `boundDiff`, cond-cached) + lazy `DiffSection` over pure `parsePatch` |
+| #13 (T2-3) | #45→#48 | Split Shipped → Merged/Deployed in `deriveColumn`, reusing the fetched deploy runs; T0-2 precedence table extended |
+| #14 (T2-4) | #46→#48 | Per-ticket cost — `ticketSpend()` + `getRunTiming()` seam (GitHub billed ms; GitLab→null) + `GET /cost`; `unknown` ≠ $0 |
+| #15 (T2-5) | #47→#48 | Fail-closed Ship gate — pure `evaluateShipGate`, server re-validated in `POST /merge`, render + gate on the button |
+| #34 (T2-5 emission) | #50 | CI `review.yml` + `ci-review` skill emit the artifact triple; **read-path fix** so `fetchReview` reads at the PR head (a latent #15 gap) |
+| #12 (T2-2) | #51 | Inline diff-line comments post as `@claude` steer via the existing `POST /comment`; anchor quotes code + sha so it can't silently retarget |
+
+Reconciled by `/merge-sync` (chore PRs #49, #52) — all six tickets `closed`,
+`bin/tickets in-progress` empty.
+
+### [6.1] Merge-topology incident (recovered, no loss)
+
+Twice, stacked/parallel PRs were merged into their **intermediate bases** (or
+after a dependency landed on main), leaving branches conflicting: the #13/#14/#15
+stack tangled (#15 stranded in feat/14 → recovered via the consolidation PR
+**#48**), and #12/#34 hit trivial `implementation-notes.md` conflicts. Each was a
+mechanical merge-of-main + conflict resolution + re-verify. Root cause and the
+avoidance rule are captured as a learning (see [8]).
 
 ## [7] Follow-ups
 
-_(filled by /session-end)_
+- **#34 real-CI verification** — the one thing untestable here: `claude-code-action`'s
+  runtime writing the artifact + the commit-step push. Needs one live onboarded-repo
+  PR. **Filed as #35** (now, high, HITL).
+- **#33** (open, future) — precise deploy-run identification vs main-branch CI (from #13).
+- **Auth track #16 → #17** (open) — design-first per the user; OIDC ADR before code.
+  See [[auth-sensitive-design-first]].
+- **#18** (open) — phone-width nav overflow bug, still unaddressed.
+- **HITL opens** #19 (deploy-doc vs live IAM) and #26 (re-onboard `situation`) — need the human.
+- Batch **code-review agent never ran** on this session's PRs (the human merged
+  early). Code was test-gate-green, but no six-axis review pass was done.
 
 ## [8] Documentation
 
-_(filled by /session-end)_
+- **architecture.md §7** updated (in #13) — Merged vs Deployed columns + the
+  no-deploy-terminates-at-Merged rule; and the poller cadence note.
+- **docs/implementation-notes.md** — a dated entry per ticket (#11/#13/#14/#15/#34/#12)
+  with the load-bearing decisions.
+- **New learning** captured this session: `docs/learnings/` — the review-gate
+  read-path invariant (an artifact for an open PR lives on the PR head, not the
+  default branch; `readFile` must read at the head ref) + the stacked-PR
+  intermediate-base-merge tangle and its avoidance rule.
+- **Still worth documenting (follow-up):** an ADR for the fail-closed review-gate
+  contract (#15) as the TerMinal↔Dispatch integration seam — deferred, not lost.
