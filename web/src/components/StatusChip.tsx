@@ -5,7 +5,8 @@ const STYLES: Record<string, { cls: string; icon: string }> = {
   Queued: { cls: "text-status-info", icon: "•" },
   Building: { cls: "text-status-wait", icon: "◐" },
   "Ready to test": { cls: "text-status-ok", icon: "✓" },
-  Shipped: { cls: "text-status-ok", icon: "🚀" },
+  Merged: { cls: "text-status-ok", icon: "🔀" },
+  Deployed: { cls: "text-status-ok", icon: "🚀" },
   Blocked: { cls: "text-status-fail", icon: "✕" },
 };
 

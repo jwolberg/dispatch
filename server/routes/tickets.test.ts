@@ -45,7 +45,7 @@ function prStatus(over: Partial<PRStatus> = {}): PRStatus {
 
 function payload(pr: PRStatus | null): StatusPayload {
   return {
-    column: pr?.merged ? "Shipped" : pr ? "Ready to test" : "Queued",
+    column: pr?.merged ? "Merged" : pr ? "Ready to test" : "Queued",
     issue: { number: 1, title: "Do it", state: "open", url: "https://example.test/i/1", body: "" },
     progressComment: null,
     pr,
@@ -213,12 +213,14 @@ describe("POST /api/tickets/:id/merge — the ship gate", () => {
       expect(activityTypes()).toContain("merged");
     });
 
-    // F6.3: the card must reach Shipped without waiting for the next 20s poll.
-    it("reconciles immediately so the column flips to Shipped", async () => {
+    // F6.3: the card must leave the in-flight columns without waiting for the
+    // next 20s poll. With no deploy run in this fixture, that terminal state is
+    // Merged (T2-3); Deployed follows once a default-branch deploy succeeds.
+    it("reconciles immediately so the column flips to Merged", async () => {
       const ticketId = seed(prStatus());
       await merge(ticketId);
       const row = getStatus(ticketId)!;
-      expect((JSON.parse(row.payload_json) as StatusPayload).column).toBe("Shipped");
+      expect((JSON.parse(row.payload_json) as StatusPayload).column).toBe("Merged");
     });
   });
 

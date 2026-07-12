@@ -313,7 +313,7 @@ ticketsRouter.post("/:id/merge", async (req, res) => {
       url: pr.url,
       occurred_at: new Date().toISOString(),
     });
-    await safeReconcile(ticket); // flip to Shipped without waiting for the next poll
+    await safeReconcile(ticket); // flip to Merged/Deployed without waiting for the next poll
     res.json({ merged: true, sha: result.sha });
   } catch (err) {
     // Surface the provider error verbatim with a PR link (F6.4).

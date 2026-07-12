@@ -20,7 +20,14 @@ import { safeMessage } from "../lib/redaction.js";
 import { httpStatus } from "../lib/errors.js";
 import { markRateLimited, retryAfter } from "../lib/ratelimit.js";
 
-export type Column = "Spec" | "Queued" | "Building" | "Ready to test" | "Shipped" | "Blocked";
+export type Column =
+  | "Spec"
+  | "Queued"
+  | "Building"
+  | "Ready to test"
+  | "Merged"
+  | "Deployed"
+  | "Blocked";
 
 export interface StatusPayload {
   column: Column;
@@ -30,7 +37,7 @@ export interface StatusPayload {
   /**
    * A revert of `pr`, opened by the user on the provider's site (ADR-0004).
    * Separate from `pr` on purpose: it must never displace the shipping PR, and
-   * a card with an open revert is still Shipped.
+   * a card with an open revert is still Merged/Deployed.
    */
   revertPr: RevertRef | null;
   runs: Run[];
@@ -38,15 +45,24 @@ export interface StatusPayload {
 
 /**
  * Derive the single board column from provider state (PRD F4.1). Columns are
- * computed every poll, never stored as authoritative (ARCH §6/§7). Shipped and
- * Blocked take precedence over in-flight states.
+ * computed every poll, never stored as authoritative (ARCH §6/§7). The terminal
+ * Merged/Deployed states and Blocked take precedence over in-flight states.
  */
 export function deriveColumn(
   issueState: "open" | "closed",
   pr: PRStatus | null,
   runs: Run[]
 ): Column {
-  if (issueState === "closed" || pr?.merged) return "Shipped";
+  // Terminal, checked first so a failing post-merge deploy never drags a merged
+  // card back to Blocked (T2-3). When shipped, the caller has already switched
+  // the runs ref to the default branch (see reconcileTicket), so `runs` here are
+  // the deploy runs: a successful one means Deployed, otherwise the card
+  // terminates at Merged — including a repo with no deploy pipeline (no runs),
+  // a deploy still in progress, or a failed deploy. `Merged` is the honest
+  // resting state; `Deployed` is claimed only on observed success.
+  if (issueState === "closed" || pr?.merged) {
+    return runs.some((r) => r.state === "success") ? "Deployed" : "Merged";
+  }
 
   const runFailed = runs.some((r) => r.state === "failure");
   const checkFailed = pr?.checks.some((c) => c.state === "failure") ?? false;

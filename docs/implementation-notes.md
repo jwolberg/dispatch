@@ -2,6 +2,27 @@
 
 Running log of decisions, deviations, and tradeoffs for human review.
 
+## 2026-07-11 — T2-3 / #13 (Split Shipped into Merged → Deployed)
+
+- **Renamed the terminal `Shipped` column into two: `Merged` and `Deployed`.**
+  `deriveColumn` returns `Deployed` iff a default-branch run succeeded, else
+  `Merged` (covers no deploy pipeline, in-progress, and failed deploys). The
+  merged/closed branch is still checked first, so a failing post-merge run never
+  drags a card to `Blocked` — the T0-2 precedence table is extended, not
+  reordered.
+- **Deploy signal = any successful default-branch run.** The poller already
+  switches the runs ref to the default branch when shipped, so this reuses those
+  runs — no extra API call (AC). Limitation: a repo whose main-branch CI (not a
+  deploy) passes will read as `Deployed`. Distinguishing a true deploy workflow
+  from main CI needs a per-repo deploy-workflow selector — **filed as a
+  follow-up** (horizon: future). Documented in architecture.md §7.
+- **`Merged` is terminal for the fast poll.** Scheduler's `isActive` now treats
+  both `Merged` and `Deployed` as terminal, so a no-deploy repo doesn't fast-poll
+  forever; the 5-min `pollAll` sweep still advances `Merged` → `Deployed`.
+- **Board order:** `… Ready to test → Merged → Deployed → Blocked`. Column list
+  is hand-synced across server (`board.ts`), web fallback (`Board.tsx`), and
+  `verdict.ts` COLUMNS, as the existing convention requires.
+
 ## 2026-06-11 — P1-T1 (Skeleton: scaffold + dev orchestration)
 - **No `/docs/spec.md`.** Treated `PRD-dispatch.md` as the spec and `ARCHITECTURE.md` as structural clarification (matches BUILD_PLAN assumption). No scope added.
 - **Single root `package.json`** (not workspaces) running both `server/` and `web/` via `concurrently`. Simplest for a single local app.

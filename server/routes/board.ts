@@ -7,7 +7,7 @@ import type { StatusPayload } from "../poller/reconcile.js";
 
 export const boardRouter = Router();
 
-const COLUMNS = ["Spec", "Queued", "Building", "Ready to test", "Shipped", "Blocked"];
+const COLUMNS = ["Spec", "Queued", "Building", "Ready to test", "Merged", "Deployed", "Blocked"];
 
 function repoBrief(repo: RepoRow) {
   return { id: repo.id, path: repo.path, provider: repo.provider, host: repo.host };

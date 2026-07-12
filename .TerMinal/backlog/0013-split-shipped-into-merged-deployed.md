@@ -1,14 +1,14 @@
 ---
 id: 13
 title: "Split Shipped into Merged → Deployed"
-status: open
+status: in-progress
 priority: medium
 horizon: next
 hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"

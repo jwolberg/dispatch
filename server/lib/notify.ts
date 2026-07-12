@@ -20,7 +20,9 @@ function emojiFor(type: string): string {
         return "⛔";
       case "Building":
         return "🔨";
-      case "Shipped":
+      case "Merged":
+        return "🔀";
+      case "Deployed":
         return "🚀";
       case "Queued":
         return "📋";

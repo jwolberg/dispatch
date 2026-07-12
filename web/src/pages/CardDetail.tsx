@@ -41,8 +41,10 @@ type Status = NonNullable<TicketDetail["status"]>;
 function nextHint(s: Status): string {
   const running = s.runs.some((r) => r.state === "queued" || r.state === "in_progress");
   switch (s.column) {
-    case "Shipped":
-      return "Merged and closed — nothing left to do.";
+    case "Deployed":
+      return "Merged and deployed — nothing left to do.";
+    case "Merged":
+      return "Merged. Waiting on the default-branch deploy to finish.";
     case "Ready to test":
       return "Checks are green. Preview the PR, then Ship.";
     case "Blocked":
@@ -246,7 +248,9 @@ export function CardDetailPage() {
 
           <section className="rounded-lg border border-border bg-surface p-4">
             <h2 className="mb-2 text-body font-semibold text-gray-200">
-              {status.column === "Shipped" ? "Deploy runs" : "Workflow runs"}
+              {status.column === "Merged" || status.column === "Deployed"
+                ? "Deploy runs"
+                : "Workflow runs"}
             </h2>
             {status.runs.length ? (
               <ul className="flex flex-col gap-1.5">

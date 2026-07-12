@@ -19,7 +19,13 @@ import type {
 // T0-2 — deriveColumn is the board's whole read path (PRD F4.1, ARCH §7).
 // Columns are derived every poll and never stored, so this function alone
 // decides what the user sees. The precedence it implements is:
-//   Shipped > Blocked > (PR open ? Building : Ready to test) > Building > Queued
+//   Merged/Deployed > Blocked > (PR open ? Building : Ready to test) > Building > Queued
+//
+// T2-3 (#13) split the terminal Shipped state: a merged ticket is `Merged`, and
+// only becomes `Deployed` once a default-branch deploy run has succeeded. The
+// merged/closed branch is still checked FIRST, so a failing post-merge run never
+// drags a merged ticket to Blocked — it stays Merged. That precedence is the
+// regression guard this table pins.
 
 function check(state: Check["state"], name = "ci"): Check {
   return { name, state, url: null };
@@ -101,21 +107,34 @@ describe("deriveColumn", () => {
     });
   });
 
-  describe("Shipped", () => {
-    it("is Shipped when the issue is closed", () => {
-      expect(deriveColumn("closed", null, [])).toBe("Shipped");
+  describe("Merged and Deployed (T2-3)", () => {
+    // The runs deriveColumn sees on the merged/closed branch are the
+    // default-branch runs the caller fetched for exactly this case
+    // (reconcile.ts). A successful one is the deploy; its absence terminates
+    // the card at Merged rather than pinning it mid-board.
+    it("is Merged when the issue is closed and no deploy run has succeeded", () => {
+      expect(deriveColumn("closed", null, [])).toBe("Merged");
     });
 
-    it("is Shipped when the PR merged, even with the issue still open", () => {
-      expect(deriveColumn("open", pr({ state: "merged", merged: true }), [])).toBe("Shipped");
+    it("is Merged when the PR merged (issue still open) and nothing deployed yet", () => {
+      expect(deriveColumn("open", pr({ state: "merged", merged: true }), [])).toBe("Merged");
     });
 
-    // Shipped is checked first, so a failing post-merge deploy run does not drag
-    // a merged ticket back to Blocked. This is the documented precedence; if it
-    // ever needs to change, T2-3 (Merged → Deployed) is the place to do it.
-    it("outranks Blocked — a merged PR with a failing run is still Shipped", () => {
-      expect(deriveColumn("open", pr({ merged: true }), [run("failure")])).toBe("Shipped");
-      expect(deriveColumn("closed", null, [run("failure")])).toBe("Shipped");
+    it("is Deployed once a default-branch deploy run has succeeded", () => {
+      expect(deriveColumn("open", pr({ merged: true }), [run("success")])).toBe("Deployed");
+      expect(deriveColumn("closed", null, [run("success")])).toBe("Deployed");
+    });
+
+    // AC: a failed deploy run does not read as Deployed — and, because the
+    // merged branch is checked first, it does not drag the card to Blocked either.
+    it("stays Merged when the deploy run failed — not Deployed, not Blocked", () => {
+      expect(deriveColumn("open", pr({ merged: true }), [run("failure")])).toBe("Merged");
+      expect(deriveColumn("closed", null, [run("failure")])).toBe("Merged");
+    });
+
+    it("stays Merged while the deploy run is still in progress", () => {
+      expect(deriveColumn("open", pr({ merged: true }), [run("in_progress")])).toBe("Merged");
+      expect(deriveColumn("closed", null, [run("queued")])).toBe("Merged");
     });
   });
 
@@ -138,7 +157,7 @@ describe("deriveColumn", () => {
 // Because the revert happens on the provider's site, reconcile is the only
 // place that ever learns the revert PR exists. Two things must hold:
 //   1. the revert PR is surfaced (`revertPr`), so the card is not an orphan;
-//   2. it does NOT displace the shipping PR, and the column stays Shipped.
+//   2. it does NOT displace the shipping PR, and the column stays Merged.
 // (2) is the regression guard — see ADR-0004 [5].
 
 describe("reconcileTicket — revert PR tracking", () => {
@@ -189,7 +208,9 @@ describe("reconcileTicket — revert PR tracking", () => {
 
     expect(payload?.pr?.number).toBe(7); // the shipping PR, not the revert
     expect(payload?.revertPr).toEqual(theRevert);
-    expect(payload?.column).toBe("Shipped");
+    // No deploy run in this fixture (getWorkflowRuns → []), so the terminal
+    // state is Merged, not Deployed. The revert-tracking property is unchanged.
+    expect(payload?.column).toBe("Merged");
   });
 
   it("does not look for a revert PR when nothing has merged", async () => {
