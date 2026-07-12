@@ -1,7 +1,7 @@
 ---
 id: 34
 title: "CI review step emits the review-artifact triple into the repo"
-status: in-progress
+status: closed
 priority: high
 horizon: next
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-11
 updated: 2026-07-12
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/50"
+prs: []
 refs:
   - "T2-5"
   - "scripts/repo-ci/"
