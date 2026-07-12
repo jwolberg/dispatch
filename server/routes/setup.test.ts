@@ -4,7 +4,7 @@ import { withServer, resetDb } from "../test/helpers.js";
 import { setProviderFactory } from "../providers/index.js";
 import { reposRouter } from "./repos.js";
 import { insertRepo, updateRepoContext } from "../db/repos.js";
-import { detectStack, claudeWorkflow, SECRET_NAME } from "../setup/templates.js";
+import { detectStack, claudeWorkflow, reviewWorkflow, SECRET_NAME } from "../setup/templates.js";
 import { SqliteInstallationStore } from "../db/installations.js";
 import { getDb } from "../db/migrate.js";
 import { loadEncryptionKey, ENCRYPTION_KEY_ENV } from "../lib/crypto.js";
@@ -81,11 +81,14 @@ describe("POST /api/repos/:id/setup", () => {
     const paths = putFile.mock.calls.map(([f]) => f.path);
     expect(paths).toContain(".github/workflows/claude.yml");
     expect(paths).toContain(".github/workflows/ci.yml");
+    // T2-5 / #34 — the review gate workflow that emits the Ship-gate artifact.
+    expect(paths).toContain(".github/workflows/review.yml");
     // #28: namespaced under ci-* so they coexist with a repo's own interactive
     // plan/implement/debug skills instead of silently overwriting them.
     expect(paths).toContain(".claude/skills/ci-plan/SKILL.md");
     expect(paths).toContain(".claude/skills/ci-implement/SKILL.md");
     expect(paths).toContain(".claude/skills/ci-debug/SKILL.md");
+    expect(paths).toContain(".claude/skills/ci-review/SKILL.md");
     // And Dispatch must NEVER write the bare paths — that is the whole bug.
     expect(paths).not.toContain(".claude/skills/plan/SKILL.md");
     expect(paths).not.toContain(".claude/skills/implement/SKILL.md");
@@ -258,5 +261,30 @@ describe("templates", () => {
     const wf = claudeWorkflow("oauth");
     expect(wf).not.toContain("allowed_bots");
     expect(wf).not.toContain("__ALLOWED_BOTS_INPUT__");
+  });
+
+  // T2-5 / #34 — the review gate emitter.
+  it("reviewWorkflow substitutes the same auth secret, no placeholder left", () => {
+    const oauth = reviewWorkflow("oauth");
+    expect(oauth).toContain("claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}");
+    expect(oauth).not.toContain("__CLAUDE_AUTH_INPUT__");
+    expect(reviewWorkflow("apikey")).toContain("anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}");
+  });
+
+  it("review.yml triggers on pull_request and cannot recurse on its own artifact", () => {
+    const wf = reviewWorkflow("oauth");
+    expect(wf).toMatch(/on:\s*\n\s*pull_request:/);
+    // Anti-recursion: the artifact commit under .TerMinal/reviews/** must not
+    // re-trigger the review, or every review would spawn another (AC).
+    expect(wf).toContain("paths-ignore:");
+    expect(wf).toContain(".TerMinal/reviews/**");
+    expect(wf).toContain("[skip ci]");
+  });
+
+  it("review.yml writes the artifact under the reviewed PR's review dir", () => {
+    const wf = reviewWorkflow("oauth");
+    expect(wf).toContain(".TerMinal/reviews/${{ github.event.pull_request.number }}/");
+    // It must not open a PR or merge — Dispatch owns those.
+    expect(wf).toContain("Do not open a pull request and do not merge");
   });
 });
