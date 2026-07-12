@@ -12,6 +12,7 @@ import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
 import { RevertButton } from "../components/RevertButton.js";
 import { TicketCost } from "../components/TicketCost.js";
+import { DiffView } from "../components/DiffView.js";
 import { ago } from "../lib/time.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
@@ -88,6 +89,23 @@ function ProgressBody({ body }: { body: string }) {
         );
       })}
     </div>
+  );
+}
+
+// T2-1 — the diff is depth for a professional, and heavier than the hero
+// summary. Mount DiffView (which fetches) only once the reviewer opens the
+// disclosure, so the common "glance at the card" path pays nothing for it.
+function DiffSection({ ticketId, headSha }: { ticketId: number; headSha: string | null }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="lg:col-span-2 rounded-lg border border-border bg-surface p-4">
+      <details onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+        <summary className="cursor-pointer text-body font-semibold text-gray-200">
+          Diff
+        </summary>
+        <div className="mt-3">{open && <DiffView ticketId={ticketId} headSha={headSha} />}</div>
+      </details>
+    </section>
   );
 }
 
@@ -271,6 +289,8 @@ export function CardDetailPage() {
               <p className="text-body text-gray-500">No linked PR yet.</p>
             )}
           </section>
+
+          <DiffSection ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
 
           <section className="rounded-lg border border-border bg-surface p-4">
             <h2 className="mb-2 text-body font-semibold text-gray-200">
