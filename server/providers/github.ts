@@ -229,10 +229,10 @@ export class GitHubProvider implements GitProvider {
     };
   }
 
-  async readFile(repo: RepoRef, path: string): Promise<string | null> {
+  async readFile(repo: RepoRef, path: string, ref?: string): Promise<string | null> {
     const { owner, repo: name } = splitPath(repo.path);
     try {
-      const { data } = await this.octokit.repos.getContent({ owner, repo: name, path });
+      const { data } = await this.octokit.repos.getContent({ owner, repo: name, path, ...(ref ? { ref } : {}) });
       if (Array.isArray(data) || !("content" in data) || !data.content) return null;
       const buf = Buffer.from(data.content, "base64");
       // A NUL byte means it is not decodable text — spec-chat wants source, not
@@ -245,10 +245,10 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
-  async listFiles(repo: RepoRef, path: string): Promise<string[]> {
+  async listFiles(repo: RepoRef, path: string, ref?: string): Promise<string[]> {
     const { owner, repo: name } = splitPath(repo.path);
     try {
-      const { data } = await this.octokit.repos.getContent({ owner, repo: name, path });
+      const { data } = await this.octokit.repos.getContent({ owner, repo: name, path, ...(ref ? { ref } : {}) });
       if (!Array.isArray(data)) return [];
       return data.map((e) => e.name);
     } catch (err) {

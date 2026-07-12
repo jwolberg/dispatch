@@ -1,0 +1,14 @@
+{
+  "pr": "acme/widgets#7",
+  "updated_at": "2026-07-12T14:00:00Z",
+  "suggestions": [
+    {
+      "id": "3c4d5e6f",
+      "title": "Consider extracting the limiter into shared middleware",
+      "category": "architecture",
+      "file": "server/join.ts:40",
+      "first_seen_sha": "1a2b3c4",
+      "status": "open"
+    }
+  ]
+}

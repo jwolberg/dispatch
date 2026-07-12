@@ -1,0 +1,20 @@
+{
+  "pr": "acme/widgets#7",
+  "updated_at": "2026-07-12T14:00:00Z",
+  "findings": [
+    {
+      "id": "9f8e7d6c",
+      "title": "Rate-limit window is not documented",
+      "severity": "low",
+      "category": "quality",
+      "file": "server/join.ts:42",
+      "confidence": 7,
+      "first_seen_sha": "1a2b3c4",
+      "first_seen_at": "2026-07-12T14:00:00Z",
+      "status": "open",
+      "status_changed_at": "2026-07-12T14:00:00Z",
+      "status_changed_by": "auto:code-review",
+      "resolved_in_sha": null
+    }
+  ]
+}

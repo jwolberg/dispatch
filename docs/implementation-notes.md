@@ -20,6 +20,38 @@ Running log of decisions, deviations, and tradeoffs for human review.
   no line in the new file, so `newLineNumberAt` returns null and the composer
   anchors to `file:0` with the removed code quoted.
 
+## 2026-07-12 — T2-5 emission / #34 (CI emits the review-artifact triple)
+
+- **Found and fixed a latent gap in #15's read path.** `readFile` read the
+  **default branch** (no ref), but an open PR's review artifact lives on the PR
+  **head**, not main — so #15's gate could never read a real artifact and would
+  block *every* Ship. Added an optional `ref` to `readFile`/`listFiles` (both
+  adapters; existing callers unchanged) and rewrote `fetchReview` to read at the
+  PR head ref. It **lists** the review dir and reads each `<sha>.md`, because the
+  artifact commit shifts the head SHA yet its tree still contains the file; the
+  newest `generated:` one wins (the check gate stops a stale review from
+  shipping).
+- **Emission via the existing #4 install path.** New `scripts/repo-ci/review.yml`
+  + `scripts/repo-skills/ci-review/SKILL.md`, wired into `templatesFor()` and
+  embedded (`npm run embed:templates`). Auth reuses the same secret as claude.yml
+  (factored `substituteAuth`); the review workflow needs no `allowed_bots` (it
+  runs on `pull_request`, not an `@claude` mention).
+- **Anti-recursion (AC).** `pull_request` trigger with `paths-ignore:
+  .TerMinal/reviews/**`, and the artifact commit carries `[skip ci]` — the review
+  can't re-trigger itself.
+- **Format contract pinned (AC 3).** A committed sample
+  (`server/review/__fixtures__/sample-review/`) round-trips through #15's
+  `parseReviewArtifact` + `evaluateShipGate` in `sample-contract.test.ts`. If the
+  skill's emitted format ever drifts from the gate's parser, that test fails.
+- **⚠️ Not verified against real CI.** All the *deterministic* pieces are tested
+  (parser contract, install wiring, anti-recursion markers, auth substitution,
+  read-path), but the **runtime behavior of `claude-code-action` in automation
+  mode** (that it writes the three files as the skill instructs, and that the
+  commit step pushes cleanly to the PR head) is NOT exercised here — CI can't run
+  in this environment. Per the sample-never-infer rule, this needs one real
+  onboarded-repo PR to confirm end-to-end before trusting it. Filed as the
+  verification step in the ticket.
+
 ## 2026-07-11 — T2-5 / #15 (Review-artifact contract + Ship gated on verdict)
 
 - **Split the ticket.** #15 delivers the **consumption + gate** side (ACs 2–7);
