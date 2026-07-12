@@ -1,14 +1,14 @@
 ---
 id: 11
 title: "In-app diff view (getPRDiff landed early, in #6)"
-status: open
+status: in-progress
 priority: medium
 horizon: next
 hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-11
 prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"

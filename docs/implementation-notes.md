@@ -2,6 +2,30 @@
 
 Running log of decisions, deviations, and tradeoffs for human review.
 
+## 2026-07-11 — T2-1 / #11 (In-app diff view)
+
+- **Reused `boundDiff` for AC #3's byte cap** rather than adding a new byte-cap
+  to `providers/diff.ts`. `server/anthropic/bound-diff.ts` already clips patches
+  to a byte budget and reports truncation (`BoundedDiff.truncated` + per-file
+  `patchTruncated`), tested in `bound-diff.test.ts`. The diff route calls it with
+  a *view* budget of **256 KB** (`DIFF_VIEW_PATCH_BUDGET_BYTES`), far above the
+  summarizer's 24 KB, because a human wants the whole real PR. Net: no change to
+  the `PRFileDiff` type or the shared adapter table — smaller blast radius.
+- **AC #5 was already satisfied at the provider layer.** `github.ts`/`gitlab.ts`
+  `getPRDiff()` route through `this.cond(...)` (the conditional-request cache), so
+  the new route inherits ETag caching for free; no new cache machinery.
+- **Frontend TDD target is the pure parser, not a rendered component.** The suite
+  is `environment: node` with no jsdom (vitest.config.ts: "components verified by
+  typecheck and by eye"). So the tested unit is `web/src/lib/diffLines.ts`
+  (`parsePatch` — line direction classification); `DiffView.tsx` is a thin
+  renderer over it.
+- **Diff mounts lazily on disclosure open** (`DiffSection` in CardDetail). The
+  diff is heavier than the hero summary and this app is cost-sensitive, so the
+  common "glance at the card" path pays nothing until the reviewer opens "Diff".
+- **Scope held.** Deep review still links out to the provider (ticket's stated
+  intent); truncated/binary/omitted patches all surface a link-out line rather
+  than pretending to be whole.
+
 ## 2026-06-11 — P1-T1 (Skeleton: scaffold + dev orchestration)
 - **No `/docs/spec.md`.** Treated `PRD-dispatch.md` as the spec and `ARCHITECTURE.md` as structural clarification (matches BUILD_PLAN assumption). No scope added.
 - **Single root `package.json`** (not workspaces) running both `server/` and `web/` via `concurrently`. Simplest for a single local app.
