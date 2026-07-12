@@ -9,7 +9,7 @@ ended: null
 goal: "Tier 2 track — start with #11 (in-app diff view)"
 tickets: [11]
 branches: [feat/11-in-app-diff-view]
-prs: []
+prs: ["https://github.com/jwolberg/dispatch/pull/44"]
 related_research: []
 related_docs:
   - "docs/BUILD_PLAN-v2.md"
@@ -105,7 +105,7 @@ needed before starting.
 ### [3.3] Ticket 0011 — land
 
 - [x] commit per ticket
-- [ ] `/pr-creation` — push branch, open PR, link url into #11 `prs:`
+- [x] push branch, open PR #44, link url into #11 `prs:`
 - [ ] (after human merge) `/merge-sync` to close #11
 
 ## [4] Log
