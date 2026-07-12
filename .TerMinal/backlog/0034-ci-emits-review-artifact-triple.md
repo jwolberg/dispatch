@@ -9,7 +9,8 @@ type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-11
 updated: 2026-07-12
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/50"
 refs:
   - "T2-5"
   - "scripts/repo-ci/"
