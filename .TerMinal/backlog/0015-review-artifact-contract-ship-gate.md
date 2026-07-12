@@ -1,16 +1,15 @@
 ---
 id: 15
 title: "Review-artifact contract + Ship gated on verdict"
-status: in-progress
+status: closed
 priority: high
 horizon: next
 hitl: false
 type: security
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-11
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/47"
+updated: 2026-07-12
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T2-5"

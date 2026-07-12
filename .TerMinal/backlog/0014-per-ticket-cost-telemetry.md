@@ -1,16 +1,15 @@
 ---
 id: 14
 title: "Per-ticket cost telemetry (Actions minutes + Claude tokens)"
-status: in-progress
+status: closed
 priority: medium
 horizon: next
 hitl: false
 type: feature
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-11
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/46"
+updated: 2026-07-12
+prs: []
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T2-4"
