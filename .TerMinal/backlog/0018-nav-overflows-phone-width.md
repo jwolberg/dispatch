@@ -1,15 +1,16 @@
 ---
 id: 18
 title: "App nav overflows a phone-width viewport"
-status: open
+status: in-progress
 priority: medium
 horizon: next
 hitl: false
 type: bug
 source: T1-6 verification
 created: 2026-07-09
-updated: 2026-07-09
-prs: []
+updated: 2026-07-12
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/53"
 refs:
   - "T1-6"
 depends_on: []
