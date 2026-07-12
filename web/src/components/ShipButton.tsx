@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { ConfirmModal } from "./ConfirmModal.js";
-import { ticketsApi, type PRStatus } from "../api/tickets.js";
+import { ticketsApi, type PRStatus, type ShipGate } from "../api/tickets.js";
 import { ApiError } from "../api/client.js";
 
-// Ship: one-click merge gated on a green, mergeable PR, behind a confirmation
-// modal summarizing the change (F6, S5).
+// Ship: one-click merge gated on a green, mergeable PR AND a passing review
+// gate (T2-5), behind a confirmation modal summarizing the change (F6, S5).
+// The disable here is UX only — the merge route re-validates the same gate.
 export function ShipButton({
   ticketId,
   pr,
   repoPath,
   mergeMethod,
   ready,
+  gate,
   onMerged,
 }: {
   ticketId: number;
@@ -18,6 +20,8 @@ export function ShipButton({
   repoPath: string;
   mergeMethod: string;
   ready: boolean;
+  /** The review ship gate (T2-5). Undefined while it is still loading. */
+  gate?: ShipGate;
   onMerged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -38,7 +42,13 @@ export function ShipButton({
     }
   }
 
-  const enabled = ready && pr.mergeable !== false;
+  // Undefined gate = still loading; don't hold Ship hostage to a slow review
+  // fetch, since the server re-validates the gate on merge regardless.
+  const gateBlocks = gate ? !gate.allowed : false;
+  const enabled = ready && pr.mergeable !== false && !gateBlocks;
+  const disabledReason = gateBlocks
+    ? (gate?.reason ?? "Review gate not met")
+    : "Enabled when the PR is open, mergeable, all checks are green, and the review approves";
 
   return (
     <div className="mt-2">
@@ -46,7 +56,7 @@ export function ShipButton({
         className="rounded bg-status-ok/90 px-3 py-1.5 text-label font-semibold text-black hover:bg-status-ok disabled:cursor-not-allowed disabled:opacity-40"
         disabled={!enabled}
         onClick={() => setOpen(true)}
-        title={enabled ? "" : "Enabled when the PR is open, mergeable, and all checks are green"}
+        title={enabled ? "" : disabledReason}
       >
         🚀 Ship
       </button>

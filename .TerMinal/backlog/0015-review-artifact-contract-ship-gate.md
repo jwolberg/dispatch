@@ -1,15 +1,16 @@
 ---
 id: 15
 title: "Review-artifact contract + Ship gated on verdict"
-status: open
+status: in-progress
 priority: high
 horizon: next
 hitl: false
 type: security
 source: docs/BUILD_PLAN-v2.md
 created: 2026-07-09
-updated: 2026-07-09
-prs: []
+updated: 2026-07-11
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/47"
 refs:
   - "docs/BUILD_PLAN-v2.md"
   - "T2-5"
@@ -45,9 +46,19 @@ other: TerMinal is the local workbench, Dispatch is the browser board, and one
 repo can be driven from either. Highest-leverage integration available, and most
 of it exists on both sides already.
 
+## Scope note (2026-07-11)
+
+Split during the Tier 2 stack. This ticket delivers the **consumption + gate**
+side (fetch, render, fail-closed Ship gate re-validated server-side — the ACs
+below except the first). The **CI emission** of the artifact triple (the first
+AC) is carved into **#34**, because it is a standalone build that runs in the
+user's CI and writes a workflow + review credential into user repos, with its
+own anti-recursion/auth concerns. The gate here is fail-closed, so it is correct
+and safe before #34 lands — every PR simply stays blocked until a review exists.
+
 ## Acceptance criteria
 
-- CI review step emits the TerMinal artifact triple.
+- CI review step emits the TerMinal artifact triple. **→ moved to #34.**
 - Dispatch fetches and renders it.
 - Ship gated on `verdict: approve` + `test_status: pass` + zero findings ≥
   medium.
