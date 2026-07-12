@@ -9,7 +9,8 @@ type: bug
 source: T1-6 verification
 created: 2026-07-09
 updated: 2026-07-12
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/53"
 refs:
   - "T1-6"
 depends_on: []
