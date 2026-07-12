@@ -50,6 +50,28 @@ export interface SummaryResponse {
   summary: ChangeSummary | null;
   unavailable: SummaryUnavailable | null;
 }
+
+/** T2-4 — the token half of a ticket's build cost. */
+export interface TicketTokens {
+  usd: number;
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+}
+
+/** T2-4 — the Actions half. `unknownRuns` were billed but we could not price them. */
+export interface ActionsCost {
+  minutes: number;
+  usd: number;
+  unknownRuns: number;
+}
+
+export interface CostResponse {
+  tokens: TicketTokens;
+  /** null when the provider has no GitHub-Actions billing (GitLab). */
+  actions: ActionsCost | null;
+  runnerAssumption: "standard-linux";
+}
 export interface Run {
   id: string;
   name: string;
@@ -88,6 +110,9 @@ export const ticketsApi = {
   // Generated lazily on first call and cached server-side per head SHA. Do NOT
   // poll this: a summary the model failed to produce would re-bill every tick.
   summary: (id: number) => api.get<SummaryResponse>(`/tickets/${id}/summary`),
+  // Derived per-ticket build cost: tokens (spend ledger) + Actions minutes
+  // (provider timing). Fetched on card open, not polled; timing is cond-cached.
+  cost: (id: number) => api.get<CostResponse>(`/tickets/${id}/cost`),
   comment: (id: number, body: { body: string; target: "issue" | "pr" }) =>
     api.post<{ ok: boolean }>(`/tickets/${id}/comment`, body),
   skill: (

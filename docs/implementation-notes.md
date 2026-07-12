@@ -2,6 +2,28 @@
 
 Running log of decisions, deviations, and tradeoffs for human review.
 
+## 2026-07-11 — T2-4 / #14 (Per-ticket cost telemetry)
+
+- **Tokens from the spend ledger, Actions minutes from provider timing.**
+  `ticketSpend()` sums the `spend` table by `ticket_id`; `getRunTiming()` (new
+  seam method) reads GitHub's `getWorkflowRunUsage` — the **billed** duration
+  (`billable[os].total_ms`), not wall-clock. `GET /tickets/:id/cost` combines
+  them. Derived + disposable: nothing new is stored, it recomputes from the
+  spend table + provider on each read (AC).
+- **`unknown` ≠ `$0`.** A run whose timing we cannot fetch (403/404, or the call
+  throws) is counted as `unknownRuns`, never folded in as zero — same failure
+  shape as #10's unpriceable-model rule. A run that billed a real 0 ms
+  (skipped/cached) is a known zero and is counted. Pinned in `run-cost.test.ts`.
+- **Standard-runner assumption, stated.** Actions priced at $0.008/min (standard
+  Linux). Larger/macOS/Windows runners bill a multiplier; rather than model
+  per-runner pricing, the card labels the figure "assumes the standard Linux
+  runner" (AC's explicit alternative to quietly under-reporting).
+- **GitLab degrades to tokens-only.** `GitLabProvider.getRunTiming` returns null
+  and the route returns `actions: null` — GitLab CI minutes are a different unit,
+  so the card shows tokens only instead of a wrong-unit number.
+- **Lazy, cond-cached.** Fetched on card open (not polled); the per-run timing
+  calls go through the provider conditional-request cache, so re-opens cost 304s.
+
 ## 2026-07-11 — T2-3 / #13 (Split Shipped into Merged → Deployed)
 
 - **Renamed the terminal `Shipped` column into two: `Merged` and `Deployed`.**

@@ -151,6 +151,18 @@ export interface Run {
 }
 
 /**
+ * Billable timing for one workflow run (T2-4). `billableMs` is the provider's
+ * own billed duration summed across runner OSes — NOT wall-clock — so a run that
+ * spent minutes queued does not read as minutes billed. A real 0 (skipped or
+ * fully cached) is a known zero; the *absence* of timing is `null`, not a Run
+ * of this shape.
+ */
+export interface RunTiming {
+  runId: string;
+  billableMs: number;
+}
+
+/**
  * A workflow run with its RAW provider status/conclusion, unlike `Run` whose
  * `mapRun` collapses `action_required` into `in_progress`/`neutral`. The canary
  * needs the raw pair to tell "parked awaiting approval" (a fail) from a real
@@ -305,6 +317,13 @@ export interface GitProvider {
   /** Changed files + patches for a PR/MR. Bounded by the provider (T1-5). */
   getPRDiff(repo: RepoRef, prNumber: number): Promise<PRDiff>;
   getWorkflowRuns(repo: RepoRef, ref: string): Promise<Run[]>;
+  /**
+   * Billable timing for one workflow run (T2-4), or `null` when the provider has
+   * no billable-timing data for it — GitLab (no GitHub-Actions concept) always
+   * returns null, and GitHub returns null for a run whose usage is unavailable.
+   * `null` is "unknown", which the cost view must never render as zero.
+   */
+  getRunTiming(repo: RepoRef, runId: string): Promise<RunTiming | null>;
   /**
    * Workflow runs on `ref` with raw status/conclusion preserved. The canary
    * polls this instead of `getWorkflowRuns` because the latter erases

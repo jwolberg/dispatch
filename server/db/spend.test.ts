@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { recordSpend, spentTodayUsd, clearSpend } from "./spend.js";
+import { recordSpend, spentTodayUsd, clearSpend, ticketSpend } from "./spend.js";
 import { getDb } from "./migrate.js";
 import { UnknownModelError } from "../anthropic/pricing.js";
 
@@ -98,6 +98,51 @@ describe("recordSpend", () => {
     ).toThrow(UnknownModelError);
     // and nothing was written
     expect(spentTodayUsd(at)).toBe(0);
+  });
+});
+
+describe("ticketSpend — the token half of #14's per-ticket cost", () => {
+  beforeEach(() => clearSpend());
+
+  it("is a zeroed row for a ticket with no attributed spend", () => {
+    const ticketId = seedTicket();
+    expect(ticketSpend(ticketId)).toEqual({ usd: 0, inputTokens: 0, outputTokens: 0, calls: 0 });
+  });
+
+  it("sums usd and tokens across every call attributed to the ticket", () => {
+    const at = new Date("2026-07-09T12:00:00Z");
+    const ticketId = seedTicket();
+    recordSpend({ model: SONNET, kind: "summary", usage: oneDollarish, ticketId, at });
+    recordSpend({
+      model: SONNET,
+      kind: "chat",
+      usage: { input_tokens: M, output_tokens: 2 * M, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      ticketId,
+      at,
+    });
+
+    const cost = ticketSpend(ticketId);
+    expect(cost.calls).toBe(2);
+    expect(cost.inputTokens).toBe(2 * M);
+    expect(cost.outputTokens).toBe(2 * M);
+    // 2×$3 input + (2M output × $15/MTok = $30) = $36.
+    expect(cost.usd).toBeCloseTo(36, 6);
+  });
+
+  it("does not count spend attributed to a different ticket, nor unattributed spend", () => {
+    const at = new Date("2026-07-09T12:00:00Z");
+    const mine = seedTicket();
+    // A second ticket in the same repo.
+    const other = Number(
+      getDb()
+        .prepare("INSERT INTO tickets (repo_id, issue_number, created_at) VALUES ((SELECT repo_id FROM tickets WHERE id = ?), 8, ?)")
+        .run(mine, at.toISOString()).lastInsertRowid,
+    );
+    recordSpend({ model: SONNET, kind: "chat", usage: oneDollarish, ticketId: other, at });
+    recordSpend({ model: SONNET, kind: "chat", usage: oneDollarish, at }); // unattributed
+
+    expect(ticketSpend(mine)).toEqual({ usd: 0, inputTokens: 0, outputTokens: 0, calls: 0 });
+    expect(ticketSpend(other).usd).toBeCloseTo(3, 6);
   });
 });
 

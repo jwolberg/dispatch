@@ -91,6 +91,34 @@ export function spentTodayUsd(now: Date): number {
   return row.total;
 }
 
+/** The token cost attributable to one ticket (T2-4 / #14). Derived, disposable. */
+export interface TicketSpend {
+  usd: number;
+  inputTokens: number;
+  outputTokens: number;
+  calls: number;
+}
+
+/**
+ * Sum every spend row attributed to `ticketId`. A ticket with no attributed
+ * calls returns a zeroed row, not null — the card shows $0.00, which is true,
+ * rather than "unknown". Unattributed spend (ticket_id NULL) is never counted
+ * here: it belongs to the day's total, not to any one ticket.
+ */
+export function ticketSpend(ticketId: number): TicketSpend {
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(SUM(usd), 0)           AS usd,
+              COALESCE(SUM(input_tokens), 0)  AS inputTokens,
+              COALESCE(SUM(output_tokens), 0) AS outputTokens,
+              COUNT(*)                        AS calls
+         FROM spend
+        WHERE ticket_id = @ticketId`,
+    )
+    .get({ ticketId }) as TicketSpend;
+  return row;
+}
+
 /** Test/teardown only. Never call this from a request path — it fails open. */
 export function clearSpend(): void {
   getDb().exec("DELETE FROM spend");

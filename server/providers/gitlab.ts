@@ -26,6 +26,7 @@ import type {
   RevertRef,
   Run,
   RawWorkflowRun,
+  RunTiming,
   SpecInput,
 } from "./types.js";
 
@@ -405,6 +406,14 @@ export class GitLabProvider implements GitProvider {
       url: p.web_url ?? null,
       createdAt: p.created_at,
     }));
+  }
+
+  async getRunTiming(): Promise<RunTiming | null> {
+    // GitLab CI minutes are billed and modeled differently from GitHub Actions,
+    // and Dispatch's cost view is GitHub-Actions-shaped (T2-4). Rather than
+    // report a number in a different unit, GitLab degrades to tokens-only: null
+    // is "unknown", and the card shows no Actions figure for GitLab repos.
+    return null;
   }
 
   async getWorkflowRunsRaw(repo: RepoRef, ref: string): Promise<RawWorkflowRun[]> {

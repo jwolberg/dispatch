@@ -9,6 +9,7 @@ import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
 import { ShipButton } from "../components/ShipButton.js";
 import { RevertButton } from "../components/RevertButton.js";
+import { TicketCost } from "../components/TicketCost.js";
 import { ago } from "../lib/time.js";
 
 const CHECK_CLS: Record<Check["state"], string> = {
@@ -149,6 +150,7 @@ export function CardDetailPage() {
               <span className="text-label text-gray-400">{nextHint(status)}</span>
             </div>
             <ChangeSummaryCard ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
+            <TicketCost ticketId={ticket.id} headSha={status.pr?.headSha ?? null} />
           </section>
 
           <section className="rounded-lg border border-border bg-surface p-4">
