@@ -52,7 +52,7 @@ export function BoardPage() {
                     className="rounded-md border border-border bg-surface p-2.5 text-left hover:border-gray-500"
                   >
                     <div className="mb-1 text-label text-gray-500">
-                      {card.repo.path}
+                      <span className="font-medium text-gold">{card.repo.path}</span>
                       {card.kind === "ticket" && ` · #${card.issue_number}`}
                     </div>
                     <div className="text-body text-gray-100">{card.title}</div>

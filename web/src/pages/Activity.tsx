@@ -82,17 +82,28 @@ export function ActivityPage() {
                       {task.label}
                     </div>
                     <ul className="divide-y divide-border">
-                      {task.events.map((e) => (
-                        <li key={e.id} className="flex items-center gap-3 bg-surface px-3 py-2">
-                          <span className="w-20 shrink-0 text-label text-gray-500">{ago(e.occurred_at)}</span>
-                          <span className="flex-1 text-body text-gray-200">{e.summary}</span>
-                          {e.ticket_id != null && (
-                            <Link className="text-label text-status-info underline" to={`/tickets/${e.ticket_id}`}>
-                              view
-                            </Link>
-                          )}
-                        </li>
-                      ))}
+                      {task.events.map((e) => {
+                        const row = (
+                          <>
+                            <span className="w-20 shrink-0 text-label text-gray-500">{ago(e.occurred_at)}</span>
+                            <span className="flex-1 text-body text-gray-200">{e.summary}</span>
+                          </>
+                        );
+                        return (
+                          <li key={e.id}>
+                            {e.ticket_id != null ? (
+                              <Link
+                                to={`/tickets/${e.ticket_id}`}
+                                className="flex items-center gap-3 bg-surface px-3 py-2 hover:bg-surface-2"
+                              >
+                                {row}
+                              </Link>
+                            ) : (
+                              <div className="flex items-center gap-3 bg-surface px-3 py-2">{row}</div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}
