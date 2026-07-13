@@ -9,6 +9,7 @@ export default {
         surface: "#131a26",
         "surface-2": "#1b2435",
         border: "#2a3650",
+        gold: "#d4af37",
         // Status palette (PRD §4). Always paired with icon/text in components,
         // never color alone.
         status: {
