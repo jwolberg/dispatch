@@ -47,6 +47,13 @@ jobs:
           # 401s — observed in run 29068754525, fixed by #25. `github.token` is all
           # the branch push needs, and it writes no credential into this repo.
           github_token: ${{ github.token }}
+          # This deployment has a GitHub App registered (dispatch-jay-prod), so Dispatch
+          # files issues with the App installation token and they're authored by
+          # `dispatch-jay-prod[bot]` (type: Bot) rather than a human PAT.
+          # claude-code-action refuses a bot-initiated trigger unless allow-listed, so
+          # without this the build fails immediately with "Workflow initiated by
+          # non-human actor" even though the issue filed fine (#29, DEPLOY.md §3.6).
+          allowed_bots: "dispatch-jay-prod[bot]"
           #
           # Do NOT set `prompt:` here. A static prompt forces automation mode, which
           # IGNORES the @claude comment. Omitting it enables interactive (mention)
