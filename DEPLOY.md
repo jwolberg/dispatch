@@ -208,12 +208,19 @@ re-import on the first poll after tracking.
 ## 3.6 Enable the build loop on a tracked repo
 
 **Tracking a repo writes nothing to it.** A tracked repo is not an onboarded one —
-that is what the repo card's ⚠ *No Claude automation detected* flag distinguishes.
+that is what the repo card's ⚠ *Tracked, but not onboarded* flag distinguishes.
 Onboarding commits `.github/workflows/claude.yml` to the target repo and sets one
 secret there.
 
-This is done against the **target repo**, not against Cloud Run, so it is the same
-command locally and in production. Nothing here touches Dispatch's own deployment:
+**From the browser (GitHub repos).** The ⚠ flag carries a **Set up automation**
+button, which calls `POST /api/repos/:id/setup`. Paste your Claude auth token and
+Dispatch commits the workflow and writes the secret itself — no shell step, and it
+is the path that stamps `allowed_bots` for you (below). The route returns `501` for
+GitLab, so GitLab repos use the script.
+
+**From the shell.** The fallback, and the only path for GitLab. It runs against the
+**target repo**, not against Cloud Run, so it is the same command locally and in
+production. Nothing here touches Dispatch's own deployment:
 
 ```bash
 CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
@@ -249,7 +256,7 @@ by `<app-slug>[bot]` (type: Bot) rather than a human PAT. `claude-code-action` r
 a bot-initiated trigger unless the bot is allow-listed, and the symptom is nasty: the
 issue files fine (201) but the build step fails immediately with *"Workflow initiated
 by non-human actor … Add bot to allowed_bots list"* — the board just shows "opened a
-ticket and it failed." The browser onboarding path (**§3.6**, the `POST /setup` route)
+ticket and it failed." The browser onboarding path above (the `POST /setup` route)
 resolves the slug from the registered App and stamps `allowed_bots: "<app-slug>[bot]"`
 into `claude.yml` automatically. The manual `install-claude-action.sh` path cannot see
 Dispatch's database, so **export your App's slug first** so it injects the same line:
@@ -265,10 +272,6 @@ PAT-only deployments (no App registered) file issues as a human actor, so `DISPA
 is unset and the line is omitted. If you onboarded before this fix and hit a failed
 build, add `allowed_bots: "<app-slug>[bot]"` under the `claude-code-action@v1` step's
 `with:` in the repo's `.github/workflows/claude.yml`, or re-run onboarding.
-
-> **Not shipped yet.** The PR-opening half is ticket **#4**. Until it lands, `@claude`
-> runs and pushes a branch, and no pull request appears. This is the one place where
-> a production deployment is not yet end-to-end.
 
 Because the poller is what turns a branch into a pull request, **Dispatch must be
 running** for a build to proceed past the branch. That adds no new availability

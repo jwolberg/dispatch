@@ -17,10 +17,11 @@ All provider interaction goes through a **provider adapter interface** (§5.5) s
 
 1. Describe a feature/bug in a chat UI → converse with Claude to refine it into a spec
 2. One click files a GitHub issue containing the spec and an `@claude` mention
-3. The `anthropics/claude-code-action` workflow picks it up, builds the change on a runner, opens a PR
-4. Dispatch shows live status (issue checkboxes, CI checks, PR state) on a board
-5. User opens the PR's preview deployment from the dashboard and tests it
-6. User clicks **Ship** → PR merges → existing CI/CD deploys to production → ticket auto-closes
+3. The `anthropics/claude-code-action` workflow picks it up, builds the change on a runner, and pushes a branch — it does **not** open the PR (ADR-0006 [2])
+4. Dispatch's poller notices the branch, verifies the tip commit is Claude-authored, and opens the PR itself with its App installation token — a PR opened by the workflow's own `GITHUB_TOKEN` would not trigger `on: pull_request` CI
+5. Dispatch shows live status (issue checkboxes, CI checks, PR state) on a board
+6. User opens the PR's preview deployment from the dashboard and tests it
+7. User clicks **Ship** → PR merges → existing CI/CD deploys to production → ticket auto-closes
 
 ### Guiding principles
 
@@ -62,14 +63,21 @@ All provider interaction goes through a **provider adapter interface** (§5.5) s
 │   monitor · ship         │◀───────▶│              ▼                  │
 │        │                 │ Octokit │  Ephemeral runner               │
 │  Backend (Express)       │         │   └─ Claude Code + repo clone   │
-│   API proxy · poller     │         │              │                  │
+│   API proxy · poller     │         │              │ pushes           │
 │        │                 │         │              ▼                  │
-│  Claude API (/v1/messages│         │  Pull request + CI checks       │
-│   stateless, ctx-injected│         └───────┬──────────────┬──────────┘
-└──────────────────────────┘                 ▼              ▼
+│  Claude API (/v1/messages│         │  Branch — no PR yet             │
+│   stateless, ctx-injected│         │              │                  │
+└──────────────────────────┘         │              │ ◀── poller opens │
+                                     │              ▼     the PR       │
+                                     │  Pull request + CI checks       │
+                                     └───────┬──────────────┬──────────┘
+                                             ▼              ▼
                                       Preview env      Production
                                       (per-PR URL)     (on merge)
 ```
+
+The runner pushes a **branch and stops** — Dispatch's poller, not the workflow, opens the
+pull request (F4.6). That hop is load-bearing rather than incidental: see ADR-0006 [2].
 
 - **Frontend:** React 18 + Vite, Tailwind CSS v3, dark theme. Talks only to the local backend.
 - **Backend:** Node 20 + Express. Proxies Anthropic and GitHub API calls (keys never reach the browser). Polls GitHub for status. Persists lightweight local state in SQLite (`better-sqlite3`).
@@ -143,7 +151,7 @@ Concept mapping the adapters must normalize:
 - F2.5: Transcript persists locally per draft ticket and is linkable from the resulting issue's board card.
 
 ### F3 — Ticket filing
-- F3.1: `POST /api/tickets` creates the issue via the repo's provider adapter. The body is the spec markdown plus a trailing line: `@claude please implement this. Open a PR/MR referencing this issue (include the auto-close keyword for this provider).`
+- F3.1: `POST /api/tickets` creates the issue via the repo's provider adapter. The body is the spec markdown plus the implementation prompt built by `server/providers/prompt.ts`, which instructs Claude to **commit to a branch and explicitly not open the PR/MR** — Dispatch opens it (F4.6) — and to reference the issue with the provider's auto-close keyword (`Fixes #n` on GitHub, `Closes #n` on GitLab) so it closes when that PR merges. The prompt and `claude.yml`'s `--append-system-prompt` are two channels carrying one instruction; when they disagree the build stalls, so the wording lives in one testable string.
 - F3.2: Apply label `dispatch` (create it in the repo if missing) so the board can query its own tickets.
 - F3.3: On success, store `{ issue_number, repo, chat_id }` locally and navigate to the board.
 
@@ -159,6 +167,7 @@ Concept mapping the adapters must normalize:
 - F4.3: Card detail view shows: issue body, Claude's progress comment (rendered markdown with live checkboxes), linked PR with per-check status, workflow run link, and timestamps.
 - F4.4: PR linkage: a PR is linked to a ticket if its body contains `#<issue_number>` (Fixes/Closes/refs) or its branch name contains the issue number.
 - F4.5: **Steer** action: post a comment to the issue or PR from the card (text box → `POST` comment). Used to course-correct Claude mid-build (a new `@claude` mention re-triggers the action).
+- F4.6: **PR opening** (ADR-0006 [2]): when an open ticket has no linked PR, the poller looks for a branch that links to the issue per F4.4 and opens the PR itself, authenticated with its App installation token — a PR opened by the workflow's own `GITHUB_TOKEN` would not trigger `on: pull_request` CI, while an App-authored one does. Opening a PR from someone's work-in-progress branch is not a recoverable mistake, so every guard is required: the tip commit's identity must be Claude-authored (F4.4 linkage alone would match a human branch named `fix-7`); the default branch is excluded; issues labelled `dispatch-canary` (setup-time build probes, which must not leave a PR behind in a user's repo) are skipped; and a `422` means a concurrent poll already opened it and is swallowed. A PR a human *closed* still counts as linked, so the poller never resurrects it.
 
 ### F5 — Test
 - F5.1: When a linked PR exists, render a **Preview** button using the repo's preview-URL pattern with the PR number substituted. Opens in a new tab.
@@ -222,9 +231,9 @@ Rebuild rule: `tickets` rows plus the GitHub API are sufficient to reconstruct t
 ## 8. Prerequisites & Setup (document in README)
 
 **GitHub repos:**
-1. `anthropics/claude-code-action@v1` installed — run `/install-github-app` from Claude Code in the repo, which configures the GitHub App and `ANTHROPIC_API_KEY` secret.
-2. Workflow triggers on `issues: [opened]` and `issue_comment: [created]` with the `@claude` filter, scoped permissions (`contents: write`, `pull-requests: write`, `issues: write`), and `timeout-minutes` set (default 30).
-3. Fine-grained PAT with Issues (RW), Pull requests (RW), Contents (R), Actions (R) on the target repos → `GITHUB_TOKEN`.
+1. `anthropics/claude-code-action@v1` installed. Onboarding is in-product: the repo card's **Set up automation** button (`POST /api/repos/:id/setup`) commits `claude.yml`, a stack-aware `ci.yml`, and the plan/implement/debug skills, and is idempotent. `scripts/install-claude-action.sh` does the same from a shell and is the only path for GitLab. Exactly one secret is written — the Claude auth token, `CLAUDE_CODE_OAUTH_TOKEN` preferred over `ANTHROPIC_API_KEY`, which outranks it in Claude's auth precedence and is deleted in OAuth mode. No GitHub credential is written into the target repo (ADR-0006 [2]).
+2. Workflow triggers on `issues: [opened]` and `issue_comment: [created]` with the `@claude` filter, and `timeout-minutes` set (default 30). Permissions are `contents: write`, `issues: write`, `id-token: write`, `actions: read` — **`pull-requests: write` is deliberately absent**, because the workflow pushes a branch and Dispatch opens the PR (F4.6). It must pass `github_token: ${{ github.token }}` explicitly; that input has no default, and omitting it makes the action try to mint a token from Anthropic's own Claude GitHub App and fail `401`. When Dispatch files issues under a registered App, the App's bot slug must be stamped into `allowed_bots` or the action refuses the bot-initiated trigger.
+3. Fine-grained PAT with Issues (RW), Pull requests (RW), Contents (R), Actions (R) on the target repos → `GITHUB_TOKEN`. Optional once a registered GitHub App covers every tracked repo, in which case `DISPATCH_ENCRYPTION_KEY` is required to encrypt the App private key at rest.
 
 **GitLab repos (integration is beta — verify current docs at code.claude.com/docs/en/gitlab-ci-cd):**
 4. Claude job added to `.gitlab-ci.yml` per the official setup, with `ANTHROPIC_API_KEY` stored as a masked CI/CD variable; `@claude` mentions in issues/MR threads trigger the job, which commits results back via MRs.

@@ -2,8 +2,10 @@
 
 **A structured web UI wrapping GitHub/GitLab as the source of truth: chat →
 AI-drafted ticket → poller-computed kanban.** Describe a feature or bug in a
-chat UI, file it as an issue with one click, and `claude-code-action` builds
-it on a runner and opens a PR. A poller turns issue/PR/check state into a live
+chat UI, file it as an issue with one click, and `claude-code-action` builds it
+on a runner and pushes a branch — Dispatch opens the PR from that branch itself,
+which is what makes your `on: pull_request` CI run on it (ADR-0006). A poller
+turns issue/PR/check state into a live
 board — spec → queued → building → ready to test → shipped — optionally
 mirrored to a Slack channel, so you can test the preview and ship to
 production without leaving one browser tab (or Slack). Dispatch
@@ -172,6 +174,15 @@ An `@claude` mention only builds something if `claude-code-action` is installed 
 the repo. Tracking a repo in Dispatch writes **nothing** to it — tracked and
 onboarded are different states, which is what the ⚠ flag below distinguishes.
 
+**From the browser (GitHub repos).** The repo card's ⚠ flag carries a **Set up
+automation** button. Paste your Claude auth token and Dispatch commits
+`.github/workflows/claude.yml`, a stack-aware `ci.yml`, and the plan/implement/debug
+skills, then writes the one secret below. No shell step, and re-running it is
+idempotent. The token is held for the duration of one request and never stored.
+
+**From the shell.** The original installer still works, and is the only path for
+GitLab repos — browser setup is GitHub-only:
+
 ```bash
 CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
 GH_SETUP_TOKEN=github_pat_xxx \
@@ -184,8 +195,8 @@ written into the repo.
 
 **Exactly one secret is written: your Claude auth token.** Prefer
 `CLAUDE_CODE_OAUTH_TOKEN` (bills your Claude subscription) over `ANTHROPIC_API_KEY`
-(metered). The installer deletes a leftover `ANTHROPIC_API_KEY` because it *outranks*
-the OAuth token in Claude's auth precedence and would silently bill the API.
+(metered). In OAuth mode both paths delete a leftover `ANTHROPIC_API_KEY` because it
+*outranks* the OAuth token in Claude's auth precedence and would silently bill the API.
 
 No GitHub credential of any kind goes into the repo — no `GH_PAT`, no App private
 key. The workflow pushes a branch under the repo's own default `GITHUB_TOKEN`, and
@@ -199,18 +210,20 @@ makes `on: pull_request` CI actually run on it (ADR-0006 [2]; observed in #22).
 > *Anthropic's* Claude GitHub App (`github.com/apps/claude`) and fails with
 > `401 … not installed on this repository` (#25). The installer does this for you.
 >
-> **Dispatch cannot open the pull request yet** — that half is ticket #4. Until it
-> ships, `@claude` runs and pushes a branch, and no PR appears. Open it yourself, or
-> install the Claude GitHub App and let the action do it.
+> Once a GitHub App is registered, Dispatch files issues **as the App bot**, and
+> `claude-code-action` refuses a bot-initiated trigger unless that bot is
+> allow-listed — it fails with `Workflow initiated by non-human actor` (#29). Both
+> setup paths stamp `allowed_bots` with your App's bot slug for you (the shell
+> installer reads it from `DISPATCH_APP_SLUG`).
 
 Both onboarding paths are compared in [`docs/adding-a-repo.md`](docs/adding-a-repo.md).
 
-Until one is in place the repo card shows **⚠ No Claude automation detected**.
+Until one is in place the repo card shows **⚠ Tracked, but not onboarded**.
 That flag is a content check, not a guess: on GitHub a workflow file under
 `.github/workflows/` whose *name* mentions claude, or whose body contains
 `claude-code-action`, `anthropics/claude`, or `@claude`; on GitLab a
-`.gitlab-ci.yml` mentioning `claude` or `anthropics`. Click **Refresh context**
-after installing to clear it.
+`.gitlab-ci.yml` mentioning `claude` or `anthropics`. Browser setup re-checks and
+clears the flag itself; after the shell installer, click **Refresh context**.
 
 ### 4. Preview deploys (Vercel, Netlify, Render, …)
 
