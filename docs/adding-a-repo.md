@@ -2,7 +2,8 @@
 
 Two steps: **track** it in Dispatch, then **enable the build loop** on the repo
 so `@claude` tickets actually build. The first is enough to file issues and use
-spec chat; the second is what makes Claude autonomously open PRs.
+spec chat; the second is what turns an `@claude` ticket into a pull request —
+Claude commits to a branch, and Dispatch opens the PR from it (ADR-0006 [2]).
 
 ---
 
@@ -28,36 +29,38 @@ includes this repo's tickets; spec chat lets you target it.
 > re-track the repo and its open issues return on the next poll. Import is
 > idempotent, so re-tracking never duplicates tickets.
 
-> A new card may show **⚠ No Claude automation detected** — that's step 2.
+> A new card may show **⚠ Tracked, but not onboarded** — that's step 2.
 
 ---
 
 ## 2. Enable the autonomous build loop on the repo
 
-Each repo needs `anthropics/claude-code-action` so an `@claude` mention triggers
-a build that opens a PR. Pick one path:
+Each repo needs `anthropics/claude-code-action` so an `@claude` mention triggers a
+build. The action commits Claude's work to a branch and **stops** — it does not
+open the PR; Dispatch's poller does (ADR-0006 [2]). Pick one path:
 
-### Option A — `/install-github-app` (most complete)
+### Option A — the **Set up automation** button (no shell)
 
-In a clone of the repo:
+The repo card's ⚠ flag carries a **Set up automation** button, which calls
+`POST /api/repos/:id/setup`. Paste your Claude auth token and Dispatch commits the
+workflow, a stack-aware `ci.yml`, and the `{plan,implement,debug}` skills, then
+writes the one secret below. Re-running it is idempotent, and the token is held for
+the duration of one request and never stored.
 
-```bash
-cd /path/to/repo
-claude
-/install-github-app
-```
+**GitHub only** — the button is gated on the repo's provider, and the route returns
+`501` for GitLab. Use Option B for GitLab repos.
 
-Installs the Claude GitHub App, adds the `ANTHROPIC_API_KEY` secret, and commits
-the workflow. **Recommended** because the app makes Claude's PR commits trigger
-your CI (so the board's check-driven **Ready to test** state and the green-checks
-ship gate work).
+This is also the only path that stamps `allowed_bots` for you (see below), because
+it can resolve your registered App's slug from Dispatch's own database.
 
 ### Option B — API-only script (no app install)
 
-Needs a fine-grained PAT **on that repo**. Because the workflow now also **opens
-PRs** that must trigger CI, the PAT needs **Contents: write, Pull requests: write,
-Issues: write, Workflows: write, Secrets: write** (make one at
-<https://github.com/settings/personal-access-tokens/new>).
+The only path for GitLab, and the fallback when you'd rather not use the browser.
+Needs a fine-grained PAT **on that repo** with **Contents: write, Workflows: write,
+Secrets: write** (make one at
+<https://github.com/settings/personal-access-tokens/new>). It does *not* need
+`Pull requests: write` — the installer only commits files and sets a secret, and the
+workflow it installs never opens a PR.
 
 ```bash
 CLAUDE_CODE_OAUTH_TOKEN=$(claude setup-token) \
@@ -71,6 +74,17 @@ and commits a CI gate at `.github/workflows/ci.yml` (created only if absent). Th
 Claude token is read from the macOS keychain item `dispatch-CLAUDE_CODE_OAUTH_TOKEN`
 (or `dispatch-ANTHROPIC_API_KEY`), or passed in the environment. `GH_SETUP_TOKEN` is
 used by the installer and never written into the repo.
+
+### Not this: `/install-github-app`
+
+Claude Code's own `/install-github-app` installs **Anthropic's** Claude GitHub App
+and sets an `ANTHROPIC_API_KEY` secret. It used to be this doc's recommended path,
+on the rationale that the app makes Claude's PR commits trigger your CI. ADR-0006
+[8] settled that differently: Dispatch's own App installation token opens the PR,
+and that is what makes `on: pull_request` CI run. The two paths now fight — the
+`ANTHROPIC_API_KEY` it writes outranks `CLAUDE_CODE_OAUTH_TOKEN` in Claude's auth
+precedence and silently bills the API, which is exactly the secret Options A and B
+delete. Prefer A or B.
 
 > **Corrected 2026-07-10 — `GH_PAT` is gone (ADR-0006 [2], #24).** This section used
 > to say the workflow opens the PR itself, via a `gh pr create` post-step
@@ -89,8 +103,10 @@ used by the installer and never written into the repo.
 > - The workflow must pass `github_token: ${{ github.token }}` **explicitly**. That
 >   input has no default: omit it and the action tries to mint a token from
 >   *Anthropic's* Claude GitHub App and 401s (#25).
-> - **The PR-opening half is not shipped yet** — it is ticket #4. Until then, `@claude`
->   runs and pushes a branch, and no PR appears.
+> - **Dispatch must be running** for a build to get past the branch, since the poller
+>   is what opens the pull request. That adds no new availability requirement — it has
+>   to be up to render the board anyway — but it turns a missed poll from "the board is
+>   stale" into "the build did not continue."
 
 > **The CI gate (`ci.yml`) — stack-aware:** runs on every PR so its checks move
 > the board **Building → Ready to test → Blocked**. The installer detects the
@@ -146,8 +162,8 @@ used by the installer and never written into the repo.
 > no longer opens PRs at all. Its `GITHUB_TOKEN` only pushes the branch, which was
 > never the blocked operation.
 
-After either path, click **Refresh context** on the repo card — the automation
-warning clears.
+Option A re-checks and clears the automation warning itself. After Option B, click
+**Refresh context** on the repo card to clear it.
 
 ---
 
@@ -163,8 +179,9 @@ one also clears the "○ no CLAUDE.md" note on the card.
 
 1. File a ticket from spec chat (or open an issue containing `@claude …`).
 2. The card moves **Queued → Building** within ~30s as the Action runs.
-3. Claude opens a PR referencing the issue (`Fixes #N`); test via the **Preview**
-   button, **Steer** with an `@claude` comment if needed, then **Ship**.
+3. Claude commits to a branch; on its next poll Dispatch opens the PR from that
+   branch, referencing the issue (`Fixes #N`). Test via the **Preview** button,
+   **Steer** with an `@claude` comment if needed, then **Ship**.
 
 ## Untracking
 
