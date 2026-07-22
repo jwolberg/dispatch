@@ -266,6 +266,30 @@ Add the Claude job to `.gitlab-ci.yml` per the official setup, with
 issues and MR threads trigger the job, which commits results back via MRs.
 
 
+## Hand a ticket to a local TerMinal session
+
+A card's **Send to TerMinal** panel pushes the spec-chat transcript onto the
+issue (once — it detects its own marker on repeat presses) and hands you a
+command to run at home:
+
+```bash
+dispatch-pickup jwolberg/situation#42
+```
+
+Run it **from inside your local clone**; the ticket is filed where you run it,
+because Dispatch cannot know where a repo lives on your machine. It files an
+`open` backlog ticket and stops — no session, no agent.
+
+Install the receiver once on the machine running TerMinal:
+
+```bash
+ln -s "$PWD/scripts/terminal-pickup.sh" ~/.local/bin/dispatch-pickup
+```
+
+It needs `gh`, `jq`, and `terminal-cli`. The laptop talks only to the provider,
+never to Dispatch, so no Dispatch credentials leave the server — which is also
+why the transcript has to travel via the issue rather than the wire.
+
 ## Scripts
 
 | Command | What it does |

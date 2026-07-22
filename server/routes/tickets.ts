@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { getRepo } from "../db/repos.js";
 import { createTicket, getTicket } from "../db/tickets.js";
-import { setChatStatus } from "../db/chats.js";
+import { setChatStatus, getTranscript } from "../db/chats.js";
 import { insertActivity } from "../db/activity.js";
 import { getStatus } from "../db/status.js";
 import { safeReconcile, type StatusPayload } from "../poller/reconcile.js";
@@ -9,6 +9,7 @@ import { getProviderForRepo } from "../providers/index.js";
 import type { CommentTarget, MergeMethod, ProviderId, RepoRef } from "../providers/index.js";
 import { isSkill, skillPrompt, defaultTarget } from "../lib/skills.js";
 import { safeMessage } from "../lib/redaction.js";
+import { buildPickupCommand, buildTranscriptComment, hasTranscriptComment } from "../lib/handoff.js";
 import { httpStatus } from "../lib/errors.js";
 import { fetchReview } from "../review/fetch.js";
 import { evaluateShipGate, type ReviewArtifact } from "../review/artifact.js";
@@ -66,6 +67,64 @@ ticketsRouter.post("/", async (req, res) => {
     });
 
     res.status(201).json({ ticket: { id: ticket.id, issue_number: issue.number, url: issue.url } });
+  } catch (err) {
+    res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
+  }
+});
+
+// POST /api/tickets/:id/handoff — hand this ticket to a local TerMinal session (#38).
+//
+// Pushes the spec-chat transcript (the only artifact that exists solely in
+// Dispatch) onto the issue, then returns the short command the human carries to
+// the laptop. Idempotent by reading the issue's own comments rather than storing
+// a "handed off" flag: the issue is the record.
+ticketsRouter.post("/:id/handoff", async (req, res) => {
+  const ticket = getTicket(Number(req.params.id));
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  const repo = getRepo(ticket.repo_id);
+  if (!repo) {
+    res.status(404).json({ error: "Repo not found" });
+    return;
+  }
+
+  const ref: RepoRef = {
+    provider: repo.provider as ProviderId,
+    host: repo.host,
+    path: repo.path,
+    defaultBranch: repo.default_branch,
+  };
+  const pickup = buildPickupCommand(repo.path, ticket.issue_number);
+
+  try {
+    const comment =
+      ticket.chat_id != null ? buildTranscriptComment(getTranscript(ticket.chat_id)) : null;
+    if (!comment) {
+      res.json({ pickup, transcript: "none" });
+      return;
+    }
+
+    const provider = getProviderForRepo(ref);
+    const issue = await provider.getIssue(ref, ticket.issue_number);
+    if (hasTranscriptComment(issue.comments)) {
+      res.json({ pickup, transcript: "already-present" });
+      return;
+    }
+
+    await provider.postComment(
+      { repo: ref, kind: "issue", number: ticket.issue_number },
+      comment
+    );
+    insertActivity({
+      ticket_id: ticket.id,
+      type: "handoff",
+      summary: `Handed #${ticket.issue_number} to TerMinal`,
+      url: issue.url,
+      occurred_at: new Date().toISOString(),
+    });
+    res.json({ pickup, transcript: "posted" });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
   }

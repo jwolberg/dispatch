@@ -9,6 +9,7 @@ import { VerdictChip } from "../components/VerdictChip.js";
 import type { Column } from "../lib/verdict.js";
 import { SteerBox } from "../components/SteerBox.js";
 import { SkillBar } from "../components/SkillBar.js";
+import { TerminalHandoff } from "../components/TerminalHandoff.js";
 import { ShipButton } from "../components/ShipButton.js";
 import { RevertButton } from "../components/RevertButton.js";
 import { TicketCost } from "../components/TicketCost.js";
@@ -342,6 +343,10 @@ export function CardDetailPage() {
 
           <div className="lg:col-span-2">
             <SteerBox ticketId={ticket.id} hasPR={Boolean(status.pr)} />
+          </div>
+
+          <div className="lg:col-span-2">
+            <TerminalHandoff ticketId={ticket.id} />
           </div>
         </div>
       )}

@@ -1557,3 +1557,57 @@ built, since there's no evidence yet that one instruction is insufficient.
 **PRD F2.2 quoted the old instruction verbatim.** Updated in place with the
 as-built text rather than left to rot, matching the recent PR-opening
 corrections.
+
+---
+
+## #38 — Dispatch → TerMinal ticket handoff (2026-07-22)
+
+**The transfer is three fields, not a ticket.** `tickets` holds only
+`(repo_id, chat_id, issue_number, created_at)`; title, body, labels, PR and
+checks are re-derived from the provider into `status_cache` every poll. The one
+artifact that exists *solely* in Dispatch is the spec-chat transcript. So the
+design pushes that transcript onto the issue and carries nothing else — the
+laptop re-derives the rest with `gh`.
+
+**Rejected: a Claude artifact as the transport.** It would be a third copy of
+data the provider already holds authoritatively, stale on the first state
+change, and it cannot trigger anything locally — something on the laptop would
+still have to pick it up. An artifact is a display surface, not a bus.
+
+**Rejected: a local poller.** Cloud Run cannot reach a laptop behind NAT, so
+"already queued when I arrive" means a credentialed daemon on the laptop plus
+queue state in Dispatch. Its failure mode is silence, which is indistinguishable
+from "nothing was sent." Deferred; the envelope is shaped so a poller could
+consume it unchanged later.
+
+**Idempotency lives on the issue, not in a column.** The transcript comment
+opens with `<!-- dispatch:spec-transcript -->`; a second handoff calls
+`getIssue` and skips if the marker is already there. The detector matches only
+at the *start* of a comment — matching anywhere would let someone quoting the
+marker while discussing this feature permanently suppress the real post, and
+there is a test for exactly that.
+
+**Issue text never crosses a shell boundary.** The pickup command is coordinates
+only (`dispatch-pickup owner/repo#42`). Rendering the body into a copy-pasteable
+command would hand `$(...)` and backticks in an issue body straight to the
+laptop's shell. The script fetches the issue itself and builds the envelope in
+`jq`, so no issue text is ever a shell word.
+
+**Two transforms on the way in, both deliberate.** The script strips the
+`@claude` implementation prompt that `server/providers/prompt.ts` appends to
+every filed issue — it instructs a CI agent to push a branch and let Dispatch
+open the PR, which is misleading in a ticket you are about to work by hand — and
+maps issue labels onto a ticket type so a bug does not land as a feature. The
+strip is coupled to `issueBody()`'s separator; if that wording changes, the
+trailer will start leaking into local tickets. Tested by exercising the script
+against a real issue with a stubbed `terminal-cli`.
+
+**`repoRoot` comes from `$PWD`.** Dispatch cannot know the local clone path, and
+a `repos.local_path` column would need a repo-edit endpoint that does not exist
+(repo settings are write-once at track time). Running from inside the clone is
+the smaller answer. Revisit if it chafes.
+
+**Not verified end-to-end:** no envelope has actually been enqueued. The script
+was run against a real issue with `TERMINAL_CLI` stubbed, so `gh`, the arg
+parsing, and the jq envelope are proven; `terminal-cli inbox enqueue` accepting
+this envelope and TerMinal filing the ticket is still unproven.
