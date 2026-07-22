@@ -63,3 +63,8 @@ export function listDraftChats(): ChatRow[] {
     .prepare("SELECT * FROM chats WHERE status = 'draft' ORDER BY created_at DESC")
     .all() as ChatRow[];
 }
+
+export function deleteChat(id: number): void {
+  getDb().prepare("DELETE FROM chats WHERE id = ?").run(id);
+  markDirty();
+}

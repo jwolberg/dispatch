@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import express from "express";
 import { resetDb, withServer } from "../test/helpers.js";
 import { insertRepo } from "../db/repos.js";
-import { createChat } from "../db/chats.js";
+import { createChat, getChat, setChatStatus } from "../db/chats.js";
 
 // T0-4 (retry contract) — PRD F2.3 / acceptance #3: on a parse failure the route
 // retries ONCE with a correction prompt; a second failure must surface a clean
@@ -109,5 +109,42 @@ describe("POST /api/chat/:id/generate-ticket", () => {
       expect(res.status).toBe(404);
     });
     expect(createMessage).not.toHaveBeenCalled();
+  });
+});
+
+// Board "×" delete button — draft chats a user abandons must not be stuck as
+// ghost cards forever, but a filed chat is the record of what shipped and must
+// not be deletable (#63).
+describe("DELETE /api/chat/:id", () => {
+  beforeEach(() => resetDb());
+
+  it("204s and hard-deletes a draft chat", async () => {
+    const chatId = seedChat();
+
+    await withServer(app(), async (base) => {
+      const res = await fetch(`${base}/api/chat/${chatId}`, { method: "DELETE" });
+      expect(res.status).toBe(204);
+    });
+
+    expect(getChat(chatId)).toBeUndefined();
+  });
+
+  it("404s for an unknown chat", async () => {
+    await withServer(app(), async (base) => {
+      const res = await fetch(`${base}/api/chat/9999`, { method: "DELETE" });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  it("409s and keeps the row when the chat is already filed", async () => {
+    const chatId = seedChat();
+    setChatStatus(chatId, "filed");
+
+    await withServer(app(), async (base) => {
+      const res = await fetch(`${base}/api/chat/${chatId}`, { method: "DELETE" });
+      expect(res.status).toBe(409);
+    });
+
+    expect(getChat(chatId)).toBeDefined();
   });
 });

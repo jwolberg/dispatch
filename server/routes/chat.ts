@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getRepo, type RepoRow } from "../db/repos.js";
-import { getChat, createChat, appendMessage, getTranscript } from "../db/chats.js";
+import { getChat, createChat, appendMessage, getTranscript, deleteChat } from "../db/chats.js";
 import {
   buildSystemPrompt,
   GENERATE_TICKET_INSTRUCTION,
@@ -190,4 +190,20 @@ chatRouter.get("/:id", (req, res) => {
     return;
   }
   res.json({ id: chat.id, repo_id: chat.repo_id, status: chat.status, transcript: getTranscript(chat.id) });
+});
+
+// DELETE /api/chat/:id — remove a draft chat (board card "×"). Filed chats are
+// kept as the record of what was shipped, so deleting one is refused with 409.
+chatRouter.delete("/:id", (req, res) => {
+  const chat = getChat(Number(req.params.id));
+  if (!chat) {
+    res.status(404).json({ error: "Chat not found" });
+    return;
+  }
+  if (chat.status !== "draft") {
+    res.status(409).json({ error: "Only draft chats can be deleted" });
+    return;
+  }
+  deleteChat(chat.id);
+  res.status(204).end();
 });
