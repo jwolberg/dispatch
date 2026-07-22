@@ -437,11 +437,14 @@ containing `@claude` re-triggers the provider's build job — the mechanism for 
 mid-build.
 
 **Hand off** (ADR-0007): `POST /api/tickets/:id/handoff` pushes the spec-chat transcript onto
-the issue and returns `dispatch-pickup <repo>#<n>`. The transcript is the only artifact that
-exists solely in Dispatch — the `tickets` row is just `(repo_id, chat_id, issue_number)` — so
-once it is on the issue there is nothing left to transfer, and `scripts/terminal-pickup.sh`
-rebuilds a local backlog ticket from the provider alone. The laptop never calls Dispatch.
-Idempotent via a marker on the comment rather than a stored flag: the issue is the record.
+the issue and returns the **issue URL** plus a paste-ready import prompt. The transcript is the
+only artifact that exists solely in Dispatch — the `tickets` row is just
+`(repo_id, chat_id, issue_number)` — so once it is on the issue, the issue URL is a complete
+record. You paste the prompt into a Claude/Codex tab in TerMinal and the agent files a local
+backlog ticket from the issue via `gh`. Nothing on the TerMinal side changes and Dispatch hosts
+nothing. Idempotent via a marker on the comment rather than a stored flag: the issue is the
+record. (#42 replaced the original automation-inbox delivery — the TerMinal watcher never
+drained and its app code is frozen.)
 
 All destructive actions (merge, untrack repo) require a confirmation modal. (S5)
 

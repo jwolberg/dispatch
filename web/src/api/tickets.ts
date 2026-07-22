@@ -151,8 +151,10 @@ export interface TicketDetail {
 }
 
 export interface HandoffResponse {
-  /** The command to run inside the local clone. */
-  pickup: string;
+  /** The GitHub/GitLab issue URL — the artifact the agent imports from. */
+  issueUrl: string;
+  /** A paste-ready instruction for a TerMinal agent tab, embedding issueUrl. */
+  importPrompt: string;
   /** What happened to the spec-chat transcript on this call. */
   transcript: "posted" | "already-present" | "none";
 }
@@ -183,8 +185,9 @@ export const ticketsApi = {
   // Dispatch does not revert (ADR-0004) — it resolves the provider's own revert
   // page and the user finishes there.
   revertUrl: (id: number) => api.get<{ url: string }>(`/tickets/${id}/revert-url`),
-  // Hand this ticket to a local TerMinal session (#38): pushes the spec-chat
-  // transcript onto the issue (once) and returns the command to run at home.
+  // Hand this ticket to a local TerMinal session (#38/#42): pushes the spec-chat
+  // transcript onto the issue (once) and returns the issue URL + an import prompt
+  // to paste into a TerMinal agent tab.
   handoff: (id: number) => api.post<HandoffResponse>(`/tickets/${id}/handoff`, {}),
   file: (body: {
     repo_id: number;

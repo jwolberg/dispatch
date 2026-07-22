@@ -89,3 +89,25 @@ ADR-0004 declined to call `revertPullRequest`; this declines to run a queue and 
 daemon. The difference is that this one does perform one write — the transcript
 comment — because that write is what makes the handoff need no infrastructure at
 all.
+
+## [6] Update — the last mile is the issue URL, not the inbox (2026-07-22)
+
+The delivery in [2] — `scripts/terminal-pickup.sh` enqueuing a `file-ticket`
+envelope into TerMinal's automation inbox — was exercised end-to-end the same
+day and **the TerMinal watcher never drained `new/`**. A canonical
+`automation.requested` envelope with a harmless action did not move either, so it
+is not our envelope: the app-side watcher does not consume the queue on this
+build, and (new constraint) TerMinal's app code will not change.
+
+So the delivery is replaced, not the decision. The transcript push and its
+marker (§[2]) are unchanged, which means the **issue URL is already a complete,
+per-user-authenticated record**. `POST /api/tickets/:id/handoff` now returns that
+URL and a paste-ready import prompt; you paste it into a Claude/Codex tab in
+TerMinal and the agent files the backlog ticket from the issue via `gh`.
+
+This makes the thesis *more* true, not less: the fragile hop (a queue plus a
+watcher that had to work) is gone, and the only thing between Dispatch and a local
+ticket is a URL plus the agent already running in TerMinal. The import prompt
+embeds only the URL — never issue text — so the shell-safety property in §[3]
+holds unchanged. `scripts/terminal-pickup.sh` is removed rather than left
+pointing at a queue that never drains. See #42.

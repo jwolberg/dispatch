@@ -2,9 +2,10 @@ import { useState } from "react";
 import { ticketsApi, type HandoffResponse } from "../api/tickets.js";
 import { ApiError } from "../api/client.js";
 
-// #38 — hand this ticket to a local TerMinal session. The laptop never talks to
-// Dispatch: the transcript goes onto the issue, and the human carries one
-// command across.
+// #38/#42 — hand this ticket to a local TerMinal session. The transcript goes
+// onto the issue, and you paste the import prompt into a Claude/Codex tab in
+// TerMinal; the agent files a backlog ticket from the issue. Nothing on the
+// TerMinal side has to change, and Dispatch hosts nothing.
 
 const TRANSCRIPT_NOTE: Record<HandoffResponse["transcript"], string> = {
   posted: "Spec chat posted to the issue.",
@@ -33,12 +34,12 @@ export function TerminalHandoff({ ticketId }: { ticketId: number }) {
   async function copy() {
     if (!result) return;
     try {
-      await navigator.clipboard.writeText(result.pickup);
+      await navigator.clipboard.writeText(result.importPrompt);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // Clipboard can be blocked (insecure context, denied permission). The
-      // command is on screen and selectable, so this is not worth an error.
+      // prompt is on screen and selectable, so this is not worth an error.
       setCopied(false);
     }
   }
@@ -47,8 +48,9 @@ export function TerminalHandoff({ ticketId }: { ticketId: number }) {
     <section className="rounded-lg border border-border bg-surface p-4">
       <h2 className="mb-1 text-body font-semibold text-gray-200">Send to TerMinal</h2>
       <p className="mb-3 text-label text-gray-500">
-        Pushes the spec chat onto the issue, then gives you a command to run inside your local
-        clone. It files a backlog ticket — it does not start a session or an agent.
+        Posts the spec chat to the issue, then gives you a prompt to paste into a Claude or Codex
+        tab in TerMinal. The agent reads the issue and files a backlog ticket — no setup on the
+        TerMinal side.
       </p>
 
       {error && (
@@ -59,10 +61,10 @@ export function TerminalHandoff({ ticketId }: { ticketId: number }) {
 
       {result ? (
         <>
-          <div className="mb-2 flex items-center gap-2">
-            <code className="flex-1 select-all overflow-x-auto whitespace-nowrap rounded border border-border bg-bg px-2.5 py-1.5 font-mono text-label text-gray-100">
-              {result.pickup}
-            </code>
+          <div className="mb-2 flex items-start gap-2">
+            <pre className="flex-1 select-all overflow-x-auto whitespace-pre-wrap rounded border border-border bg-bg px-2.5 py-1.5 font-mono text-label text-gray-100">
+              {result.importPrompt}
+            </pre>
             <button
               className="rounded border border-border px-2.5 py-1.5 text-label text-gray-300 hover:bg-bg"
               onClick={copy}
@@ -71,8 +73,17 @@ export function TerminalHandoff({ ticketId }: { ticketId: number }) {
             </button>
           </div>
           <p className="text-label text-gray-500">
-            {TRANSCRIPT_NOTE[result.transcript]} Run it from inside the repo — the ticket is
-            filed where you run it.
+            {TRANSCRIPT_NOTE[result.transcript]} Paste into a TerMinal agent tab opened in the
+            target repo — the ticket is filed there. Or just open the{" "}
+            <a
+              className="text-status-info underline"
+              href={result.issueUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              issue ↗
+            </a>
+            .
           </p>
         </>
       ) : (

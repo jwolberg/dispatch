@@ -9,9 +9,10 @@ import type { GitProvider, Issue, IssueComment } from "../providers/types.js";
 import { TRANSCRIPT_MARKER, buildTranscriptComment } from "../lib/handoff.js";
 import { ticketsRouter } from "./tickets.js";
 
-// #38 — POST /api/tickets/:id/handoff. This route writes to a user's issue, so
-// the load-bearing behavior is that it writes exactly once no matter how many
-// times the button is pressed.
+// #38/#42 — POST /api/tickets/:id/handoff. It pushes the transcript to the issue
+// (exactly once, however many times the button is pressed) and returns the issue
+// URL plus a paste-ready import prompt. The load-bearing behaviors: write once,
+// and always return the URL so a repeat press can re-copy it.
 
 const postComment = vi.fn();
 let issueComments: IssueComment[] = [];
@@ -78,10 +79,13 @@ describe("POST /api/tickets/:id/handoff", () => {
     expect(postComment).not.toHaveBeenCalled();
   });
 
-  it("returns a pickup command naming the repo and issue", async () => {
+  it("returns the issue URL and an import prompt embedding it", async () => {
     const { status, body } = await handoff(seed(true));
     expect(status).toBe(200);
-    expect(body.pickup).toBe("dispatch-pickup jwolberg/situation#42");
+    expect(body.issueUrl).toBe("https://example.test/i/42");
+    expect(String(body.importPrompt)).toContain("https://example.test/i/42");
+    // The obsolete inbox path must be gone from the response.
+    expect(body.pickup).toBeUndefined();
   });
 
   it("posts the transcript once, marked", async () => {
@@ -109,17 +113,19 @@ describe("POST /api/tickets/:id/handoff", () => {
     expect(status).toBe(200);
     expect(body.transcript).toBe("already-present");
     expect(postComment).not.toHaveBeenCalled();
-    // The command must still come back — a repeat press is a legitimate way to
+    // The URL must still come back — a repeat press is a legitimate way to
     // re-copy it after the clipboard is lost.
-    expect(body.pickup).toBe("dispatch-pickup jwolberg/situation#42");
+    expect(body.issueUrl).toBe("https://example.test/i/42");
   });
 
-  it("hands off a ticket with no chat, reporting nothing to carry", async () => {
+  it("hands off a ticket with no chat: returns the URL, reports nothing to carry", async () => {
     const { status, body } = await handoff(seed(false));
     expect(status).toBe(200);
     expect(body.transcript).toBe("none");
     expect(postComment).not.toHaveBeenCalled();
-    expect(body.pickup).toBe("dispatch-pickup jwolberg/situation#42");
+    // Even with no transcript to push, the URL is what the import needs.
+    expect(body.issueUrl).toBe("https://example.test/i/42");
+    expect(String(body.importPrompt)).toContain("https://example.test/i/42");
   });
 
   it("surfaces a provider failure instead of claiming the transcript landed", async () => {

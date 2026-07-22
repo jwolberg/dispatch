@@ -3,29 +3,38 @@ import {
   TRANSCRIPT_MARKER,
   buildTranscriptComment,
   hasTranscriptComment,
-  buildPickupCommand,
+  buildImportPrompt,
 } from "./handoff.js";
 import type { IssueComment } from "../providers/types.js";
 
-// #38 — the Dispatch → TerMinal handoff. The two things that must not regress:
-// posting the transcript twice, and letting issue text reach a laptop shell.
+// #42 — the Dispatch → TerMinal handoff, now via the issue URL (the inbox path
+// was dead: the TerMinal watcher never drains). The things that must not
+// regress: posting the transcript twice, and letting issue text reach a shell.
 
 function comment(body: string): IssueComment {
   return { id: "1", author: "someone", body, createdAt: "2026-07-22T00:00:00Z", url: null };
 }
 
-describe("buildPickupCommand", () => {
-  it("names the repo and issue and nothing else", () => {
-    expect(buildPickupCommand("jwolberg/situation", 42)).toBe(
-      "dispatch-pickup jwolberg/situation#42"
-    );
+describe("buildImportPrompt", () => {
+  const url = "https://github.com/jwolberg/situation/issues/42";
+
+  it("embeds the issue URL — the one thing the agent needs", () => {
+    expect(buildImportPrompt(url)).toContain(url);
   });
 
-  it("carries no issue text, so a hostile body cannot reach the shell", () => {
-    // The command is built from coordinates only. Even if the issue body were
-    // `$(rm -rf ~)`, none of it is in the string the human pastes.
-    const cmd = buildPickupCommand("acme/widgets", 7);
-    expect(cmd).not.toMatch(/[$`;|&><]/);
+  it("tells the agent how to import: read via gh, strip the trailer, file a ticket", () => {
+    const p = buildImportPrompt(url).toLowerCase();
+    expect(p).toContain("gh");
+    expect(p).toContain("@claude"); // the trailer it must strip
+    expect(p).toMatch(/backlog|\/ticket/); // where it files
+  });
+
+  it("carries no issue body, so a hostile issue cannot reach the shell", () => {
+    // Only the URL is embedded; the agent fetches the body itself. A body of
+    // `$(rm -rf ~)` never appears in the pasted text.
+    const p = buildImportPrompt(url);
+    expect(p).toContain(url);
+    expect(p).not.toContain("rm -rf");
   });
 });
 
