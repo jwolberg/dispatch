@@ -9,7 +9,8 @@ type: feature
 source: manual — the TerMinal inbox watcher does not drain (verified 2026-07-22)
 created: 2026-07-22
 updated: 2026-07-22
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/65"
 refs:
   - "server/lib/handoff.ts"
   - "server/routes/tickets.ts"
