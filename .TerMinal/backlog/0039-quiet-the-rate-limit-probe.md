@@ -9,7 +9,8 @@ type: dx
 source: production logs, 2026-07-22
 created: 2026-07-22
 updated: 2026-07-22
-prs: []
+prs:
+  - "https://github.com/jwolberg/dispatch/pull/59"
 refs:
   - "server/poller/scheduler.ts:55"
   - "server/providers/index.ts"
