@@ -436,6 +436,13 @@ merged → issue auto-closes → column = Merged → poller surfaces a successfu
 containing `@claude` re-triggers the provider's build job — the mechanism for course-correcting
 mid-build.
 
+**Hand off** (ADR-0007): `POST /api/tickets/:id/handoff` pushes the spec-chat transcript onto
+the issue and returns `dispatch-pickup <repo>#<n>`. The transcript is the only artifact that
+exists solely in Dispatch — the `tickets` row is just `(repo_id, chat_id, issue_number)` — so
+once it is on the issue there is nothing left to transfer, and `scripts/terminal-pickup.sh`
+rebuilds a local backlog ticket from the provider alone. The laptop never calls Dispatch.
+Idempotent via a marker on the comment rather than a stored flag: the issue is the record.
+
 All destructive actions (merge, untrack repo) require a confirmation modal. (S5)
 
 ---
@@ -454,8 +461,16 @@ Backend routes (all credentials server-side only; PRD §6):
 | `POST /api/tickets` | File issue |
 | `GET /api/board` | All tickets + derived column/status |
 | `GET /api/tickets/:id` | Card detail (issue, comments, PR, checks, runs) |
+| `GET /api/tickets/:id/summary` | Plain-language change summary, cached per head SHA (T1-5) |
+| `GET /api/tickets/:id/diff` | The PR's unified diff, bounded server-side (T2-1) |
+| `GET /api/tickets/:id/review` | Review artifact + ship gate for the current head (T2-5) |
+| `GET /api/tickets/:id/cost` | Per-ticket build cost: tokens + Actions minutes (T2-4) |
+| `GET /api/tickets/:id/revert-url` | Resolve the provider's own revert page (ADR-0004) |
 | `POST /api/tickets/:id/comment` | Steer |
+| `POST /api/tickets/:id/skill` | Drive a `ci-*` skill via an `@claude` comment (#28) |
+| `POST /api/tickets/:id/handoff` | Hand the ticket to a local TerMinal session (ADR-0007) |
 | `POST /api/tickets/:id/merge` | Ship |
+| `POST /api/repos/:id/setup` | Install the automation workflows + skills into the repo (#4) |
 | `GET /api/activity` | Activity feed |
 | `GET /api/health` | Token validity, rate-limit remaining, DB status |
 | `GET /api/github/app` | Registration + installation state for the setup screen (#2) |

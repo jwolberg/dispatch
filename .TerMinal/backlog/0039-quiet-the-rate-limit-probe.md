@@ -1,7 +1,7 @@
 ---
 id: 39
 title: "Rate-limit probe logs a dead credential once, not every tick"
-status: in-progress
+status: closed
 priority: medium
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: dx
 source: production logs, 2026-07-22
 created: 2026-07-22
 updated: 2026-07-22
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/59"
+prs: []
 refs:
   - "server/poller/scheduler.ts:55"
   - "server/providers/index.ts"

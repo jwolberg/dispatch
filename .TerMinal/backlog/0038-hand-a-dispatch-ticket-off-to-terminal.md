@@ -1,7 +1,7 @@
 ---
 id: 38
 title: "Hand a Dispatch ticket off to a local TerMinal session"
-status: in-progress
+status: closed
 priority: medium
 horizon: now
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: manual
 created: 2026-07-22
 updated: 2026-07-22
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/60"
+prs: []
 refs:
   - "server/routes/tickets.ts"
   - "web/src/pages/CardDetail.tsx"

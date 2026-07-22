@@ -1,7 +1,7 @@
 ---
 id: 37
 title: "Spec chat runs a real spec-shaping skill, not a one-paragraph instruction"
-status: in-progress
+status: closed
 priority: medium
 horizon: next
 hitl: false
@@ -9,8 +9,7 @@ type: feature
 source: manual
 created: 2026-07-22
 updated: 2026-07-22
-prs:
-  - "https://github.com/jwolberg/dispatch/pull/58"
+prs: []
 refs:
   - "server/anthropic/prompts.ts"
   - "server/setup/templates.ts"
