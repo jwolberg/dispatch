@@ -1515,3 +1515,45 @@ and `canary_verdict=null`, the chip can't distinguish "canary in flight" from
 **Deferred to the approval gate:** the first *live* canary run against a real
 repo is not fired here — it writes to a user repo and spends a real Claude run
 (escalating-cost per the decision protocol). Held for explicit go-ahead.
+
+---
+
+## #37 — spec chat's operating instruction becomes a skill (2026-07-22)
+
+**Server-side, not the repo-skills pipeline.** Dispatch already distributes
+skills (`scripts/repo-skills/` → `embed-templates` → `.claude/skills/` in the
+target repo), and the obvious move was to send this one down the same road. It
+would have been wrong: that pipeline exists because `claude-code-action` can only
+load skills committed to the repo it runs in, and nothing in a user's CI would
+ever run a spec-chat skill. Committing one into every tracked repo is noise in
+someone else's codebase. The line drawn: skills that run on the runner get
+committed; skills that govern Dispatch's own surfaces live in Dispatch.
+
+**Adapted from `ce-brainstorm`, not copied.** The original (EveryInc's
+compound-engineering plugin, MIT) is 26 KB written for a full agent with a
+filesystem, subagents, and a document to write. Spec chat is a stateless Messages
+API call with `read_file`/`list_files` and a transcript. What survived is the
+interrogation method — thinking partner over requirements-extractor, one question
+per turn, and the four rigor gaps (evidence, specificity, counterfactual,
+attachment) probed open-ended and only when actually present. What was dropped:
+phases, resume/routing logic, multi-select question tooling (the chat UI has no
+blocking question tool), and the requirements-document artifact, since F2.3's
+ticket JSON is the deliverable here. Attribution rides on the skill as a
+`derivedFrom` field rather than inside the prompt body, so it costs no tokens.
+
+**Cost delta is real but small.** The instruction went from ~80 to ~790 input
+tokens, billed on every turn of every chat. Against the injected repo context
+(`CLAUDE.md` plus a depth-2 file tree routinely runs several thousand tokens)
+it's noise, and `DISPATCH_DAILY_BUDGET_USD` still bounds the worst case. Flagged
+rather than measured against production traffic — there isn't any yet.
+
+**Registry shape, no picker.** `SPEC_SKILLS` is a keyed record with
+`getSpecSkill()` resolving unknown/absent ids to the default rather than
+throwing, because by prompt-assembly time the turn is already in flight and a bad
+mode id is not worth failing a chat over. One skill is registered. A second mode
+(bug report, refactor) is a new entry plus a UI affordance — deliberately not
+built, since there's no evidence yet that one instruction is insufficient.
+
+**PRD F2.2 quoted the old instruction verbatim.** Updated in place with the
+as-built text rather than left to rot, matching the recent PR-opening
+corrections.
