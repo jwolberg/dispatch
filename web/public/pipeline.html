@@ -97,7 +97,7 @@
 
     <!-- A3 Backend -> Issue : create issue (orange elbow) -->
     <path d="M390,240 L447,240 L447,101 L491,101" stroke="#e8973c" stroke-width="2" fill="none" marker-end="url(#aO)"/>
-    <!-- A9 GitHub -> Backend : webhooks / live status (dashed blue) -->
+    <!-- A9 GitHub -> Backend : polled live status (dashed blue) -->
     <path d="M494,274 L392,274" stroke="#4a9eef" stroke-width="1.8" fill="none" stroke-dasharray="6 5" marker-end="url(#aB)"/>
 
     <!-- A4 Issue -> Actions : trigger (blue) -->
@@ -117,6 +117,9 @@
     <path d="M560,478 L560,592" stroke="#2ec88f" stroke-width="2" fill="none" marker-end="url(#aG)"/>
     <!-- A_merge Pull request -> Staging : merge deploy (green elbow) -->
     <path d="M664,478 L664,546 L838,546 L838,592" stroke="#2ec88f" stroke-width="2" fill="none" marker-end="url(#aG)"/>
+    <!-- A_handoff Issue -> Local TerMinal : carried by hand, read via gh (dashed blue) -->
+    <path d="M491,130 L452,130 L452,606 L392,606" stroke="#4a9eef" stroke-width="1.8" fill="none" stroke-dasharray="6 5" marker-end="url(#aB)"/>
+
     <!-- A_promote Staging -> Production : through approval gate (purple) -->
     <path d="M950,648 L1010,648" stroke="#b07cf0" stroke-width="2" fill="none" marker-end="url(#aP)"/>
   </svg>
@@ -134,7 +137,7 @@
   </div>
   <div class="box" style="left:100px; top:198px; width:290px; height:88px;">
     <div class="bt">Backend (Express)</div>
-    <div class="bl">Octokit client · API proxy<br>webhook receiver</div>
+    <div class="bl">Octokit client · API proxy<br>poller — 20s active / 5min idle</div>
   </div>
   <div class="box" style="left:100px; top:380px; width:290px; height:92px;">
     <div class="bt">Claude API</div>
@@ -142,6 +145,10 @@
   </div>
 
   <!-- github -->
+  <div class="box" style="left:100px; top:560px; width:290px; height:92px;">
+    <div class="bt">Local TerMinal (your laptop)</div>
+    <div class="bl">paste issue URL into an agent → backlog ticket<br>agent reads the issue via gh — never Dispatch</div>
+  </div>
   <div class="box" style="left:494px; top:60px; width:216px; height:82px;">
     <div class="bt">Issue #123</div>
     <div class="bl">spec body + @claude<br>progress checkboxes</div>
@@ -195,11 +202,12 @@
 
   <!-- ===================== FLOW LABELS ===================== -->
   <div class="lbl o" style="left:150px; top:160px;"><b>1 ·</b> spec chat</div>
-  <div class="lbl b" style="left:258px; top:300px;">webhooks · live status ↩</div>
+  <div class="lbl b" style="left:258px; top:300px;">polling · live status ↩</div>
   <div class="lbl o" style="left:360px; top:150px;"><b>2 ·</b> create issue</div>
   <div class="lbl b" style="left:716px; top:78px;"><b>3 ·</b> trigger</div>
   <div class="lbl b" style="left:914px; top:166px;"><b>4 ·</b> checkout</div>
   <div class="lbl r" style="left:628px; top:360px;"><b>5 ·</b> open PR</div>
+  <div class="lbl b" style="left:100px; top:528px;">hand off ⇢ paste the issue URL</div>
   <div class="lbl b" style="left:716px; top:494px;"><b>6 ·</b> CI checks</div>
   <div class="lbl o" style="left:300px; top:352px;"><b>·</b> ship — merge PR</div>
   <div class="lbl g" style="left:516px; top:576px;"><b>7 ·</b> preview build</div>
