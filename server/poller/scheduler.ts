@@ -6,6 +6,7 @@ import { discoverAllRepos } from "./discover.js";
 import { getAccountProviders } from "../providers/index.js";
 import { isPaused, leastRemaining, updateRateLimit } from "../lib/ratelimit.js";
 import { safeMessage } from "../lib/redaction.js";
+import { ProbeLog } from "./probe-log.js";
 
 const ACTIVE_INTERVAL_MS = 20_000; // 20s for repos with active tickets (PRD F4.2)
 const IDLE_INTERVAL_MS = 5 * 60_000; // 5min otherwise
@@ -33,6 +34,9 @@ function isActive(ticketId: number): boolean {
   }
 }
 
+/** Suppresses repeat warnings from a persistently-failing credential (#39). */
+const probeLog = new ProbeLog();
+
 // Refresh the rate-limit gauge before a cycle. GitHub's /rate_limit endpoint
 // is free (doesn't consume core quota), so this is cheap insurance (S3).
 //
@@ -50,11 +54,24 @@ async function refreshRateLimit(): Promise<void> {
   const settled = await Promise.allSettled(accounts.map((a) => a.provider.getRateLimit()));
   const measured = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
 
-  for (const result of settled) {
+  // #39 — transition-only. An expired credential fails every cycle; warning each
+  // time buried the log. `label` is documented as safe to render, and naming the
+  // credential is what makes the warning actionable when a deployment holds
+  // several (a PAT plus one per App installation).
+  settled.forEach((result, i) => {
+    const account = accounts[i];
+    const credential = `${account.kind}:${account.label}`;
     if (result.status === "rejected") {
-      console.warn(`[poller] rate-limit check failed: ${safeMessage(result.reason)}`);
+      if (probeLog.failed(credential, safeMessage(result.reason))) {
+        console.warn(
+          `[poller] rate-limit check failed for ${credential}: ${safeMessage(result.reason)} ` +
+            `(silencing repeats until it changes)`
+        );
+      }
+    } else if (probeLog.recovered(credential)) {
+      console.info(`[poller] rate-limit check recovered for ${credential}`);
     }
-  }
+  });
 
   const binding = leastRemaining(measured);
   if (binding) updateRateLimit(binding);
