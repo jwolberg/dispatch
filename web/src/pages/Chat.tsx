@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Page } from "../components/Page.js";
 import { reposApi } from "../api/repos.js";
 import { streamChat, chatApi, type ChatTurn, type Ticket } from "../api/chat.js";
@@ -7,6 +8,8 @@ import type { TrackedRepo } from "../api/types.js";
 import { TicketPreviewModal } from "../components/TicketPreviewModal.js";
 
 export function ChatPage() {
+  const [searchParams] = useSearchParams();
+  const resumeChatId = searchParams.get("chatId");
   const [repos, setRepos] = useState<TrackedRepo[]>([]);
   const [repoId, setRepoId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatTurn[]>([]);
@@ -20,13 +23,38 @@ export function ChatPage() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
     reposApi
       .list()
-      .then(({ repos }) => {
+      .then(async ({ repos }) => {
+        if (cancelled) return;
         setRepos(repos);
+
+        // Board "resume draft" link: hydrate the prior transcript instead of
+        // starting a blank session. A stale/deleted id (404) falls back to a
+        // fresh chat with no error shown — the link just no longer resolves.
+        if (resumeChatId) {
+          try {
+            const chat = await chatApi.get(Number(resumeChatId));
+            if (cancelled) return;
+            setChatId(chat.id);
+            setRepoId(chat.repo_id);
+            setMessages(chat.transcript);
+            return;
+          } catch {
+            // fall through to a blank new chat
+          }
+        }
+
         if (repos.length) setRepoId(repos[0].id);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

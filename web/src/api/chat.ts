@@ -65,7 +65,16 @@ export async function streamChat(
   }
 }
 
+export interface ChatDetail {
+  id: number;
+  repo_id: number;
+  status: "draft" | "filed";
+  transcript: ChatTurn[];
+}
+
 export const chatApi = {
   generateTicket: (chatId: number) =>
     api.post<{ ticket: Ticket }>(`/chat/${chatId}/generate-ticket`),
+  get: (chatId: number) => api.get<ChatDetail>(`/chat/${chatId}`),
+  deleteChat: (chatId: number) => api.del<void>(`/chat/${chatId}`),
 };
