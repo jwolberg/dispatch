@@ -275,26 +275,25 @@ issues and MR threads trigger the job, which commits results back via MRs.
 ## Hand a ticket to a local TerMinal session
 
 A card's **Send to TerMinal** panel pushes the spec-chat transcript onto the
-issue (once — it detects its own marker on repeat presses) and hands you a
-command to run at home:
+issue (once — it detects its own marker on repeat presses), which makes the
+**issue URL a complete record**: the spec is the body, the chat is a comment.
+The panel then gives you a paste-ready import prompt:
 
-```bash
-dispatch-pickup jwolberg/situation#42
+```
+Import this Dispatch issue as a TerMinal backlog ticket in the current repo:
+https://github.com/you/repo/issues/42
+
+Read it with `gh issue view`, drop the trailing "@claude …" implementation
+block Dispatch appended, infer the ticket type from its labels, and file it
+with the /ticket workflow (status: open). …
 ```
 
-Run it **from inside your local clone**; the ticket is filed where you run it,
-because Dispatch cannot know where a repo lives on your machine. It files an
-`open` backlog ticket and stops — no session, no agent.
-
-Install the receiver once on the machine running TerMinal:
-
-```bash
-ln -s "$PWD/scripts/terminal-pickup.sh" ~/.local/bin/dispatch-pickup
-```
-
-It needs `gh`, `jq`, and `terminal-cli`. The laptop talks only to the provider,
-never to Dispatch, so no Dispatch credentials leave the server — which is also
-why the transcript has to travel via the issue rather than the wire.
+Paste it into a **Claude or Codex tab in TerMinal**, opened in the target repo —
+the agent reads the issue and files the backlog ticket there. Nothing on the
+TerMinal side has to be installed or changed, and Dispatch hosts nothing: the
+agent reads GitHub with the `gh` auth it already has, so no Dispatch credentials
+are ever involved. (Only the issue URL is embedded in the prompt — the agent
+fetches the body itself, so a hostile issue body can't reach your shell.)
 
 ## Scripts
 

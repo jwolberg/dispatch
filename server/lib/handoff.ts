@@ -1,12 +1,18 @@
 import type { IssueComment } from "../providers/types.js";
 import type { ChatMessage } from "../db/chats.js";
 
-// #38 — Dispatch → TerMinal handoff.
+// #38/#42 — Dispatch → TerMinal handoff.
 //
-// The laptop never talks to Dispatch. Cloud Run cannot reach a machine behind
-// NAT, so rather than run a queue here and a credentialed poller there, the
-// transcript is pushed to the issue (making it derivable by any client with
-// provider auth) and the human carries one short command across.
+// The laptop never talks to Dispatch. The handoff pushes the spec-chat
+// transcript onto the issue (the only artifact that exists solely in Dispatch),
+// which makes the *issue URL* a complete, per-user-authenticated record. You
+// paste that URL into a Claude/Codex tab in TerMinal and the agent files a local
+// backlog ticket from it — no TerMinal receiver, no queue, nothing hosted here.
+//
+// #42 replaced the original last mile (an envelope enqueued into TerMinal's
+// automation inbox): the TerMinal watcher was verified never to drain `new/`,
+// and its app code is frozen. The provider-as-bus thesis (ADR-0007) is unchanged;
+// only the delivery is.
 
 /**
  * Hidden marker opening every transcript comment Dispatch posts. It is how a
@@ -16,12 +22,19 @@ import type { ChatMessage } from "../db/chats.js";
 export const TRANSCRIPT_MARKER = "<!-- dispatch:spec-transcript -->";
 
 /**
- * The command the human copies. Coordinates only: no issue text crosses into a
- * shell string, so backticks or `$(...)` in a body cannot execute on the laptop.
- * `scripts/terminal-pickup.sh` fetches the issue itself.
+ * The paste-ready instruction the human copies into a TerMinal agent tab. It
+ * embeds only the issue URL — never any issue text — so a body containing
+ * `$(...)` or backticks cannot execute; the agent fetches the body itself.
  */
-export function buildPickupCommand(repoPath: string, issueNumber: number): string {
-  return `dispatch-pickup ${repoPath}#${issueNumber}`;
+export function buildImportPrompt(issueUrl: string): string {
+  return (
+    `Import this Dispatch issue as a TerMinal backlog ticket in the current repo:\n` +
+    `${issueUrl}\n\n` +
+    `Read it with \`gh issue view\`, drop the trailing "@claude …" implementation ` +
+    `block Dispatch appended, infer the ticket type from its labels, and file it ` +
+    `with the /ticket workflow (status: open). The full spec chat, if any, is in ` +
+    `the issue comments for context.`
+  );
 }
 
 /**

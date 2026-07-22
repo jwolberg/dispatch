@@ -9,7 +9,7 @@ import { getProviderForRepo } from "../providers/index.js";
 import type { CommentTarget, MergeMethod, ProviderId, RepoRef } from "../providers/index.js";
 import { isSkill, skillPrompt, defaultTarget } from "../lib/skills.js";
 import { safeMessage } from "../lib/redaction.js";
-import { buildPickupCommand, buildTranscriptComment, hasTranscriptComment } from "../lib/handoff.js";
+import { buildImportPrompt, buildTranscriptComment, hasTranscriptComment } from "../lib/handoff.js";
 import { httpStatus } from "../lib/errors.js";
 import { fetchReview } from "../review/fetch.js";
 import { evaluateShipGate, type ReviewArtifact } from "../review/artifact.js";
@@ -72,12 +72,15 @@ ticketsRouter.post("/", async (req, res) => {
   }
 });
 
-// POST /api/tickets/:id/handoff — hand this ticket to a local TerMinal session (#38).
+// POST /api/tickets/:id/handoff — hand this ticket to a local TerMinal session (#38/#42).
 //
 // Pushes the spec-chat transcript (the only artifact that exists solely in
-// Dispatch) onto the issue, then returns the short command the human carries to
-// the laptop. Idempotent by reading the issue's own comments rather than storing
-// a "handed off" flag: the issue is the record.
+// Dispatch) onto the issue, then returns the issue URL and a paste-ready import
+// prompt. You paste it into a Claude/Codex tab in TerMinal and the agent files a
+// backlog ticket from the issue — no TerMinal receiver, nothing hosted here.
+// Idempotent by reading the issue's own comments rather than storing a flag: the
+// issue is the record. (#42 dropped the automation-inbox delivery — the TerMinal
+// watcher was verified never to drain, and its app code is frozen.)
 ticketsRouter.post("/:id/handoff", async (req, res) => {
   const ticket = getTicket(Number(req.params.id));
   if (!ticket) {
@@ -96,20 +99,22 @@ ticketsRouter.post("/:id/handoff", async (req, res) => {
     path: repo.path,
     defaultBranch: repo.default_branch,
   };
-  const pickup = buildPickupCommand(repo.path, ticket.issue_number);
 
   try {
+    // Fetch up front: every path needs the canonical issue URL (and the comment
+    // list, for idempotency). One getIssue per button press.
+    const provider = getProviderForRepo(ref);
+    const issue = await provider.getIssue(ref, ticket.issue_number);
+    const base = { issueUrl: issue.url, importPrompt: buildImportPrompt(issue.url) };
+
     const comment =
       ticket.chat_id != null ? buildTranscriptComment(getTranscript(ticket.chat_id)) : null;
     if (!comment) {
-      res.json({ pickup, transcript: "none" });
+      res.json({ ...base, transcript: "none" });
       return;
     }
-
-    const provider = getProviderForRepo(ref);
-    const issue = await provider.getIssue(ref, ticket.issue_number);
     if (hasTranscriptComment(issue.comments)) {
-      res.json({ pickup, transcript: "already-present" });
+      res.json({ ...base, transcript: "already-present" });
       return;
     }
 
@@ -124,7 +129,7 @@ ticketsRouter.post("/:id/handoff", async (req, res) => {
       url: issue.url,
       occurred_at: new Date().toISOString(),
     });
-    res.json({ pickup, transcript: "posted" });
+    res.json({ ...base, transcript: "posted" });
   } catch (err) {
     res.status(httpStatus(err) ?? 502).json({ error: safeMessage(err) });
   }
