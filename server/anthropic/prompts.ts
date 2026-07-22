@@ -1,6 +1,8 @@
 // Prompt assembly for spec chat (PRD F2.1–F2.3). All Anthropic calls are
 // stateless — every request carries its own injected repo context.
 
+import { getSpecSkill, type SpecSkill } from "./spec-skills.js";
+
 export interface InjectableContext {
   path: string;
   description: string | null;
@@ -9,19 +11,22 @@ export interface InjectableContext {
   fileTree: string[];
 }
 
-// Fixed instruction block (PRD F2.2), verbatim intent.
-const SPEC_INSTRUCTION = `You are helping write a GitHub issue spec for Claude Code to implement autonomously. Drive toward: a one-line title; problem statement; acceptance criteria as a checklist; likely files/modules affected; test plan; out-of-scope notes. Ask at most one clarifying question per turn.`;
-
 function section(title: string, body: string | null): string {
   if (!body || !body.trim()) return "";
   return `\n\n## ${title}\n${body.trim()}`;
 }
 
-/** Build the system prompt for a repo-scoped spec chat (F2.1). */
-export function buildSystemPrompt(ctx: InjectableContext): string {
+/**
+ * Build the system prompt for a repo-scoped spec chat (F2.1): the spec-shaping
+ * skill first (#37 — the method), then the injected repo facts it works on.
+ */
+export function buildSystemPrompt(
+  ctx: InjectableContext,
+  skill: SpecSkill = getSpecSkill()
+): string {
   const tree = ctx.fileTree.length ? ctx.fileTree.join("\n") : null;
   return (
-    SPEC_INSTRUCTION +
+    skill.body +
     `\n\n--- Repository context for ${ctx.path} ---` +
     section("Description", ctx.description) +
     section("CLAUDE.md", ctx.claudeMd) +

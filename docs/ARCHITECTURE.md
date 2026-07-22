@@ -392,10 +392,11 @@ to keep request latency low and provider calls bounded.
 All Anthropic calls are stateless and proxied through the backend (PRD F2):
 
 1. **Context injection** — for a repo-scoped chat, the backend builds the system prompt from
-   the cached `RepoContext` (description, `CLAUDE.md`, README excerpt, depth-2 file tree) plus
-   a fixed instruction block driving toward an issue-ready spec (one-line title, problem
-   statement, acceptance checklist, affected files, test plan, out-of-scope; one clarifying
-   question per turn). (F2.1–F2.2)
+   the spec-shaping skill (`anthropic/spec-skills.ts` — the method: thinking partner, one
+   question per turn, rigor probes) followed by the cached `RepoContext` (description,
+   `CLAUDE.md`, README excerpt, depth-2 file tree) it works on. The skill drives toward an
+   issue-ready spec: one-line title, problem statement, acceptance checklist, affected files,
+   test plan, out-of-scope. Skill first, facts second. (F2.1–F2.2)
 2. **Streaming** — `POST /api/chat` proxies a turn to Anthropic and streams SSE to the client.
 3. **Generate ticket** — `POST /api/chat/:id/generate-ticket` calls Anthropic once with the
    transcript requesting strict JSON `{ title, body_markdown, labels[] }`. The backend strips
