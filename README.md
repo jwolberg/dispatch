@@ -12,7 +12,13 @@ production without leaving one browser tab (or Slack). Dispatch
 stores almost nothing itself: delete the local SQLite cache and it rebuilds
 the whole board from the provider on the next poll.
 
-![Overview: ](docs/img/dispatch_arch.png)
+![Dispatch architecture: the control plane (web UI, Express backend, Claude API)
+drives GitHub (issue → Actions → Claude Code → PR → CI), which deploys to
+preview, staging, and production; a handoff path exits to a local TerMinal
+session.](docs/img/dispatch_arch.png)
+
+<sub>Rendered from [`docs/pipeline-architecture-diagram.html`](docs/pipeline-architecture-diagram.html) —
+edit that file and re-export, rather than editing the PNG.</sub>
 
 - **Frontend:** React 18 + Vite + Tailwind v3 (dark), `http://localhost:5173`
 - **Backend:** Express on Node 20, `http://127.0.0.1:3001` (localhost-only)
