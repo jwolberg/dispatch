@@ -1611,3 +1611,33 @@ the smaller answer. Revisit if it chafes.
 was run against a real issue with `TERMINAL_CLI` stubbed, so `gh`, the arg
 parsing, and the jq envelope are proven; `terminal-cli inbox enqueue` accepting
 this envelope and TerMinal filing the ticket is still unproven.
+
+---
+
+## #39 — quiet the rate-limit probe (2026-07-22)
+
+**Found by reading production logs, not by a report.** Six hours of prod held 353
+identical `[poller] rate-limit check failed: Bad credentials` lines — one per
+poll cycle for an expired PAT — alongside 429 *successful* conditional requests
+against the tracked repo via the GitHub App. The service was healthy; the log
+said otherwise, which is its own kind of outage.
+
+**Log on transition, not on state.** `ProbeLog` keys the last failure message per
+credential: first failure logs, repeats stay silent, a *different* failure logs
+again, and recovery logs once. Keying on the message rather than a boolean is
+what keeps a new failure mode newsworthy — the tradeoff is that a provider error
+carrying a request id or timestamp would defeat suppression entirely. Current
+GitHub/GitLab messages are stable strings; noted in the source rather than
+defended with a sanitizer that would have to guess at formats.
+
+**The warning now names the credential.** Since #21 a deployment can hold several
+(a PAT plus one per App installation), so "Bad credentials" alone did not say
+what to go fix. `AccountProvider.label` is already documented as safe to render
+— an account login or the env var's name — so this leaks nothing.
+
+**The dead PAT stays attached, deliberately.** Diagnosis showed the App covers
+the only tracked repo and the PAT serves nothing but the failing probe, so
+removing it was the cleaner fix; the operator chose to keep the credential and
+fix the logging instead. That means prod still has an expired `GITHUB_TOKEN`
+after this lands — the noise stops, the credential remains dead, and re-attaching
+a working one is still a `--update-secrets` away.
